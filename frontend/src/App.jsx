@@ -102,8 +102,6 @@ onSubmit={(e) => {
 <ResultsPanel
 advancedPayload={advancedPayload}
 results={results}
-docType={docType}
-status={status}
 />
 </main>
 </div>
