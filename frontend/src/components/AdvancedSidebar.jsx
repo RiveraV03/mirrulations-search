@@ -172,26 +172,6 @@ export default function AdvancedSidebar({
             ))}
           </section>
 
-          {/* Status */}
-          <section className="section">
-            <h3>Status</h3>
-            {statuses.map((s) => (
-              <label key={s} className="check">
-                <input
-                  type="checkbox"
-                  checked={status.has(s)}
-                  onChange={() =>
-                    setStatus(
-                      status.has(s)
-                        ? new Set([...status].filter((x) => x !== s))
-                        : new Set(status).add(s)
-                    )
-                  }
-                />
-                <span>{s}</span>
-              </label>
-            ))}
-          </section>
 
           <div className="actions">
             <button className="btn btn-ghost" onClick={clearAdvanced}>
