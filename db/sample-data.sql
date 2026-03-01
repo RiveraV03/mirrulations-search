@@ -557,6 +557,96 @@ INSERT INTO documents (
     NULL
 )
 
+INSERT INTO links(
+    title,
+    cfrPart,
+    link
+) VALUES (
+    42,
+    405,
+    'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-B/part-405?toc=1'
+)
+
+INSERT INTO links(
+    title,
+    cfrPart,
+    link
+) VALUES (
+    42,
+    410,
+    'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-B/part-410?toc=1'
+)
+
+INSERT INTO links(
+    title,
+    cfrPart,
+    link
+) VALUES (
+    42,
+    414,
+    'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-B/part-414?toc=1'
+)
+
+INSERT INTO links(
+    title,
+    cfrPart,
+    link
+) VALUES (
+    42,
+    424,
+    'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-B/part-424?toc=1'
+)
+
+INSERT INTO links(
+    title,
+    cfrPart,
+    link
+) VALUES (
+    42,
+    425,
+    'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-B/part-425?toc=1'
+)
+
+INSERT INTO links(
+    title,
+    cfrPart,
+    link
+) VALUES (
+    42,
+    427,
+    'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-B/part-427?toc=1'
+)
+
+INSERT INTO links(
+    title,
+    cfrPart,
+    link
+) VALUES (
+    42,
+    428,
+    'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-B/part-428?toc=1'
+)
+
+INSERT INTO links(
+    title,
+    cfrPart,
+    link
+) VALUES (
+    42,
+    495,
+    'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-G/part-495?toc=1'
+)
+
+INSERT INTO links(
+    title,
+    cfrPart,
+    link
+) VALUES (
+    42,
+    512,
+    'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-H/part-512?toc=1'
+)
+
 INSERT INTO cfrParts(
     document_id,
     frDocNum,
