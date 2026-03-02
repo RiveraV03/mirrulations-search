@@ -43,8 +43,10 @@ const activeCount =
     status.size +
     selectedCfrParts.size;
 const runSearch = async () => {
-const firstAgency = Array.from(selectedAgencies)[0] || ""
-const firstCfr = Array.from(selectedCfrParts)[0] || "";
+const selectedAgencyList = Array.from(selectedAgencies);
+const firstAgency = selectedAgencyList[selectedAgencyList.length - 1] || ""
+const selectedCfrList = Array.from(selectedCfrParts);
+const firstCfr = selectedCfrList[selectedCfrList.length - 1] || "";
 const data = await searchDockets(query, docType, firstAgency, firstCfr)
     setResults(data);
   };

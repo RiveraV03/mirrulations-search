@@ -80,6 +80,61 @@ class DBLayer:
             ]
 
 
+    def _search_dockets_postgres(self, query: str) -> List[Dict[str, Any]]:
+        sql = """
+            SELECT DISTINCT
+                d.docket_id,
+                d.docket_title,
+                d.agency_id,
+                d.docket_type,
+                d.modify_date,
+                cp.title,
+                cp.cfrPart,
+                l.link
+            FROM dockets d
+            JOIN documents doc ON doc.docket_id = d.docket_id
+            JOIN cfrparts cp ON cp.document_id = doc.document_id
+            LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
+            WHERE d.docket_title ILIKE %s
+            ORDER BY d.docket_id, cp.title, cp.cfrPart
+            LIMIT 50
+        """
+        params = [f"%{(query or '').strip().lower()}%"]
+
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            dockets = {}
+            for row in cur.fetchall():
+                self._process_docket_row(dockets, row)
+            return [
+                {**d, "cfr_refs": list(d["cfr_refs"].values())}
+                for d in dockets.values()
+            ]
+
+    @staticmethod
+    def _process_docket_row(dockets, row):
+        docket_id = row[0]
+        if docket_id not in dockets:
+            dockets[docket_id] = {
+                "docket_id": row[0],
+                "docket_title": row[1],
+                "agency_id": row[2],
+                "docket_type": row[3],
+                "modify_date": row[4],
+                "cfr_refs": {}
+            }
+        title, cfr_part, link = row[5], row[6], row[7]
+        if title is not None and cfr_part is not None:
+            if title not in dockets[docket_id]["cfr_refs"]:
+                dockets[docket_id]["cfr_refs"][title] = {
+                    "title": title,
+                    "cfrParts": [],
+                    "link": link
+                }
+            if cfr_part not in dockets[docket_id]["cfr_refs"][title]["cfrParts"]:
+                dockets[docket_id]["cfr_refs"][title]["cfrParts"].append(cfr_part)
+
+
 def _get_secrets_from_aws() -> Dict[str, str]:
     if boto3 is None:
         raise ImportError("boto3 is required to use AWS Secrets Manager.")
