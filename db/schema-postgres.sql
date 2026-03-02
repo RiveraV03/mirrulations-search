@@ -79,23 +79,28 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 -- =========================================
+-- LINKS TABLE
+-- =========================================
+-- Stores links for corresponding cfr parts; references cfr parts
+
+CREATE TABLE IF NOT EXISTS links (
+    title INT,
+    cfrPart VARCHAR(50),
+    link VARCHAR(2000) UNIQUE,
+    PRIMARY KEY (title, cfrPart)
+);
+
+-- =========================================
 -- CFR PARTS TABLE
 -- =========================================
 -- Stores cfr part numbers for corresponding documents; references documents
 -- cfrPart and frDocNum will be null at table creation & are retrieved from federal reserve & inserted into the table at the first query
 
 CREATE TABLE IF NOT EXISTS cfrparts (
-    document_id VARCHAR(50) NOT NULL PRIMARY KEY REFERENCES documents(document_id),
+    document_id VARCHAR(50) NOT NULL REFERENCES documents(document_id),
     frDocNum VARCHAR(50),
-    cfrPart VARCHAR(50)
-);
-
--- =========================================
--- LINKS TABLE
--- =========================================
--- Stores links for corresponding cfr parts; references cfr parts
-
-CREATE TABLE IF NOT EXISTS links (
-    document_id VARCHAR(50) NOT NULL PRIMARY KEY REFERENCES cfrparts(document_id),
-    link VARCHAR(2000)
+    title INT,
+    cfrPart VARCHAR(50),
+    PRIMARY KEY (document_id, cfrPart),
+    FOREIGN KEY (title, cfrPart) REFERENCES links(title, cfrPart)
 );
