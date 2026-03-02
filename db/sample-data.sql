@@ -141,6 +141,8 @@ INSERT INTO documents (
     FALSE, --idk this didn't have data (is_late_comment)
     NULL,
     NULL, -- comment_category had no data
+    NULL,
+    NULL,
     '2025-07-18T03:59:59Z',
     '2025-07-14T04:00:00Z',
     NULL,
@@ -157,6 +159,7 @@ INSERT INTO documents (
     NULL,
     '2025-07-18T09:00:30Z',
     FALSE,
+    NULL,
     NULL,
     '2025-07-14T04:00:00Z',
     NULL,
@@ -226,11 +229,12 @@ INSERT INTO documents (
     FALSE, --idk this didn't have data (is_late_comment)
     NULL,
     NULL, -- comment_category had no data
+    NULL,
+    NULL,
     '2025-09-13T03:59:59Z',
     '2025-07-16T04:00:00Z',
     NULL,
     'Proposed Rule',
-    NULL,
     NULL,
     NULL,
     NULL,
@@ -334,6 +338,8 @@ INSERT INTO documents (
     FALSE,
     NULL,
     NULL,
+    NULL,
+    NULL,
     '2025-09-13T03:59:59Z',
     '2025-08-14T04:00:00Z',
     NULL,
@@ -422,6 +428,8 @@ INSERT INTO documents (
     NULL,
     NULL,
     NULL,
+    '2025-09-13T03:59:59Z',
+    '2025-08-14T04:00:00Z',
     NULL,
     'Rule',
     NULL,
