@@ -14,14 +14,19 @@ export default function ResultsPanel({ results }) {
     <div className="results">
       {results.map((item, index) => (
         <div key={item.docket_id || index} className="result-card">
-          <h3 className="result-title">{item.title}
+          <h3 className="result-title">{item.docket_title}
           </h3>
 
           <div className="result-meta">
             <p><strong>Agency:</strong> {item.agency_id}</p>
             <p><strong>Docket-ID:</strong> {item.docket_id}</p>
             <p><strong>Docket type:</strong> {item.docket_type}</p>
-            <a href={CFR_BASE_URL}><p><strong>CFR:</strong> {item.cfrPart}</p></a>
+            <a href={CFR_BASE_URL}>
+            <p>
+              <strong>CFR:</strong>{" "}
+              {item.cfrPart.map(p => p.part).join(", ")}
+            </p>
+            </a>
             <p><strong>Last modified date:</strong> {item.modify_date}</p>
           </div>
 
