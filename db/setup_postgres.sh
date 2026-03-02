@@ -4,7 +4,9 @@ DB_NAME="mirrulations"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Starting PostgreSQL..."
-brew services start postgresql
+PG_VERSION="17"  # use your actual version
+export PATH="/opt/homebrew/opt/postgresql@${PG_VERSION}/bin:$PATH"
+brew services start postgresql@${PG_VERSION}
 
 #TODO: Change so database doesn't get dropped when prod ready.
 
