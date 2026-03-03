@@ -93,7 +93,7 @@ class DBLayer:
                 l.link
             FROM dockets d
             JOIN documents doc ON doc.docket_id = d.docket_id
-            JOIN cfrparts cp ON cp.document_id = doc.document_id
+            LEFT JOIN cfrparts cp ON cp.document_id = doc.document_id
             LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
             WHERE d.docket_title ILIKE %s
             ORDER BY d.docket_id, cp.title, cp.cfrPart
