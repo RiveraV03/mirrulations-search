@@ -18,6 +18,8 @@ const [agencySearch, setAgencySearch] = useState("");
 const [selectedAgencies, setSelectedAgencies] = useState(new Set());
 const [status, setStatus] = useState(new Set());
 const [selectedCfrParts, setSelectedCfrParts] = useState(new Set());
+const [loading, setLoading] = useState(false);
+
 const TOP_AGENCIES = [
     { code: "EPA", name: "Environmental Protection Agency" },
     { code: "HHS", name: "Health and Human Services" },
@@ -42,14 +44,36 @@ const activeCount =
     selectedAgencies.size +
     status.size +
     selectedCfrParts.size;
-const runSearch = async () => {
-const selectedAgencyList = Array.from(selectedAgencies);
-const firstAgency = selectedAgencyList[selectedAgencyList.length - 1] || ""
-const selectedCfrList = Array.from(selectedCfrParts);
-const firstCfr = selectedCfrList[selectedCfrList.length - 1] || "";
-const data = await searchDockets(query, docType, firstAgency, firstCfr)
-    setResults(data);
-  };
+
+
+    const runSearch = async () => {
+      setLoading(true);
+    
+      try {
+        const selectedAgencyList = Array.from(selectedAgencies);
+        const firstAgency =
+          selectedAgencyList[selectedAgencyList.length - 1] || "";
+    
+        const selectedCfrList = Array.from(selectedCfrParts);
+        const firstCfr =
+          selectedCfrList[selectedCfrList.length - 1] || "";
+    
+        const data = await searchDockets(
+          query,
+          docType,
+          firstAgency,
+          firstCfr
+        );
+    
+        setResults(data);
+      } catch (err) {
+        console.error("Search failed:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+
 const advancedPayload = {
     yearFrom,
     yearTo,
@@ -111,6 +135,8 @@ onSubmit={(e) => {
 <ResultsPanel
 advancedPayload={advancedPayload}
 results={results}
+loading={loading}
+
 />
 </main>
 </div>
