@@ -67,7 +67,7 @@ class DBLayer:
             sql += " AND cp.cfrPart ILIKE %s"
             params.append(f"%{cfr_part_param}%")
 
-        sql += " ORDER BY d.docket_id, cp.title, cp.cfrPart LIMIT 50"
+        sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart LIMIT 50"
 
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
