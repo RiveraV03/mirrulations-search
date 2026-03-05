@@ -21,6 +21,8 @@ const [status, setStatus] = useState(new Set());
 const [selectedCfrParts, setSelectedCfrParts] = useState(new Set());
 const [page, setPage] = useState(1);
 const [pagination, setPagination] = useState(null);
+const [loading, setLoading] = useState(false);
+
 const TOP_AGENCIES = [
     { code: "EPA", name: "Environmental Protection Agency" },
     { code: "HHS", name: "Health and Human Services" },
@@ -45,16 +47,38 @@ const activeCount =
     selectedAgencies.size +
     status.size +
     selectedCfrParts.size;
-const runSearch = async (newPage = 1) => {
-const selectedAgencyList = Array.from(selectedAgencies);
-const firstAgency = selectedAgencyList[selectedAgencyList.length - 1] || ""
-const selectedCfrList = Array.from(selectedCfrParts);
-const firstCfr = selectedCfrList[selectedCfrList.length - 1] || "";
-const data = await searchDockets(query, docType, firstAgency, firstCfr, newPage)
-    setResults(data.results);
-    setPagination(data.pagination);
-    setPage(newPage);
-  };
+
+    const runSearch = async (newPage = 1) => {
+      setLoading(true);
+    
+      try {
+        const selectedAgencyList = Array.from(selectedAgencies);
+        const firstAgency =
+          selectedAgencyList[selectedAgencyList.length - 1] || "";
+    
+        const selectedCfrList = Array.from(selectedCfrParts);
+        const firstCfr =
+          selectedCfrList[selectedCfrList.length - 1] || "";
+    
+        const data = await searchDockets(
+          query,
+          docType,
+          firstAgency,
+          firstCfr,
+          newPage
+        );
+    
+        setResults(data);
+        setPagination(data.pagination);
+        setPage(newPage);
+
+      } catch (err) {
+        console.error("Search failed:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
 const advancedPayload = {
     yearFrom,
     yearTo,
@@ -121,6 +145,8 @@ onSubmit={(e) => {
 <ResultsPanel
 advancedPayload={advancedPayload}
 results={results}
+loading={loading}
+
 />
 <div className="pagination-div">
   <button className="page-button" disabled={!pagination?.hasPrev} onClick={() => runSearch(page - 1)}><ArrowLeftIcon color="white" size={32}/></button>
