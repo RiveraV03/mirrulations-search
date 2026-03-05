@@ -1,19 +1,48 @@
 # Postgres DB Setup
 
-## To start postgresql and create, initialize, and populate the database, from the root directory, run:
+Prerequisites: Homebrew-installed PostgreSQL (or another PostgreSQL installation reachable from your shell).
+
+## Create the database
+
+**Option 1: Empty database (schema only)**  
+Creates the `mirrulations` database with tables but no data. Prompts before overwriting if the DB already exists.
+
+```bash
+./db/create_empty_db.sh
+```
+
+**Option 2: Database with sample data**  
+Creates the database, loads the schema, then loads sample dockets/documents/links/cfrparts. Prompts before overwriting if the DB already exists.
+
+```bash
+./db/create_sample_db.sh
+```
+
+**Option 3: Full setup (one command)**  
+Same as Option 2 but with no overwrite prompt. Drops and recreates the DB every time.
+
 ```bash
 ./db/setup_postgres.sh
 ```
 
-## To connect to DB:
+Use a different database name (e.g. for testing) by setting `DB_NAME`:
+
 ```bash
-python3 src/mirrsearch/db.py
-# Postgres DB — Quick Reference
+DB_NAME=mirrulations_test ./db/create_empty_db.sh
+DB_NAME=mirrulations_test ./db/create_sample_db.sh
+```
 
-This file provides quick commands to start, stop, and initialize the `mirrulations` PostgreSQL database used by this project.
+Non-interactive (e.g. in CI or verify script): `OVERWRITE_YES=1 ./db/create_sample_db.sh`
 
-Prerequisites:
-- Homebrew-installed PostgreSQL (or another PostgreSQL installation reachable from your shell)
+## Verify scripts (testing)
+
+Before committing changes to the DB scripts, run the verification script. It creates `mirrulations_test`, runs both empty and sample scripts, checks row counts, then drops the test DB.
+
+```bash
+./db/verify_empty_and_sample.sh
+```
+
+## Quick reference
 
 Start PostgreSQL service
 ```bash
@@ -66,7 +95,8 @@ VALUES (
     '2025-05-01 00:00:00+00'
 );
 ```
-Common psql tips and example PSQL
+
+**Common psql tips**
 - Enable expanded display (easier to read wide rows): `\x`
 - Show all rows from the `documents` table:
 ```sql
