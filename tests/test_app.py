@@ -101,6 +101,7 @@ def test_search_with_valid_filter_returns_matching_docket_type(client):  # pylin
         assert doc['document_type'] == 'Proposed Rule'
 
 
+
 def test_search_with_filter_only_affects_docket_type(client):  # pylint: disable=redefined-outer-name
     """Filter only restricts docket_type; other fields are unaffected"""
     response = client.get('/search/?str=ESRD&docket_type=Proposed Rule')
@@ -155,6 +156,17 @@ def test_search_with_agency_filter(client):  # pylint: disable=redefined-outer-n
         assert doc['agency_id'] == 'CMS'
 
 
+def test_search_with_multiple_agency_filters(client):  # pylint: disable=redefined-outer-name
+    """Multiple agency params return results matching any of them"""
+    response = client.get('/search/?str=renal&agency=CMS&agency=EPA')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    for doc in data:
+        assert doc['agency_id'] in ('CMS', 'EPA')
+
+
 def test_search_with_nonexistent_agency_returns_empty_list(client):  # pylint: disable=redefined-outer-name
     """An agency value matching no agency_id returns an empty list"""
     response = client.get('/search/?str=renal&agency=FDA')
@@ -162,6 +174,15 @@ def test_search_with_nonexistent_agency_returns_empty_list(client):  # pylint: d
     data = response.get_json()
     assert isinstance(data, list)
     assert len(data) == 0
+
+
+def test_search_with_multiple_cfr_part_filters(client):  # pylint: disable=redefined-outer-name
+    """Multiple cfr_part params return results matching any of them"""
+    response = client.get('/search/?str=renal&cfr_part=42&cfr_part=45')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert isinstance(data, list)
+    assert len(data) > 0
 
 
 def test_search_with_agency_and_filter(client):  # pylint: disable=redefined-outer-name

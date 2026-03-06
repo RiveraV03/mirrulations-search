@@ -28,10 +28,10 @@ function CollapsibleSection({ title, defaultOpen = true, children, right }) {
 export default function AdvancedSidebar({
   advOpen,
   setAdvOpen,
-  yearFrom,
-  setYearFrom,
-  yearTo,
-  setYearTo,
+  //yearFrom,
+  //setYearFrom,
+  //yearTo,
+  //setYearTo,
   agencySearch,
   setAgencySearch,
   agenciesToShow,
@@ -39,20 +39,20 @@ export default function AdvancedSidebar({
   setSelectedAgencies,
   docType,
   setDocType,
-  status,
-  setStatus,
-  selectedCfrParts,
-  setSelectedCfrParts,
+  //status,
+  //setStatus,
+  //selectedCfrParts,
+  //setSelectedCfrParts,
   clearAdvanced,
   applyAdvanced,
   activeCount,
 }) {
-  const docTypes = ["Rulemaking", "Non-Rulemaking"];
-  const statuses = ["Open", "Closed", "Pending"];
+  const docTypes = ["Rulemaking", "Nonrulemaking"];
+  //const statuses = ["Open", "Closed", "Pending"];
   const [agencyOrder, setAgencyOrder] = useState([]);
-  const cfrParts = Array.from({ length: 200 }, (_, i) => i + 1);
+  /*const cfrParts = Array.from({ length: 200 }, (_, i) => i + 1);
   const [cfrSearch, setCfrSearch] = useState("");
-  const [cfrOrder, setCfrOrder] = useState(cfrParts);
+  const [cfrOrder, setCfrOrder] = useState(cfrParts);*/
 
   const orderedAgencies = useMemo(() => {
     const order =
@@ -89,7 +89,7 @@ export default function AdvancedSidebar({
     });
   };
 
-  const filteredCfrParts = useMemo(() => {
+  /*const filteredCfrParts = useMemo(() => {
     const rawQuery = cfrSearch.trim().toLowerCase();
     if (!rawQuery) {
       return cfrOrder;
@@ -133,7 +133,7 @@ export default function AdvancedSidebar({
     });
 
     setCfrOrder((prev) => [part, ...prev.filter((p) => p !== part)]);
-  };
+  };*/
 
   return (
     <motion.aside className="sidebar"
@@ -161,7 +161,7 @@ export default function AdvancedSidebar({
 
       {advOpen && (
         <div className="advBody">
-          {/* Date */}
+          {/* Date 
           <section className="section">
             <h3>Date Range</h3>
 
@@ -212,7 +212,7 @@ export default function AdvancedSidebar({
                 placeholder="To"
               />
             </div>
-          </section>
+          </section> */}
 
           {/* Agency */}
           <CollapsibleSection title="Agency">
@@ -244,7 +244,7 @@ export default function AdvancedSidebar({
             )}
           </CollapsibleSection>
 
-          {/* CFR Part */}
+          {/* CFR Part
           <CollapsibleSection title="CFR Part">
             <input
               value={cfrSearch}
@@ -270,7 +270,7 @@ export default function AdvancedSidebar({
                 Showing top 5 parts. Selecting a part moves it to the top.
               </div>
             )}
-          </CollapsibleSection>
+          </CollapsibleSection> */}
 
           {/* Doc type */}
           <section className="section">

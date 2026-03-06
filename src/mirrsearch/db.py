@@ -26,8 +26,8 @@ class DBLayer:
             self,
             query: str,
             docket_type_param: str = None,
-            agency: str = None,
-            cfr_part_param: str = None) \
+            agency: List[str] = None,
+            cfr_part_param: List[str] = None) \
             -> List[Dict[str, Any]]:
         if self.conn is None:
             return []
@@ -35,8 +35,8 @@ class DBLayer:
 
     def _search_dockets_postgres(  # pylint: disable=too-many-locals
             self, query: str, docket_type_param: str = None,
-            agency: str = None,
-            cfr_part_param: str = None) -> List[Dict[str, Any]]:
+            agency: List[str] = None,
+            cfr_part_param: List[str] = None) -> List[Dict[str, Any]]:
         sql = """
             SELECT DISTINCT
                 d.docket_id,
@@ -60,14 +60,16 @@ class DBLayer:
             params.append(docket_type_param)
 
         if agency:
-            sql += " AND d.agency_id ILIKE %s"
-            params.append(f"%{agency}%")
+            clauses = " OR ".join("d.agency_id ILIKE %s" for _ in agency)
+            sql += f" AND ({clauses})"
+            params.extend(f"%{a}%" for a in agency)
 
         if cfr_part_param:
-            sql += " AND cp.cfrPart ILIKE %s"
-            params.append(f"%{cfr_part_param}%")
+            clauses = " OR ".join("cp.cfrPart ILIKE %s" for _ in cfr_part_param)
+            sql += f" AND ({clauses})"
+            params.extend(f"%{c}%" for c in cfr_part_param)
 
-        sql += " ORDER BY d.docket_id, cp.title, cp.cfrPart LIMIT 50"
+        sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart LIMIT 50"
 
         with self.conn.cursor() as cur:
             cur.execute(sql, params)

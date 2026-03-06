@@ -9,8 +9,8 @@ def _get_search_params():
     return {
         'search_input': request.args.get('str') or 'example_query',
         'docket_type': request.args.get('docket_type'),
-        'agency': request.args.get('agency'),
-        'cfr_part': request.args.get('cfr_part'),
+        'agency': [v for v in request.args.getlist('agency') if v] or None,
+        'cfr_part': [v for v in request.args.getlist('cfr_part') if v] or None,
     }
 
 

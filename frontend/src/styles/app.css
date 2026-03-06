@@ -333,3 +333,24 @@
     margin-top: 12px;
     line-height: 1.5;
   }
+
+
+  .pagination-div {
+	margin-top: 30px;
+	display: flex;
+	justify-content: center;
+	gap: 15px;
+  }
+
+  .page-button {
+	background-color: #6366f1;
+	border-radius: 5px;
+	border: none;
+	transition: all ease-in-out 0.3s;
+
+  }
+
+  .page-button:hover {
+	scale: 1.04;
+
+  }

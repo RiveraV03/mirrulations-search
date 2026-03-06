@@ -1,7 +1,24 @@
 import {ColorRing} from 'react-loader-spinner'
 const ECFR_URL = "https://www.ecfr.gov";
 
-export default function ResultsPanel({ results }) {
+export default function ResultsPanel({ results, loading, hasSearched }) {
+
+  if (loading) {
+    return (
+      <div className="results">
+        <ColorRing
+          visible={true}
+          height="80"
+          width="80"
+          ariaLabel="color-ring-loading"
+          colors={["#3b82f6", "#2563eb", "#1d4ed8", "#1e40af", "#1e3a8a"]}
+        />
+      </div>
+    );
+  }
+
+
+  if (!hasSearched) return null;
   if (!results || results.length === 0) {
     return (
       <div className="results">

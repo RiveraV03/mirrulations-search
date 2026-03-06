@@ -152,25 +152,41 @@ def test_search_filter_is_case_insensitive(db):
     mixed = db.search("renal", "Proposed Rule")
     assert lower == upper == mixed
 
+
 def test_search_agency_filter(db):
     """Agency filter works in dummy branch"""
-    result = db.search("", agency="CMS")
+    result = db.search("", agency=["CMS"])
     assert len(result) == 2
     assert all(item["agency_id"] == "CMS" for item in result)
 
 
+def test_search_agency_filter_multiple(db):
+    """Multiple agency filters return results matching any"""
+    result = db.search("", agency=["CMS", "EPA"])
+    assert len(result) == 2
+    for item in result:
+        assert item["agency_id"] in ("CMS", "EPA")
+
+
 def test_search_agency_filter_no_match(db):
     """Agency filter returns empty when no match"""
-    result = db.search("", agency="FDA")
+    result = db.search("", agency=["FDA"])
     assert result == []
 
 
 def test_search_cfr_part_filter(db):
     """cfr_part_param filter works in dummy branch"""
-    result = db.search("", cfr_part_param="42")
+    result = db.search("", cfr_part_param=["42"])
     assert len(result) == 2
+
+
+def test_search_cfr_part_filter_multiple(db):
+    """Multiple cfr_part values return results matching any"""
+    result = db.search("", cfr_part_param=["42", "999"])
+    assert len(result) == 2
+
 
 def test_search_cfr_part_filter_no_match(db):
     """cfr_part_param returns empty when no match"""
-    result = db.search("", cfr_part_param="999")
+    result = db.search("", cfr_part_param=["999"])
     assert result == []

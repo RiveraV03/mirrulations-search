@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState,useEffect } from "react";
 import "./styles/app.css";
 import { searchDockets } from "./api/searchApi";
 import AdvancedSidebar from "./components/AdvancedSidebar";
 import SearchBar from "./components/SearchBar";
 import ResultsPanel from "./components/ResultsPanel";
 import { motion } from "motion/react"
+import { ArrowLeftIcon,ArrowRightIcon } from "@phosphor-icons/react";
 
 
 export default function App() {
@@ -18,6 +19,11 @@ const [agencySearch, setAgencySearch] = useState("");
 const [selectedAgencies, setSelectedAgencies] = useState(new Set());
 const [status, setStatus] = useState(new Set());
 const [selectedCfrParts, setSelectedCfrParts] = useState(new Set());
+const [page, setPage] = useState(1);
+const [pagination, setPagination] = useState(null);
+const [loading, setLoading] = useState(false);
+const [hasSearched, setHasSearched] = useState(false);
+
 const TOP_AGENCIES = [
     { code: "EPA", name: "Environmental Protection Agency" },
     { code: "HHS", name: "Health and Human Services" },
@@ -42,14 +48,35 @@ const activeCount =
     selectedAgencies.size +
     status.size +
     selectedCfrParts.size;
-const runSearch = async () => {
-const selectedAgencyList = Array.from(selectedAgencies);
-const firstAgency = selectedAgencyList[selectedAgencyList.length - 1] || ""
-const selectedCfrList = Array.from(selectedCfrParts);
-const firstCfr = selectedCfrList[selectedCfrList.length - 1] || "";
-const data = await searchDockets(query, docType, firstAgency, firstCfr)
-    setResults(data);
-  };
+
+    const runSearch = async (newPage = 1) => {
+      setLoading(true);
+      setHasSearched(true);
+    
+      try {
+        const selectedAgencyList = Array.from(selectedAgencies);
+    
+        const selectedCfrList = Array.from(selectedCfrParts);
+    
+        const data = await searchDockets(
+          query,
+          docType,
+          selectedAgencyList,
+          selectedCfrList,
+          newPage
+        );
+    
+        setResults(data.results);
+        setPagination(data.pagination);
+        setPage(newPage);
+
+      } catch (err) {
+        console.error("Search failed:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
 const advancedPayload = {
     yearFrom,
     yearTo,
@@ -65,11 +92,16 @@ const clearAdvanced = () => {
     setSelectedCfrParts(new Set());
   };
 
+
+  useEffect(()=> {
+    console.log(results)
+  },[results])
+
 return (
 <div className="page">
 <header className="topbar">
 <div className="brand">Mirrulations</div>
-<button className="btn btn-primary">Log Out</button>
+{/*<button className="btn btn-primary">Log Out</button>*/}
 </header>
 <div className="layout">
 <AdvancedSidebar
@@ -91,7 +123,7 @@ setStatus={setStatus}
 selectedCfrParts={selectedCfrParts}
 setSelectedCfrParts={setSelectedCfrParts}
 clearAdvanced={clearAdvanced}
-applyAdvanced={runSearch}
+applyAdvanced={() => runSearch(1)}
 activeCount={activeCount}
 />
 <main className="main">
@@ -105,13 +137,25 @@ query={query}
 setQuery={setQuery}
 onSubmit={(e) => {
               e.preventDefault();
-              runSearch();
+              runSearch(1);
             }}
 />
 <ResultsPanel
 advancedPayload={advancedPayload}
 results={results}
+loading={loading}
+hasSearched={hasSearched}
+
 />
+<div className="pagination-div">
+  <button className="page-button" disabled={!pagination?.hasPrev} onClick={() => runSearch(page - 1)}><ArrowLeftIcon color="white" size={32}/></button>
+
+  <span className="page-info">
+    Page {pagination?.page} of {pagination?.totalPages}
+  </span>
+
+  <button className="page-button" disabled={!pagination?.hasNext} onClick={() => runSearch(page + 1)}><ArrowRightIcon color="white" size={32}/></button>
+</div>
 </main>
 </div>
 </div>
