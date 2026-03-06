@@ -22,6 +22,7 @@ const [selectedCfrParts, setSelectedCfrParts] = useState(new Set());
 const [page, setPage] = useState(1);
 const [pagination, setPagination] = useState(null);
 const [loading, setLoading] = useState(false);
+const [hasSearched, setHasSearched] = useState(false);
 
 const TOP_AGENCIES = [
     { code: "EPA", name: "Environmental Protection Agency" },
@@ -50,6 +51,7 @@ const activeCount =
 
     const runSearch = async (newPage = 1) => {
       setLoading(true);
+      setHasSearched(true);
     
       try {
         const selectedAgencyList = Array.from(selectedAgencies);
@@ -99,7 +101,7 @@ return (
 <div className="page">
 <header className="topbar">
 <div className="brand">Mirrulations</div>
-<button className="btn btn-primary">Log Out</button>
+{/*<button className="btn btn-primary">Log Out</button>*/}
 </header>
 <div className="layout">
 <AdvancedSidebar
@@ -142,6 +144,7 @@ onSubmit={(e) => {
 advancedPayload={advancedPayload}
 results={results}
 loading={loading}
+hasSearched={hasSearched}
 
 />
 <div className="pagination-div">

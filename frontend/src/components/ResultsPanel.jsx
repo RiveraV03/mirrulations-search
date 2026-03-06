@@ -1,7 +1,7 @@
 import {ColorRing} from 'react-loader-spinner'
 const CFR_BASE_URL = "https://www.ecfr.gov/search#query";
 
-export default function ResultsPanel({ results, loading }) {
+export default function ResultsPanel({ results, loading, hasSearched }) {
 
   if (loading) {
     return (
@@ -18,7 +18,7 @@ export default function ResultsPanel({ results, loading }) {
   }
 
 
-
+  if (!hasSearched) return null;
   if (!results || results.length === 0) {
     return (
       <div className="results">
