@@ -44,7 +44,7 @@ export default function ResultsPanel({ results, loading, hasSearched }) {
               item.cfrPart.map((p, idx) => (
                 <span key={idx}>
                   <a href={p.link} target="_blank" rel="noopener noreferrer">
-                    {p.part}
+                    {p.title != null ? `${p.title} Part ${p.part}` : p.part}
                   </a>
                   {idx < item.cfrPart.length - 1 && ", "}
                 </span>
