@@ -1,17 +1,18 @@
 # mirrulations-search
+## Local Development (macOS) 
 
-## CI/CD Configuration
+This section is for running mirrulations-search **locally on your laptop**, using:
+- Python virtualenv
+- Local PostgreSQL
+- The built React frontend
 
-- Personal Access token must allow for github workflows for CI/CD to work
-
-## Dev Setup
-
-* Create a virtual environment
+* Create and activate a virtual environment
 
   ```
   python3 -m venv .venv
   source .venv/bin/activate
   ```
+
 
 * Install Dependencies
 
@@ -29,7 +30,9 @@
 
 ## How build react
 
-First CD into frontend/ and run
+First CD into frontend
+
+run
 `npm install`
 
 Then to build the project run
