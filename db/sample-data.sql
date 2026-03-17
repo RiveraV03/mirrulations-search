@@ -634,9 +634,9 @@ INSERT INTO documents(
     NULL,
     NULL,
     NULL,
-    NULL,
-    NULL,
-    NULL,
+    NULL,  -- flex_field1
+    'This is sample document text for local testing',  -- flex_field2
+    NULL,  -- first_name
     NULL,
     NULL,
     NULL,
@@ -1211,3 +1211,8 @@ INSERT INTO cfrParts(
     42,
     '512'
 );
+
+-- Ensure a sample document has text in flex_field2 for testing
+UPDATE documents
+SET flex_field2 = 'This is sample document text for local testing'
+WHERE document_id = 'CMS-2025-0240-0001';
