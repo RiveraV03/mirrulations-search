@@ -480,25 +480,41 @@ def test_text_match_terms_builds_correct_queries():
     fake_client = _FakeOpenSearch([], [])
     db = DBLayer()
     
-    db.text_match_terms(["medicare", "medicaid"], opensearch_client=fake_client)
+    terms = ["medicare", "medicaid"]
+    db.text_match_terms(terms, opensearch_client=fake_client)
     
     # Should have made 2 searches
     assert len(fake_client.searches) == 2
     
-    # Check documents query
+    # --- DOCUMENTS QUERY ---
     doc_index, doc_body = fake_client.searches[0]
     assert doc_index == "documents"
     assert doc_body["size"] == 0
-    assert "query" in doc_body
-    assert "aggs" in doc_body
+    
+    # Check multi_match is used
+    should_clauses = doc_body["query"]["bool"]["should"]
+    assert len(should_clauses) == len(terms)
+    
+    for clause, term in zip(should_clauses, terms):
+        assert "multi_match" in clause
+        assert clause["multi_match"]["query"] == term
+        assert set(clause["multi_match"]["fields"]) == {"title", "comment"}
+    
     assert doc_body["aggs"]["by_docket"]["terms"]["field"] == "docketId.keyword"
     
-    # Check comments query
+    # --- COMMENTS QUERY ---
     comment_index, comment_body = fake_client.searches[1]
     assert comment_index == "comments"
     assert comment_body["size"] == 0
-    assert "query" in comment_body
-    assert "aggs" in comment_body
+    
+    # Check match_phrase is used
+    should_clauses = comment_body["query"]["bool"]["should"]
+    assert len(should_clauses) == len(terms)
+    
+    for clause, term in zip(should_clauses, terms):
+        assert "match_phrase" in clause
+        assert clause["match_phrase"]["commentText"] == term
+    
     assert comment_body["aggs"]["by_docket"]["terms"]["field"] == "docketId.keyword"
 
 
