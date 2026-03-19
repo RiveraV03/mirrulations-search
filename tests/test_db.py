@@ -126,7 +126,8 @@ def test_get_cfr_docket_ids_single_part():
 
 
 def test_get_cfr_docket_ids_multi_part():
-    """Multiple CFR parts produce OR'd title+part ILIKE clauses against federal_register_documents"""
+    """Multiple CFR parts produce OR'd title+part ILIKE clauses
+    against federal_register_documents"""
     db = DBLayer(conn=_FakeConn([("CMS-2025-0304",), ("CMS-2025-0240",)]))
     result = db._get_cfr_docket_ids([
         {"title": "Title 42", "part": "413"},
