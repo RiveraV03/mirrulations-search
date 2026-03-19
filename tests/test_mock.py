@@ -199,6 +199,7 @@ def test_text_match_terms_returns_list(db):
     result = db.text_match_terms(["medicare"])
     assert isinstance(result, list)
 
+
 def test_text_match_terms_structure(db):
     """Results contain correct structure"""
     result = db.text_match_terms(["medicare"])
@@ -209,3 +210,36 @@ def test_text_match_terms_structure(db):
         assert isinstance(item["docket_id"], str)
         assert isinstance(item["document_match_count"], int)
         assert isinstance(item["comment_match_count"], int)
+
+
+def test_text_match_terms_finds_meaningful_use(db):
+    """Mock search finds DEA docket when searching 'meaningful use'"""
+    result = db.text_match_terms(["meaningful use"])
+    assert len(result) == 1
+    assert result[0]["docket_id"] == "DEA-2024-0059"
+    assert result[0]["document_match_count"] == 3
+    assert result[0]["comment_match_count"] == 2
+
+
+def test_text_match_terms_finds_medicare(db):
+    """Mock search finds CMS docket when searching 'medicare'"""
+    result = db.text_match_terms(["medicare"])
+    assert len(result) == 1
+    assert result[0]["docket_id"] == "CMS-2025-0240"
+    assert result[0]["document_match_count"] == 2
+    assert result[0]["comment_match_count"] == 4
+
+
+def test_text_match_terms_finds_updates(db):
+    """Mock search finds CMS docket when searching 'updates'"""
+    result = db.text_match_terms(["updates"])
+    assert len(result) == 1
+    assert result[0]["docket_id"] == "CMS-2025-0240"
+    assert result[0]["document_match_count"] == 2
+    assert result[0]["comment_match_count"] == 1
+
+
+def test_text_match_terms_no_results(db):
+    """Mock search returns empty for nonexistent term"""
+    result = db.text_match_terms(["nonexistent"])
+    assert not result
