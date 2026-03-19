@@ -110,8 +110,21 @@ class DBLayer:
     This function will compile a list of docket ids of the dockets whose
     cfr parts match the filter parameters. Returns a set of unique ids.
     """
-    # def _search_dockets_by_cfr():
-    #     return dockets
+    def _search_dockets_by_cfr(self, cfr_part_param: List[Dict[str, str]]) -> set:
+        if not cfr_part_param:
+            return set()
+        clauses = " OR ".join(
+            "(cfr_title ILIKE %s AND cfr_part ILIKE %s)"
+            for _ in cfr_part_param
+        )
+        sql = f"SELECT DISTINCT docket_id FROM federal_register_documents WHERE ({clauses})"
+        params = []
+        for c in cfr_part_param:
+            params.append(f"%{c['title']}%")
+            params.append(f"%{c['part']}%")
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            return {row[0] for row in cur.fetchall()}
     
     """
     This function will compile a list of docket ids of the dockets that hold
