@@ -100,8 +100,11 @@ class DBLayer:
     This function will compile a list of docket ids of the dockets 
     whose title matches the search term. Returns a set of unique ids.
     """
-    def _search_dockets_by_title():
-        return dockets
+    def _search_dockets_by_title(self, query: str) -> set:
+        sql = "SELECT docket_id FROM dockets WHERE docket_title ILIKE %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, [f"%{(query or '').strip().lower()}%"])
+            return {row[0] for row in cur.fetchall()}
 
     """
     This function will compile a list of docket ids of the dockets whose
