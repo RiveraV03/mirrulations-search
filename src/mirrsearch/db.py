@@ -102,17 +102,46 @@ class DBLayer:
                 }
             dockets[docket_id]["cfr_refs"][title]["cfrParts"][cfr_part] = link
 
-    def text_match_terms(self, terms: List[str]) -> List[Dict[str, Any]]:
+    def text_match_terms(self, terms: List[str], opensearch_client=None) -> List[Dict[str, Any]]:
         """
-        Search OpenSearch for dockets matching the given terms.
-        Returns list of {docket_id, doc_count, comment_count}
+        Search OpenSearch for dockets containing the given terms.
+        Returns list of {docket_id, document_match_count, comment_match_count}
         """
-        if self.conn is None:
-            return []
+        if opensearch_client is None:
+            opensearch_client = get_opensearch_connection()
 
-        # Placeholder, replace with actual OpenSearch query when we have real data
-        # For now, just return empty list
-        return []
+        query = {
+            "size": 0,
+            "query": {
+                "bool": {
+                    "should": [{"match": {"text": term}} for term in terms],
+                    "minimum_should_match": 1
+                }
+            },
+            "aggs": {
+                "by_docket": {
+                    "terms": {"field": "docket_id", "size": 1000},
+                    "aggs": {
+                        "documents": {"filter": {"term": {"type": "document"}}},
+                        "comments": {"filter": {"term": {"type": "comment"}}}
+                    }
+                }
+            }
+        }
+
+        try:
+            response = opensearch_client.search(index="regulations", body=query)
+            results = []
+            for bucket in response["aggregations"]["by_docket"]["buckets"]:
+                results.append({
+                    "docket_id": bucket["key"],
+                    "document_match_count": bucket["documents"]["doc_count"],
+                    "comment_match_count": bucket["comments"]["doc_count"]
+                })
+            return results
+        except (KeyError, AttributeError) as e:
+            print(f"OpenSearch query failed: {e}")
+            return []
 
 
 def _get_secrets_from_aws() -> Dict[str, str]:

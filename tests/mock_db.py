@@ -72,20 +72,64 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
             ]
         return results
 
+    def _opensearch_items(self) -> List[Dict[str, Any]]:
+        """Dummy OpenSearch data for text_match_terms testing"""
+        return [
+            # DEA-2024-0059 - 3 docs, 2 comments with "meaningful use"
+            {"docket_id": "DEA-2024-0059", "type": "document",
+            "text": "This document discusses meaningful use criteria"},
+            {"docket_id": "DEA-2024-0059", "type": "document",
+            "text": "Additional meaningful use requirements"},
+            {"docket_id": "DEA-2024-0059", "type": "document",
+            "text": "Final meaningful use guidelines"},
+            {"docket_id": "DEA-2024-0059", "type": "comment",
+            "text": "I support the meaningful use standards"},
+            {"docket_id": "DEA-2024-0059", "type": "comment",
+            "text": "The meaningful use criteria seem reasonable"},
+
+            # CMS-2025-0240 - 2 docs, 4 comments with "medicare" and "updates"
+            {"docket_id": "CMS-2025-0240", "type": "document",
+            "text": "Medicare program updates for 2025 including payment changes"},
+            {"docket_id": "CMS-2025-0240", "type": "document",
+            "text": "Medicare Advantage plan modifications and updates"},
+            {"docket_id": "CMS-2025-0240", "type": "comment",
+            "text": "These medicare changes will help seniors"},
+            {"docket_id": "CMS-2025-0240", "type": "comment",
+            "text": "I have concerns about medicare funding"},
+            {"docket_id": "CMS-2025-0240", "type": "comment",
+            "text": "Medicare should cover more services"},
+            {"docket_id": "CMS-2025-0240", "type": "comment",
+            "text": "Support the medicare updates"},
+        ]
+
     def text_match_terms(self, terms: List[str]) -> List[Dict[str, Any]]:
         """
-        Mock version: return hardcoded results for testing
+        Mock version of text_match_terms - searches through dummy OpenSearch data.
         """
-        # Return some fake results that match the structure
+        # Find matching items
+        matching_items = [
+            item for item in self._opensearch_items()
+            if any(term.lower() in item["text"].lower() for term in terms)
+        ]
+
+        # Group by docket and count
+        docket_counts = {}
+        for item in matching_items:
+            docket_id = item["docket_id"]
+            if docket_id not in docket_counts:
+                docket_counts[docket_id] = {"document_match_count": 0, "comment_match_count": 0}
+
+            if item["type"] == "document":
+                docket_counts[docket_id]["document_match_count"] += 1
+            elif item["type"] == "comment":
+                docket_counts[docket_id]["comment_match_count"] += 1
+
+        # Format results
         return [
             {
-                "docket_id": "CMS-2025-0240",
-                "doc_count": 5,
-                "comment_count": 150
-            },
-            {
-                "docket_id": "CMS-2024-0123",
-                "doc_count": 3,
-                "comment_count": 75
+                "docket_id": docket_id,
+                "document_match_count": counts["document_match_count"],
+                "comment_match_count": counts["comment_match_count"]
             }
+            for docket_id, counts in docket_counts.items()
         ]
