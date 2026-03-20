@@ -193,7 +193,7 @@ class DBLayer:
             print(f"OpenSearch query failed (fallback to SQL): {e}")
             return []
 
-    def get_docket_document_comment_totals(
+    def get_docket_document_comment_totals(  # pylint: disable=too-many-locals
             self,
             docket_ids: List[str],
             opensearch_client=None
@@ -268,7 +268,7 @@ class DBLayer:
             print(f"OpenSearch totals query failed (fallback zeros): {e}")
             return {}
 
-    def _run_text_match_queries(
+    def _run_text_match_queries(  # pylint: disable=too-many-locals
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
         """Execute all three OpenSearch queries and merge their results."""
         def buckets(resp):

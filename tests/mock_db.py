@@ -359,7 +359,7 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
     def get_dockets_by_ids(self, docket_ids: List[str]) -> List[Dict[str, Any]]:  # pylint: disable=unused-argument
         return []
 
-    def get_docket_document_comment_totals(
+    def get_docket_document_comment_totals(  # pylint: disable=too-many-locals
             self,
             docket_ids: List[str],
             opensearch_client=None) -> Dict[str, Dict[str, int]]:

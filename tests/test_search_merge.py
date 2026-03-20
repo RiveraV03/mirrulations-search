@@ -45,10 +45,10 @@ def test_merge_opensearch_empty_uses_sql_only_with_match_source():
     assert out["results"][0]["comment_match_count"] == 0
     assert out["results"][0]["document_total_count"] == 10
     assert out["results"][0]["comment_total_count"] == 2
-    assert db.get_dockets_by_ids_calls == []
+    assert not db.get_dockets_by_ids_calls
 
 
-def test_merge_appends_full_text_with_counts_and_order():
+def test_merge_appends_full_text_with_counts_and_order():  # pylint: disable=too-many-statements
     sql_rows = [{"docket_id": "A", "docket_title": "ta", "cfr_refs": []}]
     os_hits = [
         {"docket_id": "A", "document_match_count": 9, "comment_match_count": 1},
@@ -122,4 +122,4 @@ def test_merge_os_hits_all_title_matches_falls_back_to_title_only():
     assert out["results"][0]["comment_match_count"] == 1
     assert out["results"][0]["document_total_count"] == 10
     assert out["results"][0]["comment_total_count"] == 2
-    assert db.get_dockets_by_ids_calls == []
+    assert not db.get_dockets_by_ids_calls

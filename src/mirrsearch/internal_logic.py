@@ -29,7 +29,8 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
 
     def search(self, query, docket_type_param=None, agency=None,
                cfr_part_param=None, page=1, page_size=10):
-        # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+        # pylint: disable=too-many-arguments,too-many-positional-arguments
+        # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         """
         Search with pagination support.
 
