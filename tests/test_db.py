@@ -392,7 +392,7 @@ class _FakeOpenSearch:  # pylint: disable=too-few-public-methods
                     }
                 }
             }
-        elif index == "comments":
+        if index == "comments":
             return {
                 "aggregations": {
                     "by_docket": {
@@ -400,7 +400,7 @@ class _FakeOpenSearch:  # pylint: disable=too-few-public-methods
                     }
                 }
             }
-        elif index == "comments_extracted_text":
+        if index == "comments_extracted_text":
             return {
                 "aggregations": {
                     "by_docket": {

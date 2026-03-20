@@ -72,6 +72,7 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
             ]
         return results
 
+    # pylint: disable=line-too-long
     def _opensearch_items(self) -> Dict[str, List[Dict[str, Any]]]:
         """Dummy OpenSearch data matching real production structure"""
         return {
@@ -212,7 +213,8 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
                     "commentId": "DEA-2024-0059-24062",
                     "docketId": "DEA-2024-0059",
                     "extractedMethod": "pdfminer",
-                    "extractedText": "I am providing comments in support of the rescheduling of botanical cannabis. The Department of Health and Human Services appropriately concluded that cannabis has a currently accepted medical use"
+                    "extractedText": "I am providing comments in "
+                    "support of the rescheduling of botanical cannabis. The Department of Health and Human Services appropriately concluded that cannabis has a currently accepted medical use"
                 },
                 # CMS-2025-0240 - 4 extracted texts about Medicare/ESRD
                 {
