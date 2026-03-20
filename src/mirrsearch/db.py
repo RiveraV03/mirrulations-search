@@ -222,6 +222,93 @@ class DBLayer:
                 }
             dockets[docket_id]["cfr_refs"][title]["cfrParts"][cfr_part] = link
 
+    @staticmethod
+    def _build_docket_agg_query(agg_name: str, match_clauses: List[Dict]) -> Dict:
+        """Build a docket-bucketed aggregation query with an inner filter."""
+        return {
+            "size": 0,
+            "aggs": {
+                "by_docket": {
+                    "terms": {"field": "docketId.keyword", "size": 1000},
+                    "aggs": {
+                        agg_name: {
+                            "filter": {
+                                "bool": {
+                                    "should": match_clauses,
+                                    "minimum_should_match": 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    @staticmethod
+    def _accumulate_counts(
+            docket_counts: Dict, buckets: List, agg_name: str, count_key: str) -> None:
+        """Add match counts from OpenSearch buckets into docket_counts in place."""
+        for bucket in buckets:
+            match_count = bucket[agg_name]["doc_count"]
+            if match_count > 0:
+                docket_id = bucket["key"]
+                docket_counts.setdefault(
+                    docket_id, {"document_match_count": 0, "comment_match_count": 0}
+                )
+                docket_counts[docket_id][count_key] += match_count
+
+    def text_match_terms(
+            self, terms: List[str], opensearch_client=None) -> List[Dict[str, Any]]:
+        """
+        Search OpenSearch for dockets containing the given terms.
+
+        Searches:
+        - documents index: title and comment fields
+        - comments index: commentText field (phrase matching)
+        - comments_extracted_text index: extractedText field (from PDF attachments)
+
+        Returns list of {docket_id, document_match_count, comment_match_count}
+        """
+        if opensearch_client is None:
+            opensearch_client = get_opensearch_connection()
+        try:
+            return self._run_text_match_queries(opensearch_client, terms)
+        except (KeyError, AttributeError) as e:
+            print(f"OpenSearch query failed: {e}")
+            return []
+
+    def _run_text_match_queries(
+            self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
+        """Execute all three OpenSearch queries and merge their results."""
+        def buckets(resp):
+            return resp["aggregations"]["by_docket"]["buckets"]
+
+        docket_counts: Dict = {}
+        doc_resp = opensearch_client.search(index="documents", body=self._build_docket_agg_query(
+            "matching_docs",
+            [{"multi_match": {"query": t, "fields": ["title", "comment"]}} for t in terms]
+        ))
+        comment_resp = opensearch_client.search(index="comments", body=self._build_docket_agg_query(
+            "matching_comments",
+            [{"match_phrase": {"commentText": t}} for t in terms]
+        ))
+        extracted_resp = opensearch_client.search(
+            index="comments_extracted_text", body=self._build_docket_agg_query(
+                "matching_extracted",
+                [{"match_phrase": {"extractedText": t}} for t in terms]
+            )
+        )
+        self._accumulate_counts(
+            docket_counts, buckets(doc_resp), "matching_docs", "document_match_count"
+        )
+        self._accumulate_counts(
+            docket_counts, buckets(comment_resp), "matching_comments", "comment_match_count"
+        )
+        self._accumulate_counts(
+            docket_counts, buckets(extracted_resp), "matching_extracted", "comment_match_count"
+        )
+        return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
+
 
 def _get_secrets_from_aws() -> Dict[str, str]:
     if boto3 is None:
