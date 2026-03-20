@@ -56,6 +56,15 @@ export default function ResultsPanel({ results, loading, hasSearched }) {
             )}
             </p>
             <p><strong>Last modified date:</strong> {item.modify_date}</p>
+
+            <p className="fraction-line">
+              <strong>Documents:</strong>{' '}
+              {item.document_match_count ?? 0}/{item.document_total_count ?? 0}
+            </p>
+            <p className="fraction-line">
+              <strong>Comments:</strong>{' '}
+              {item.comment_match_count ?? 0}/{item.comment_total_count ?? 0}
+            </p>
           </div>
 
           {item.summary && (
