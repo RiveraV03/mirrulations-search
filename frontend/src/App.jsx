@@ -23,6 +23,8 @@ const [page, setPage] = useState(1);
 const [pagination, setPagination] = useState(null);
 const [loading, setLoading] = useState(false);
 const [hasSearched, setHasSearched] = useState(false);
+const [documentNumerator, setDocumentNumerator] = useState(null);
+const [documentDenominator, setDocumentDenominator] = useState(null);
 
 const TOP_AGENCIES = [
     { code: "EPA", name: "Environmental Protection Agency" },
@@ -74,6 +76,8 @@ const activeCount =
     
         setResults(data.results);
         setPagination(data.pagination);
+        setDocumentNumerator(data.documentNumerator);
+        setDocumentDenominator(data.documentDenominator);
         setPage(newPage);
 
       } catch (err) {
@@ -151,6 +155,8 @@ advancedPayload={advancedPayload}
 results={results}
 loading={loading}
 hasSearched={hasSearched}
+documentNumerator={documentNumerator}
+documentDenominator={documentDenominator}
 
 />
 <div className="pagination-div">

@@ -589,7 +589,7 @@ def test_text_match_terms_malformed_response_returns_empty():
 def test_text_match_terms_connection_error_returns_empty():
     class BadClient:  # pylint: disable=too-few-public-methods
         def search(self, index, body):  # pylint: disable=unused-argument
-            raise Exception("connection refused")
+            raise RuntimeError("connection refused")
 
     db = DBLayer()
     assert db.text_match_terms(["x"], opensearch_client=BadClient()) == []
@@ -651,7 +651,7 @@ def test_text_match_terms_missing_extracted_index_still_returns_other_hits():
                         }
                     }
                 }
-            raise Exception("index_not_found_exception")
+            raise RuntimeError("index_not_found_exception")
 
     db = DBLayer()
     results = db.text_match_terms(["medicare"], opensearch_client=MissingExtractedClient())
