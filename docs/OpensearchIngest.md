@@ -1,11 +1,13 @@
 # How to Ingest Dummy Data into OpenSearch Database
 
 This guide explains how to:
+
 - Create and Activate a virtual environment
 - Ingest dummy data
 - Verify indexed data
 
 Create/Activate Virtual Environment
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -16,29 +18,32 @@ pip install -r requirements.txt
 
 Follow `docs/OpensearchInstall.md` to start OpenSearch, then continue here.
 
-2. Ingest Dummy Data
+1. Ingest Dummy Data
 
 ```bash
-python db/ingest_docket.py
+python db/ingest_opensearch.py
 ```
 
 If successful, the script will print:
-Ingested X records into OpenSearch.
-
-3. Verify Indexed Data
 
 ```bash
-curl -X GET "localhost:9200/docket-comments/_search?pretty"
+Ingested 5 documents and 6 comments
+DEA-2024-0059: 3 docs, 2 comments (term: 'meaningful use')
+CMS-2025-0240: 2 docs, 4 comments (terms: 'medicare', 'updates')
 ```
-If the ingest worked correctly, this command will return JSON containing the indexed documents.
+
+1. Verify Indexed Data
+
+```bash
+curl "http://localhost:9200/documents/_search?pretty"
+curl "http://localhost:9200/comments/_search?pretty"
+```
+
+If the ingest worked correctly, this command will return JSON containing the
+indexed documents.
 
 Stop OpenSearch
+
 ```bash
 brew services stop opensearch
-```
-
-If you used Docker instead:
-```bash
-docker stop opensearch
-docker rm opensearch
 ```
