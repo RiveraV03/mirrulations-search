@@ -1,6 +1,7 @@
 """
 Tests for pagination functionality (header-based)
 """
+# pylint: disable=duplicate-code
 import pytest
 from mirrsearch.app import create_app
 from mirrsearch.internal_logic import InternalLogic
@@ -22,11 +23,17 @@ class MockDbLayer:  # pylint: disable=too-few-public-methods
         ]
 
 
+class MockOAuthHandler:  # pylint: disable=too-few-public-methods
+    """Mock OAuth handler that always authenticates as a test user"""
+    def validate_jwt_token(self, token):  # pylint: disable=unused-argument
+        return "Test User|test@example.com"
+
+
 @pytest.fixture
 def app():
     """Create test app with mock database"""
     mock_db = MockDbLayer()
-    test_app = create_app(db_layer=mock_db)
+    test_app = create_app(db_layer=mock_db, oauth_handler=MockOAuthHandler())
     test_app.config['TESTING'] = True
     return test_app
 
@@ -34,7 +41,9 @@ def app():
 @pytest.fixture
 def client(app):  # pylint: disable=redefined-outer-name
     """Create test client"""
-    return app.test_client()
+    c = app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+    return c
 
 
 # API Endpoint Tests - Header-based pagination
