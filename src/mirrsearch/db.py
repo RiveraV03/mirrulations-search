@@ -41,6 +41,15 @@ def _env_flag_true(var_name: str) -> bool:
     return (os.getenv(var_name) or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _cfr_part_item_pattern(item: Any) -> str:
+    """Single CFR filter value → lowercase substring, or '' if absent."""
+    if isinstance(item, dict):
+        return (item.get("part") or "").strip().lower()
+    if item is None:
+        return ""
+    return str(item).strip().lower()
+
+
 def cfr_part_filter_patterns(cfr_part_param) -> List[str]:
     """
     Build lowercase substring patterns for CFR part filtering (OpenSearch merge path).
@@ -49,17 +58,19 @@ def cfr_part_filter_patterns(cfr_part_param) -> List[str]:
     """
     if not cfr_part_param:
         return []
-    patterns: List[str] = []
-    for item in cfr_part_param:
-        if isinstance(item, dict):
-            part = (item.get("part") or "").strip()
-            if part:
-                patterns.append(part.lower())
-        else:
-            s = str(item).strip()
-            if s:
-                patterns.append(s.lower())
-    return patterns
+    return [p for p in (_cfr_part_item_pattern(i) for i in cfr_part_param) if p]
+
+
+def _parse_positive_int_env(var_name: str, default: int) -> int:
+    """Like port parsing but only enforces value >= 1 (empty/invalid → default)."""
+    raw = (os.getenv(var_name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(1, value)
 
 
 def _opensearch_match_docket_bucket_size() -> int:
@@ -70,7 +81,7 @@ def _opensearch_match_docket_bucket_size() -> int:
     For a huge index, raise OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE (memory cost grows
     with this and with per-docket sub-aggs).
     """
-    return max(1, int(os.getenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "50000")))
+    return _parse_positive_int_env("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", 50000)
 
 
 def _opensearch_comment_id_terms_size() -> int:
@@ -81,7 +92,7 @@ def _opensearch_comment_id_terms_size() -> int:
     65535). Increase only if operators raise that limit. Set
     OPENSEARCH_COMMENT_ID_TERMS_SIZE explicitly for larger allowed bucket counts.
     """
-    return max(1, int(os.getenv("OPENSEARCH_COMMENT_ID_TERMS_SIZE", "65535")))
+    return _parse_positive_int_env("OPENSEARCH_COMMENT_ID_TERMS_SIZE", 65535)
 
 
 @dataclass(frozen=True)
@@ -130,10 +141,11 @@ class DBLayer:
             sql += f" AND ({clauses})"
             params.extend(f"%{a}%" for a in agency)
 
-        if cfr_part_param:
-            clauses = " OR ".join("cp.cfrPart ILIKE %s" for _ in cfr_part_param)
+        cfr_patterns = cfr_part_filter_patterns(cfr_part_param)
+        if cfr_patterns:
+            clauses = " OR ".join("cp.cfrPart ILIKE %s" for _ in cfr_patterns)
             sql += f" AND ({clauses})"
-            params.extend(f"%{c}%" for c in cfr_part_param)
+            params.extend(f"%{p}%" for p in cfr_patterns)
 
         sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart LIMIT 50"
 
@@ -536,14 +548,15 @@ def _opensearch_use_ssl_from_env(user: str, password: str) -> bool:
         return False
     if _env_flag_true("OPENSEARCH_USE_SSL"):
         return True
-    if not raw and user and password:
-        return True
-    return False
+    return bool(not raw and user and password)
 
 
-def get_opensearch_connection() -> OpenSearch:
-    if LOAD_DOTENV is not None:
-        LOAD_DOTENV()
+def _opensearch_client_kwargs() -> Dict[str, Any]:
+    """
+    Build keyword args for :class:`~opensearchpy.OpenSearch`.
+
+    Extracted so :func:`get_opensearch_connection` stays small for pylint.
+    """
     host = (os.getenv("OPENSEARCH_HOST") or "localhost").strip() or "localhost"
     port = _parse_opensearch_port_env("OPENSEARCH_PORT", 9200)
     user = (os.getenv("OPENSEARCH_USER") or os.getenv("OPENSEARCH_USERNAME") or "").strip()
@@ -552,22 +565,25 @@ def get_opensearch_connection() -> OpenSearch:
         or os.getenv("OPENSEARCH_INITIAL_ADMIN_PASSWORD")
         or ""
     ).strip()
-    http_auth = (user, password) if user and password else None
-    # Demo / production installs often use HTTPS + basic auth on 9200.
     use_ssl = _opensearch_use_ssl_from_env(user, password)
-    verify_certs = _env_flag_true("OPENSEARCH_VERIFY_CERTS")
+    verify = _env_flag_true("OPENSEARCH_VERIFY_CERTS")
     host_entry: Dict[str, Any] = {"host": host, "port": port}
     if use_ssl:
         host_entry["scheme"] = "https"
     kwargs: Dict[str, Any] = {
         "hosts": [host_entry],
         "use_ssl": use_ssl,
-        "verify_certs": verify_certs if use_ssl else False,
+        "verify_certs": verify if use_ssl else False,
         "ssl_show_warn": False,
     }
-    if use_ssl and not verify_certs:
-        # Self-signed demo certs; avoid hostname mismatch errors.
+    if use_ssl and not verify:
         kwargs["ssl_assert_hostname"] = False
-    if http_auth is not None:
-        kwargs["http_auth"] = http_auth
-    return OpenSearch(**kwargs)
+    if user and password:
+        kwargs["http_auth"] = (user, password)
+    return kwargs
+
+
+def get_opensearch_connection() -> OpenSearch:
+    if LOAD_DOTENV is not None:
+        LOAD_DOTENV()
+    return OpenSearch(**_opensearch_client_kwargs())
