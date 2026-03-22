@@ -26,6 +26,9 @@ DB_USER=postgres
 DB_PASSWORD=postgres
 OPENSEARCH_HOST=localhost
 OPENSEARCH_PORT=9200
+OPENSEARCH_USE_SSL=true
+OPENSEARCH_USER=admin
+OPENSEARCH_PASSWORD=M1rrulations!Search
 ENVEOF
     echo "Created .env with defaults (edit for RDS or custom credentials)"
 fi

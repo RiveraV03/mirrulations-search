@@ -3,17 +3,22 @@ Ingest real production-like data into local OpenSearch matching the actual struc
 Uses separate indices for documents, comments, and comments_extracted_text.
 """
 
-from opensearchpy import OpenSearch
+import sys
+from pathlib import Path
+
+# Allow `python db/ingest_opensearch.py` from repo root without PYTHONPATH.
+_ROOT = Path(__file__).resolve().parent.parent
+_src = _ROOT / "src"
+if _src.is_dir() and str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
+from mirrsearch.db import get_opensearch_connection  # pylint: disable=wrong-import-position
 
 
 def ingest_opensearch():
     """Insert production-like documents, comments, and extracted text into local OpenSearch."""
     try:
-        client = OpenSearch(
-            hosts=[{"host": "localhost", "port": 9200}],
-            use_ssl=False,
-            verify_certs=False,
-        )
+        client = get_opensearch_connection()
         # Force a request early so we can exit gracefully if OpenSearch is down.
         client.info()
     except Exception as e:  # pylint: disable=broad-exception-caught

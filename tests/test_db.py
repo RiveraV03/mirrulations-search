@@ -434,6 +434,27 @@ def test_get_opensearch_connection(monkeypatch):
     assert captured["hosts"] == [{"host": "localhost", "port": 9200}]
     assert captured["use_ssl"] is False
     assert captured["verify_certs"] is False
+    assert "http_auth" not in captured
+
+
+def test_get_opensearch_connection_https_and_basic_auth(monkeypatch):
+    captured = {}
+
+    def fake_opensearch(**kwargs):
+        captured.update(kwargs)
+        return "client"
+
+    monkeypatch.setattr(db_module, "OpenSearch", fake_opensearch)
+    monkeypatch.setenv("OPENSEARCH_USE_SSL", "true")
+    monkeypatch.setenv("OPENSEARCH_USER", "admin")
+    monkeypatch.setenv("OPENSEARCH_PASSWORD", "secret")
+
+    client = db_module.get_opensearch_connection()
+
+    assert client == "client"
+    assert captured["use_ssl"] is True
+    assert captured["verify_certs"] is False
+    assert captured["http_auth"] == ("admin", "secret")
 
 
 # --- OpenSearch text_match_terms tests ---

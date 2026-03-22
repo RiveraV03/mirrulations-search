@@ -1,5 +1,21 @@
 ## Database Overview
 
+### App ↔ OpenSearch on a secured node (e.g. EC2 + demo security)
+
+If OpenSearch uses **HTTPS** and **basic auth** on port 9200 (typical after `install_demo_configuration.sh`), set in `.env`:
+
+- `OPENSEARCH_USE_SSL=true`
+- `OPENSEARCH_USER=admin`
+- `OPENSEARCH_PASSWORD=…` (same value you used for `OPENSEARCH_INITIAL_ADMIN_PASSWORD` at install), **or** set `OPENSEARCH_INITIAL_ADMIN_PASSWORD` and the app will use it as the password.
+
+Optional: `OPENSEARCH_VERIFY_CERTS=true` if you install a trusted CA (default is `false` for self-signed demo certs).
+
+`curl` must use `https://localhost:9200` with `-k` and `-u admin:…`, not plain `http://`.
+
+If `_search` returns **`index_not_found_exception`** for `documents` / `comments`, the cluster is reachable but **indices were never created** — run ingestion (e.g. `python db/ingest_opensearch.py` from the repo with the same `.env`), or restore from your production index snapshot.
+
+---
+
 Search aggregations use OpenSearch `terms` buckets, which **require an explicit `size`** (there is no unbounded “return all” mode). Defaults in code aim for typical cluster limits (e.g. `max_terms_count` ~65535 for comment IDs per docket). Tune for very large dockets with:
 
 - `OPENSEARCH_COMMENT_ID_TERMS_SIZE` — distinct `commentId` buckets per docket (must align with cluster/index `max_terms_count` if raised).
