@@ -1,5 +1,7 @@
 """Internal logic module for search operations with pagination"""
-from mirrsearch.db import get_db
+from datetime import date, datetime
+
+from mirrsearch.db import cfr_part_filter_patterns, get_db
 
 
 def _correlation_score(row, support_k=10):
@@ -33,19 +35,6 @@ def _cfr_part_patterns_match_row(row, patterns):
     return False
 
 
-def _cfr_filter_to_part_patterns(cfr_part_param):
-    """Normalize API/DB CFR filter to lowercase substrings (ILIKE %% semantics on cfrPart)."""
-    patterns = []
-    for spec in cfr_part_param or []:
-        if isinstance(spec, dict):
-            part = spec.get("part")
-            if part is not None and str(part).strip():
-                patterns.append(str(part).strip().lower())
-        elif spec is not None and str(spec).strip():
-            patterns.append(str(spec).strip().lower())
-    return patterns
-
-
 def _docket_type_matches_filter(row, docket_type_param):
     """Postgres: d.docket_type = %s when filter set."""
     return not docket_type_param or row.get("docket_type") == docket_type_param
@@ -63,8 +52,21 @@ def _cfr_matches_filter(row, cfr_part_param):
     """Postgres: OR of cp.cfrPart ILIKE when CFR filter set."""
     if not cfr_part_param:
         return True
-    patterns = _cfr_filter_to_part_patterns(cfr_part_param)
+    patterns = cfr_part_filter_patterns(cfr_part_param)
     return not patterns or _cfr_part_patterns_match_row(row, patterns)
+
+
+def _json_safe_scalar(value):
+    """Convert DB/driver values that jsonify may not handle on all Flask/Python combos."""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def _sanitize_search_row_for_json(row):
+    """In-place: e.g. Postgres returns datetime for modify_date."""
+    if "modify_date" in row:
+        row["modify_date"] = _json_safe_scalar(row["modify_date"])
 
 
 def _row_matches_advanced_filters(row, docket_type_param, agency, cfr_part_param):
@@ -182,6 +184,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
 
         page_results = all_results[start_idx:end_idx]
         for result in page_results:
+            _sanitize_search_row_for_json(result)
             cfr_refs = result.pop("cfr_refs", None)
             if cfr_refs is not None:
                 result["cfrPart"] = [

@@ -1,5 +1,7 @@
 # pylint: disable=too-few-public-methods,unused-argument
 """Tests for OpenSearch merge path in InternalLogic.search()."""
+from datetime import date
+
 from mirrsearch.internal_logic import InternalLogic
 
 
@@ -29,6 +31,22 @@ class _FakeDbMerge:
             "C": {"document_total_count": 7, "comment_total_count": 3},
         }
         return {d: totals[d] for d in dids if d in totals}
+
+
+def test_search_json_sanitizes_modify_date():
+    """Postgres-style date objects become ISO strings for JSON responses."""
+    sql_rows = [
+        {
+            "docket_id": "A",
+            "docket_title": "t",
+            "cfr_refs": [],
+            "modify_date": date(2024, 6, 15),
+        },
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits=[], by_id_rows=[])
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", page=1, page_size=10)
+    assert out["results"][0]["modify_date"] == "2024-06-15"
 
 
 def test_merge_opensearch_empty_uses_sql_only_with_match_source():

@@ -18,6 +18,56 @@ else:
     LOAD_DOTENV = load_dotenv
 
 
+def _parse_positive_int_env(var_name: str, default: int, *, minimum: int = 1) -> int:
+    """
+    Read a positive int from the environment.
+
+    On Linux servers, .env often contains empty values (e.g. OPENSEARCH_PORT=).
+    os.getenv then returns '', and int('') raises ValueError — which surfaced as
+    HTTP 500 before any OpenSearch try/except ran.
+    """
+    raw = os.getenv(var_name)
+    if raw is None or not str(raw).strip():
+        return max(minimum, default)
+    try:
+        value = int(str(raw).strip(), 10)
+    except ValueError:
+        return max(minimum, default)
+    return max(minimum, value)
+
+
+def _parse_opensearch_port_env(var_name: str, default: int = 9200) -> int:
+    """Port for OpenSearch client; blank or invalid env falls back to default."""
+    raw = os.getenv(var_name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        port = int(str(raw).strip(), 10)
+    except ValueError:
+        return default
+    if 1 <= port <= 65535:
+        return port
+    return default
+
+
+def cfr_part_filter_patterns(cfr_part_param: List[Any]) -> List[str]:
+    """
+    Normalize CFR filters from the API (strings or {title, part} dicts).
+
+    Returns lowercase substrings for SQL ILIKE and for Python substring checks
+    (internal_logic full-text post-filter).
+    """
+    patterns = []
+    for spec in cfr_part_param or []:
+        if isinstance(spec, dict):
+            part = spec.get("part")
+            if part is not None and str(part).strip():
+                patterns.append(str(part).strip().lower())
+        elif spec is not None and str(spec).strip():
+            patterns.append(str(spec).strip().lower())
+    return patterns
+
+
 def _opensearch_match_docket_bucket_size() -> int:
     """
     How many docket buckets to request for corpus-wide match aggregations.
@@ -26,7 +76,8 @@ def _opensearch_match_docket_bucket_size() -> int:
     For a huge index, raise OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE (memory cost grows
     with this and with per-docket sub-aggs).
     """
-    return max(1, int(os.getenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "50000")))
+    return _parse_positive_int_env(
+        "OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", 50000, minimum=1)
 
 
 def _opensearch_comment_id_terms_size() -> int:
@@ -37,7 +88,8 @@ def _opensearch_comment_id_terms_size() -> int:
     65535). Increase only if operators raise that limit. Set
     OPENSEARCH_COMMENT_ID_TERMS_SIZE explicitly for larger allowed bucket counts.
     """
-    return max(1, int(os.getenv("OPENSEARCH_COMMENT_ID_TERMS_SIZE", "65535")))
+    return _parse_positive_int_env(
+        "OPENSEARCH_COMMENT_ID_TERMS_SIZE", 65535, minimum=1)
 
 
 @dataclass(frozen=True)
@@ -55,7 +107,7 @@ class DBLayer:
             return []
         return self._search_dockets_postgres(query, docket_type_param, agency, cfr_part_param)
 
-    def _search_dockets_postgres(  # pylint: disable=too-many-locals
+    def _search_dockets_postgres(  # pylint: disable=too-many-locals,too-many-statements
             self, query: str, docket_type_param: str = None,
             agency: List[str] = None,
             cfr_part_param: List[str] = None) -> List[Dict[str, Any]]:
@@ -87,9 +139,11 @@ class DBLayer:
             params.extend(f"%{a}%" for a in agency)
 
         if cfr_part_param:
-            clauses = " OR ".join("cp.cfrPart ILIKE %s" for _ in cfr_part_param)
-            sql += f" AND ({clauses})"
-            params.extend(f"%{c}%" for c in cfr_part_param)
+            cfr_patterns = cfr_part_filter_patterns(cfr_part_param)
+            if cfr_patterns:
+                clauses = " OR ".join("cp.cfrPart ILIKE %s" for _ in cfr_patterns)
+                sql += f" AND ({clauses})"
+                params.extend(f"%{p}%" for p in cfr_patterns)
 
         sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart LIMIT 50"
 
@@ -271,9 +325,9 @@ class DBLayer:
         (body and/or extracted text); multiple hits in one comment or multiple
         extracted chunks for the same comment still count as one.
         """
-        if opensearch_client is None:
-            opensearch_client = get_opensearch_connection()
         try:
+            if opensearch_client is None:
+                opensearch_client = get_opensearch_connection()
             return self._run_text_match_queries(opensearch_client, terms)
         except (KeyError, AttributeError) as e:
             # Malformed responses are treated as "no OpenSearch hits"
@@ -327,10 +381,10 @@ class DBLayer:
         if not docket_ids:
             return {}
 
-        if opensearch_client is None:
-            opensearch_client = get_opensearch_connection()
-
         try:
+            if opensearch_client is None:
+                opensearch_client = get_opensearch_connection()
+
             doc_query = {
                 "size": 0,
                 "query": {
@@ -482,11 +536,10 @@ def get_db() -> DBLayer:
 def get_opensearch_connection() -> OpenSearch:
     if LOAD_DOTENV is not None:
         LOAD_DOTENV()
+    host = (os.getenv("OPENSEARCH_HOST") or "localhost").strip() or "localhost"
+    port = _parse_opensearch_port_env("OPENSEARCH_PORT", 9200)
     return OpenSearch(
-        hosts=[{
-            "host": os.getenv("OPENSEARCH_HOST", "localhost"),
-            "port": int(os.getenv("OPENSEARCH_PORT", "9200")),
-        }],
+        hosts=[{"host": host, "port": port}],
         use_ssl=False,
         verify_certs=False,
     )

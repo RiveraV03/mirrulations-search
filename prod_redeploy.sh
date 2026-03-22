@@ -23,6 +23,8 @@ DB_PORT=5432
 DB_NAME=mirrulations
 DB_USER=postgres
 DB_PASSWORD=postgres
+OPENSEARCH_HOST=localhost
+OPENSEARCH_PORT=9200
 ENVEOF
     echo "Created .env with defaults (edit for RDS or custom credentials)"
 fi

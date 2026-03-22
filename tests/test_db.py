@@ -122,6 +122,65 @@ def test_search_dockets_postgres_no_filter_no_extra_clauses():
     assert params == ["%abc%"]
 
 
+def test_search_dockets_postgres_cfr_filter_from_api_dict():
+    """cfr_part as list of {title, part} dicts (from Flask) becomes ILIKE on cfrPart."""
+    db = DBLayer(conn=_FakeConn([]))
+    db._search_dockets_postgres(
+        "renal",
+        cfr_part_param=[{"title": "42 CFR Parts 413 and 512", "part": "413"}],
+    )
+    sql, params = db.conn.cursor_obj.executed
+    assert "cp.cfrPart ILIKE %s" in sql
+    assert params == ["%renal%", "%413%"]
+
+
+def test_search_dockets_postgres_cfr_empty_dict_skips_cfr_clause():
+    """Dict with empty part does not add CFR SQL (avoids bogus %%dict%% params)."""
+    db = DBLayer(conn=_FakeConn([]))
+    db._search_dockets_postgres("x", cfr_part_param=[{"title": "t", "part": ""}])
+    sql, _params = db.conn.cursor_obj.executed
+    assert "cp.cfrPart ILIKE" not in sql
+
+
+def test_get_opensearch_connection_blank_port_no_crash(monkeypatch):
+    """Empty OPENSEARCH_PORT in .env must not raise int('') (was HTTP 500)."""
+    monkeypatch.setenv("OPENSEARCH_PORT", "")
+    assert db_module.get_opensearch_connection() is not None
+
+
+def test_opensearch_bucket_size_blank_env_defaults(monkeypatch):
+    monkeypatch.setenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "")
+    assert db_module._opensearch_match_docket_bucket_size() == 50000
+
+
+def test_opensearch_bucket_size_invalid_env_defaults(monkeypatch):
+    monkeypatch.setenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "not-a-number")
+    assert db_module._opensearch_match_docket_bucket_size() == 50000
+
+
+def test_opensearch_comment_id_size_blank_env_defaults(monkeypatch):
+    monkeypatch.setenv("OPENSEARCH_COMMENT_ID_TERMS_SIZE", "")
+    assert db_module._opensearch_comment_id_terms_size() == 65535
+
+
+def test_get_opensearch_connection_invalid_port_env_defaults(monkeypatch):
+    monkeypatch.setenv("OPENSEARCH_PORT", "not-a-port")
+    assert db_module.get_opensearch_connection() is not None
+
+
+def test_get_opensearch_connection_port_out_of_range_defaults(monkeypatch):
+    monkeypatch.setenv("OPENSEARCH_PORT", "70000")
+    assert db_module.get_opensearch_connection() is not None
+
+
+def test_search_dockets_postgres_cfr_filter_plain_string():
+    db = DBLayer(conn=_FakeConn([]))
+    db._search_dockets_postgres("z", cfr_part_param=["413"])
+    sql, params = db.conn.cursor_obj.executed
+    assert "cp.cfrPart ILIKE %s" in sql
+    assert params == ["%z%", "%413%"]
+
+
 # --- _search_dockets_postgres tests ---
 
 def test_search_dockets_postgres_empty_results():
