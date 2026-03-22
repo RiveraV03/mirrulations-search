@@ -144,38 +144,27 @@ class DBLayer:
         """
         return title_ids | cfr_ids | doc_title_ids
 
-    def _search_dockets(  # pylint: disable=too-many-locals
-            self, query: str, docket_type_param: str = None,
-            agency: List[str] = None,
-            cfr_part_param: List[str] = None) -> List[Dict[str, Any]]:
-        """
-        Return the list of all the unique dockets & the corresponding
-        information needed for the frontend display by joining tables & pulling out the
-        right fields for each docket.
-        """
-        title_ids = self._search_dockets_by_title(query)
-        doc_title_ids = self._search_dockets_by_document_title(query)
-        text_ids = title_ids | doc_title_ids
+    def _apply_filters(self, sql: str, params: list, docket_type_param: str, agency: List[str]):
+        """Append optional WHERE clauses and return updated sql, params."""
+        if docket_type_param:
+            sql += " AND d.docket_type = %s"
+            params.append(docket_type_param)
+        if agency:
+            clauses = " OR ".join("d.agency_id ILIKE %s" for _ in agency)
+            sql += f" AND ({clauses})"
+            params.extend(f"%{a}%" for a in agency)
+        return sql, params
 
-        if cfr_part_param:
-            cfr_ids = self._search_dockets_by_cfr(cfr_part_param)
-            docket_ids = text_ids & cfr_ids  # intersection: must match both
-        else:
-            docket_ids = text_ids
-
-        if not docket_ids:
-            return []
-
+    def _fetch_dockets( # pylint: disable=too-many-locals
+                       self,
+                       docket_ids: set,
+                       docket_type_param: str,
+                       agency: List[str]) -> List[Dict[str, Any]]:
+        """Run the final JOIN query for the given docket_ids and return results."""
         sql = """
             SELECT DISTINCT
-                d.docket_id,
-                d.docket_title,
-                d.agency_id,
-                d.docket_type,
-                d.modify_date,
-                cp.title,
-                cp.cfrpart,
-                l.link
+                d.docket_id, d.docket_title, d.agency_id, d.docket_type,
+                d.modify_date, cp.title, cp.cfrpart, l.link
             FROM dockets d
             JOIN documents doc ON doc.docket_id = d.docket_id
             LEFT JOIN cfrparts cp ON cp.document_id = doc.document_id
@@ -183,16 +172,7 @@ class DBLayer:
             WHERE d.docket_id = ANY(%s)
         """
         params = [list(docket_ids)]
-
-        if docket_type_param:
-            sql += " AND d.docket_type = %s"
-            params.append(docket_type_param)
-
-        if agency:
-            clauses = " OR ".join("d.agency_id ILIKE %s" for _ in agency)
-            sql += f" AND ({clauses})"
-            params.extend(f"%{a}%" for a in agency)
-
+        sql, params = self._apply_filters(sql, params, docket_type_param, agency)
         sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrpart LIMIT 50"
 
         with self.conn.cursor() as cur:
@@ -200,10 +180,26 @@ class DBLayer:
             dockets = {}
             for row in cur.fetchall():
                 self._process_docket_row(dockets, row)
-            return [
-                {**d, "cfr_refs": list(d["cfr_refs"].values())}
-                for d in dockets.values()
-            ]
+            return [{**d, "cfr_refs": list(d["cfr_refs"].values())} for d in dockets.values()]
+
+    def _search_dockets( # pylint: disable=too-many-locals
+            self, query: str, docket_type_param: str = None,
+            agency: List[str] = None,
+            cfr_part_param: List[str] = None) -> List[Dict[str, Any]]:
+        title_ids = self._search_dockets_by_title(query)
+        doc_title_ids = self._search_dockets_by_document_title(query)
+        text_ids = title_ids | doc_title_ids
+
+        if cfr_part_param:
+            cfr_ids = self._search_dockets_by_cfr(cfr_part_param)
+            docket_ids = text_ids & cfr_ids
+        else:
+            docket_ids = text_ids
+
+        if not docket_ids:
+            return []
+
+        return self._fetch_dockets(docket_ids, docket_type_param, agency)
 
 
     @staticmethod
