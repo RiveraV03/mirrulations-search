@@ -32,13 +32,30 @@ fi
 [[ -f .env ]] && source .env
 DB_HOST="${DB_HOST:-localhost}"
 
+# Add swap if not already present (needed for OpenSearch on small instances)
+if ! swapon --show | grep -q /swapfile; then
+    sudo dd if=/dev/zero of=/swapfile bs=128M count=16
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo '/swapfile swap swap defaults 0 0' | sudo tee -a /etc/fstab
+fi
+
+# Install OpenSearch
 if [[ ! -f /usr/share/opensearch/bin/opensearch ]]; then
     sudo curl -SL https://artifacts.opensearch.org/releases/bundle/opensearch/3.x/opensearch-3.x.repo \
         -o /etc/yum.repos.d/opensearch-3.x.repo
     export OPENSEARCH_INITIAL_ADMIN_PASSWORD='M1rrulations!Search'
     sudo -E yum install -y opensearch
+
+    # Run demo config manually with password (install scriptlet fails without it)
+    sudo OPENSEARCH_INITIAL_ADMIN_PASSWORD='M1rrulations!Search' \
+        /usr/share/opensearch/plugins/opensearch-security/tools/install_demo_configuration.sh -y -i -s
+
+    # Lower heap for small EC2 instances
     sudo sed -i 's/-Xms1g/-Xms256m/' /etc/opensearch/jvm.options
     sudo sed -i 's/-Xmx1g/-Xmx256m/' /etc/opensearch/jvm.options
+
     sudo systemctl enable opensearch
     sudo systemctl start opensearch
 fi
