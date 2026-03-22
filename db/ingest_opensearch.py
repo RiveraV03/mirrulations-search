@@ -322,6 +322,16 @@ def ingest_opensearch():
             "docketId": "CMS-2019-0100"
         },
         {
+            "commentId": "CMS-2025-0304-0001",
+            "commentText": "Medicare Shared Savings Program requirements for calendar year 2026",
+            "docketId": "CMS-2025-0304"
+        },
+        {
+            "commentId": "CMS-2025-0304-0002",
+            "commentText": "Medicare Prescription Drug Inflation Rebate Program updates and Part B coverage policy changes",
+            "docketId": "CMS-2025-0304"
+        },
+        {
             "commentId": "DEA-2024-0059-16885",
             "commentText": "Official Comment Drug Enforcement Agency ,<br/><br/>I am writing to express my support for the proposal to reclassify marijuana from a Schedule I to a Schedule III substance under the Controlled Substances Act. <br/><br/>This is an important step toward a change in marijuana policy that addresses the decades-long discrimination against Black and Brown communities.",
             "docketId": "DEA-2024-0059"

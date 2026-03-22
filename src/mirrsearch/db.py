@@ -312,7 +312,7 @@ class DBLayer:
             },
         }
 
-    def get_docket_document_comment_totals(  # pylint: disable=too-many-locals
+    def get_docket_document_comment_totals(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
             self,
             docket_ids: List[str],
             opensearch_client=None

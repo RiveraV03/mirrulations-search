@@ -274,7 +274,7 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
             ]
         }
 
-    def text_match_terms(  # pylint: disable=too-many-locals,unused-argument
+    def text_match_terms(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements,unused-argument
             self,
             terms: List[str],
             opensearch_client=None) -> List[Dict[str, Any]]:
@@ -349,7 +349,7 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
     def get_dockets_by_ids(self, docket_ids: List[str]) -> List[Dict[str, Any]]:  # pylint: disable=unused-argument
         return []
 
-    def get_docket_document_comment_totals(  # pylint: disable=too-many-locals
+    def get_docket_document_comment_totals(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
             self,
             docket_ids: List[str],
             opensearch_client=None) -> Dict[str, Dict[str, int]]:
