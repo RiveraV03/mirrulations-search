@@ -1,5 +1,12 @@
 ## Database Overview
 
+Search aggregations use OpenSearch `terms` buckets, which **require an explicit `size`** (there is no unbounded “return all” mode). Defaults in code aim for typical cluster limits (e.g. `max_terms_count` ~65535 for comment IDs per docket). Tune for very large dockets with:
+
+- `OPENSEARCH_COMMENT_ID_TERMS_SIZE` — distinct `commentId` buckets per docket (must align with cluster/index `max_terms_count` if raised).
+- `OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE` — how many docket buckets to return for corpus-wide text match queries (trade memory/latency vs completeness).
+
+If a single docket can exceed those limits, counts may be approximate unless you move to a **composite aggregation** (paged) or a different counting strategy.
+
 There are three OpenSearch indices:
 
 - `comments`

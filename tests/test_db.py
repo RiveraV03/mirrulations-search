@@ -379,6 +379,18 @@ def test_get_opensearch_connection(monkeypatch):
 
 # --- OpenSearch text_match_terms tests ---
 
+def _fake_os_comment_agg_bucket(docket_key: str, agg_name: str, *comment_ids: str):
+    """Build a by_docket bucket with unique commentId terms (mirrors OpenSearch shape)."""
+    uniq = sorted(set(comment_ids))
+    return {
+        "key": docket_key,
+        agg_name: {
+            "doc_count": len(uniq),
+            "by_comment": {"buckets": [{"key": cid} for cid in uniq]},
+        },
+    }
+
+
 class _FakeOpenSearch:  # pylint: disable=too-few-public-methods
     """Fake OpenSearch client that returns canned responses for multiple indices"""
     def __init__(self, doc_buckets, comment_buckets, extracted_buckets):
@@ -421,10 +433,18 @@ def test_text_match_terms_searches_comments_and_extracted():
     """Test text_match_terms searches comments and extracted text"""
     doc_buckets = []
     comment_buckets = [
-        {"key": "CMS-2025-0240", "matching_comments": {"doc_count": 2}}
+        _fake_os_comment_agg_bucket(
+            "CMS-2025-0240", "matching_comments", "CMS-2025-0240-a", "CMS-2025-0240-b")
     ]
     extracted_buckets = [
-        {"key": "CMS-2025-0240", "matching_extracted": {"doc_count": 4}}
+        _fake_os_comment_agg_bucket(
+            "CMS-2025-0240",
+            "matching_extracted",
+            "CMS-2025-0240-e1",
+            "CMS-2025-0240-e2",
+            "CMS-2025-0240-e3",
+            "CMS-2025-0240-e4",
+        )
     ]
 
     fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
@@ -448,10 +468,10 @@ def test_text_match_terms_combines_comment_sources():
     """Test that comments and extracted text are both counted as comments"""
     doc_buckets = []
     comment_buckets = [
-        {"key": "DEA-2024-0059", "matching_comments": {"doc_count": 1}}
+        _fake_os_comment_agg_bucket("DEA-2024-0059", "matching_comments", "DEA-2024-0059-c1")
     ]
     extracted_buckets = [
-        {"key": "DEA-2024-0059", "matching_extracted": {"doc_count": 1}}
+        _fake_os_comment_agg_bucket("DEA-2024-0059", "matching_extracted", "DEA-2024-0059-e1")
     ]
 
     fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
@@ -464,15 +484,40 @@ def test_text_match_terms_combines_comment_sources():
     assert results[0]["comment_match_count"] == 2  # 1 comment + 1 extracted
 
 
+def test_text_match_terms_same_comment_id_body_and_extracted_counts_once():
+    """One logical comment matching in both commentText and extractedText counts once."""
+    doc_buckets = []
+    comment_buckets = [
+        _fake_os_comment_agg_bucket("D1", "matching_comments", "SHARED-COMMENT-ID"),
+    ]
+    extracted_buckets = [
+        _fake_os_comment_agg_bucket("D1", "matching_extracted", "SHARED-COMMENT-ID"),
+    ]
+    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+    db = DBLayer()
+    results = db.text_match_terms(["x"], opensearch_client=fake_client)
+    assert len(results) == 1
+    assert results[0]["docket_id"] == "D1"
+    assert results[0]["comment_match_count"] == 1
+
+
 def test_text_match_terms_multiple_dockets_comments():
     """Test searching comments across multiple dockets"""
     doc_buckets = []
     comment_buckets = [
-        {"key": "CMS-2025-0240", "matching_comments": {"doc_count": 2}},
-        {"key": "DEA-2024-0059", "matching_comments": {"doc_count": 1}}
+        _fake_os_comment_agg_bucket(
+            "CMS-2025-0240", "matching_comments", "CMS-2025-0240-a", "CMS-2025-0240-b"),
+        _fake_os_comment_agg_bucket("DEA-2024-0059", "matching_comments", "DEA-2024-0059-c1"),
     ]
     extracted_buckets = [
-        {"key": "CMS-2025-0240", "matching_extracted": {"doc_count": 4}}
+        _fake_os_comment_agg_bucket(
+            "CMS-2025-0240",
+            "matching_extracted",
+            "CMS-2025-0240-e1",
+            "CMS-2025-0240-e2",
+            "CMS-2025-0240-e3",
+            "CMS-2025-0240-e4",
+        )
     ]
 
     fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
@@ -506,17 +551,29 @@ def test_text_match_terms_uses_filtered_aggregations():
     assert "aggs" in comment_body
     assert "matching_comments" in comment_body["aggs"]["by_docket"]["aggs"]
     assert "filter" in comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]
+    assert "by_comment" in comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]["aggs"]
 
     # Check extracted text query structure
     extracted_index, extracted_body = fake_client.searches[2]
     assert extracted_index == "comments_extracted_text"
     assert "matching_extracted" in extracted_body["aggs"]["by_docket"]["aggs"]
+    assert "by_comment" in extracted_body["aggs"]["by_docket"]["aggs"]["matching_extracted"]["aggs"]
 
 
 def test_text_match_terms_returns_correct_structure():
     """Verify each result has the required fields"""
     doc_buckets = []
-    comment_buckets = [{"key": "TEST-001", "matching_comments": {"doc_count": 5}}]
+    comment_buckets = [
+        _fake_os_comment_agg_bucket(
+            "TEST-001",
+            "matching_comments",
+            "T1",
+            "T2",
+            "T3",
+            "T4",
+            "T5",
+        )
+    ]
     extracted_buckets = []
 
     fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
@@ -547,8 +604,11 @@ def test_text_match_terms_only_returns_comment_matches():
     """Only dockets with comment match_count > 0 are included"""
     doc_buckets = []
     comment_buckets = [
-        {"key": "HAS-MATCH", "matching_comments": {"doc_count": 5}},
-        {"key": "NO-MATCH", "matching_comments": {"doc_count": 0}}
+        _fake_os_comment_agg_bucket("HAS-MATCH", "matching_comments", "H1", "H2", "H3", "H4", "H5"),
+        {
+            "key": "NO-MATCH",
+            "matching_comments": {"doc_count": 0, "by_comment": {"buckets": []}},
+        },
     ]
     extracted_buckets = []
 
@@ -564,7 +624,13 @@ def test_text_match_terms_only_returns_comment_matches():
 def test_text_match_terms_docket_only_in_comments():
     """When a docket only has matching comment text"""
     doc_buckets = []
-    comment_buckets = [{"key": "COMMENT-ONLY", "matching_comments": {"doc_count": 10}}]
+    comment_buckets = [
+        _fake_os_comment_agg_bucket(
+            "COMMENT-ONLY",
+            "matching_comments",
+            *[f"C{i}" for i in range(10)],
+        )
+    ]
     extracted_buckets = []
 
     fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
@@ -596,26 +662,59 @@ def test_text_match_terms_connection_error_returns_empty():
 
 
 def test_get_docket_document_comment_totals_with_fake_opensearch():
-    """Totals query returns per-docket document/comment denominators."""
-    doc_buckets = [{"key": "D1", "doc_count": 3}]
-    comment_buckets = [{"key": "D1", "doc_count": 5}]
+    """Totals: documents by doc_count; comments = distinct commentId buckets."""
 
-    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, [])
+    class TotalsFakeClient:  # pylint: disable=too-few-public-methods
+        def search(self, index, body):  # pylint: disable=unused-argument
+            if index == "documents":
+                return {
+                    "aggregations": {
+                        "by_docket": {"buckets": [{"key": "D1", "doc_count": 3}]}
+                    }
+                }
+            if "comments" in index:
+                return {
+                    "aggregations": {
+                        "by_docket": {
+                            "buckets": [{
+                                "key": "D1",
+                                "by_comment": {
+                                    "buckets": [
+                                        {"key": "c1"},
+                                        {"key": "c2"},
+                                        {"key": "c3"},
+                                        {"key": "c4"},
+                                        {"key": "c5"},
+                                    ]
+                                },
+                            }]
+                        }
+                    }
+                }
+            return {"aggregations": {"by_docket": {"buckets": []}}}
+
     db = DBLayer()
-
     totals = db.get_docket_document_comment_totals(
         ["D1"],
-        opensearch_client=fake_client
+        opensearch_client=TotalsFakeClient(),
     )
 
     assert totals["D1"]["document_total_count"] == 3
     assert totals["D1"]["comment_total_count"] == 5
 
 def test_text_match_terms_docket_only_in_extracted():
-    """When a docket only has matching extracted text"""
+    """Multiple extracted chunks for the same commentId count as one comment match."""
     doc_buckets = []
     comment_buckets = []
-    extracted_buckets = [{"key": "EXTRACTED-ONLY", "matching_extracted": {"doc_count": 3}}]
+    extracted_buckets = [
+        _fake_os_comment_agg_bucket(
+            "EXTRACTED-ONLY",
+            "matching_extracted",
+            "SAME-COMMENT-ID",
+            "SAME-COMMENT-ID",
+            "SAME-COMMENT-ID",
+        )
+    ]
 
     fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
     db = DBLayer()
@@ -624,7 +723,7 @@ def test_text_match_terms_docket_only_in_extracted():
 
     assert len(results) == 1
     assert results[0]["docket_id"] == "EXTRACTED-ONLY"
-    assert results[0]["comment_match_count"] == 3
+    assert results[0]["comment_match_count"] == 1
 
 
 def test_text_match_terms_missing_extracted_index_still_returns_other_hits():
@@ -646,7 +745,14 @@ def test_text_match_terms_missing_extracted_index_still_returns_other_hits():
                     "aggregations": {
                         "by_docket": {
                             "buckets": [
-                                {"key": "CMS-2025-0240", "matching_comments": {"doc_count": 4}}
+                                _fake_os_comment_agg_bucket(
+                                    "CMS-2025-0240",
+                                    "matching_comments",
+                                    "c1",
+                                    "c2",
+                                    "c3",
+                                    "c4",
+                                )
                             ]
                         }
                     }

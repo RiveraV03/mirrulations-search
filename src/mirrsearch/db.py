@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 import os
 import psycopg2
 from opensearchpy import OpenSearch
@@ -16,6 +16,28 @@ except ImportError:
     LOAD_DOTENV = None
 else:
     LOAD_DOTENV = load_dotenv
+
+
+def _opensearch_match_docket_bucket_size() -> int:
+    """
+    How many docket buckets to request for corpus-wide match aggregations.
+
+    OpenSearch terms aggregations require an explicit size (no unbounded mode).
+    For a huge index, raise OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE (memory cost grows
+    with this and with per-docket sub-aggs).
+    """
+    return max(1, int(os.getenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "50000")))
+
+
+def _opensearch_comment_id_terms_size() -> int:
+    """
+    Max distinct commentId values per docket in nested terms aggregations.
+
+    Must stay at or below your cluster/index limit (often max_terms_count, default
+    65535). Increase only if operators raise that limit. Set
+    OPENSEARCH_COMMENT_ID_TERMS_SIZE explicitly for larger allowed bucket counts.
+    """
+    return max(1, int(os.getenv("OPENSEARCH_COMMENT_ID_TERMS_SIZE", "65535")))
 
 
 @dataclass(frozen=True)
@@ -139,7 +161,10 @@ class DBLayer:
             "size": 0,
             "aggs": {
                 "by_docket": {
-                    "terms": {"field": "docketId.keyword", "size": 1000},
+                    "terms": {
+                        "field": "docketId.keyword",
+                        "size": _opensearch_match_docket_bucket_size(),
+                    },
                     "aggs": {
                         agg_name: {
                             "filter": {
@@ -153,6 +178,70 @@ class DBLayer:
                 }
             }
         }
+
+    @staticmethod
+    def _build_docket_agg_query_unique_comments(agg_name: str, match_clauses: List[Dict]) -> Dict:
+        """Like _build_docket_agg_query but counts unique commentId per docket (not OS doc hits)."""
+        return {
+            "size": 0,
+            "aggs": {
+                "by_docket": {
+                    "terms": {
+                        "field": "docketId.keyword",
+                        "size": _opensearch_match_docket_bucket_size(),
+                    },
+                    "aggs": {
+                        agg_name: {
+                            "filter": {
+                                "bool": {
+                                    "should": match_clauses,
+                                    "minimum_should_match": 1
+                                }
+                            },
+                            "aggs": {
+                                "by_comment": {
+                                    "terms": {
+                                        "field": "commentId.keyword",
+                                        "size": _opensearch_comment_id_terms_size(),
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+        }
+
+    @staticmethod
+    def _comment_ids_per_docket_from_agg(resp: Dict, agg_name: str) -> Dict[str, Set[str]]:
+        """Parse by_docket -> filter agg -> terms on commentId into {docket_id: set(comment_id)}."""
+        out: Dict[str, Set[str]] = {}
+        for bucket in resp.get("aggregations", {}).get("by_docket", {}).get("buckets", []):
+            did = str(bucket["key"])
+            inner = bucket.get(agg_name, {})
+            by_comment = inner.get("by_comment", {})
+            keys = {str(b["key"]) for b in by_comment.get("buckets", [])}
+            if keys:
+                out.setdefault(did, set()).update(keys)
+        return out
+
+    @staticmethod
+    def _merge_unique_comment_matches(
+            comments_resp: Dict, extracted_resp: Dict) -> Dict[str, int]:
+        """
+        Union commentIds from comments index and extracted-text index per docket.
+        Each logical comment counts at most once (multiple attachment chunks = 1).
+        """
+        from_comments = DBLayer._comment_ids_per_docket_from_agg(
+            comments_resp, "matching_comments")
+        from_extracted = DBLayer._comment_ids_per_docket_from_agg(
+            extracted_resp, "matching_extracted")
+        counts: Dict[str, int] = {}
+        for did in set(from_comments) | set(from_extracted):
+            merged = set(from_comments.get(did, set())) | set(from_extracted.get(did, set()))
+            if merged:
+                counts[did] = len(merged)
+        return counts
 
     @staticmethod
     def _accumulate_counts(
@@ -177,7 +266,10 @@ class DBLayer:
         - comments index: commentText field (phrase matching)
         - comments_extracted_text index: extractedText field (from PDF attachments)
 
-        Returns list of {docket_id, document_match_count, comment_match_count}
+        Returns list of {docket_id, document_match_count, comment_match_count}.
+        comment_match_count is the number of distinct commentId values that match
+        (body and/or extracted text); multiple hits in one comment or multiple
+        extracted chunks for the same comment still count as one.
         """
         if opensearch_client is None:
             opensearch_client = get_opensearch_connection()
@@ -193,6 +285,33 @@ class DBLayer:
             print(f"OpenSearch query failed (fallback to SQL): {e}")
             return []
 
+    @staticmethod
+    def _comment_total_query(docket_ids: List[str]) -> Dict:
+        """Aggregation: per docket, distinct commentId across all matching docs."""
+        return {
+            "size": 0,
+            "query": {
+                "bool": {
+                    "filter": [
+                        {"terms": {"docketId.keyword": docket_ids}}
+                    ]
+                }
+            },
+            "aggs": {
+                "by_docket": {
+                    "terms": {"field": "docketId.keyword", "size": len(docket_ids)},
+                    "aggs": {
+                        "by_comment": {
+                            "terms": {
+                                "field": "commentId.keyword",
+                                "size": _opensearch_comment_id_terms_size(),
+                            }
+                        }
+                    },
+                }
+            },
+        }
+
     def get_docket_document_comment_totals(  # pylint: disable=too-many-locals
             self,
             docket_ids: List[str],
@@ -201,8 +320,9 @@ class DBLayer:
         """
         Return per-docket totals for documents and comments.
 
-        Denominators are computed from OpenSearch by using match_all queries
-        filtered to the provided docket IDs.
+        document_total_count: OpenSearch documents index rows per docket.
+        comment_total_count: distinct commentId values across comments and
+        comments_extracted_text (same universe as comment match numerators).
         """
         if not docket_ids:
             return {}
@@ -227,24 +347,20 @@ class DBLayer:
                 }
             }
 
-            comment_query = {
-                "size": 0,
-                "query": {
-                    "bool": {
-                        "filter": [
-                            {"terms": {"docketId.keyword": docket_ids}}
-                        ]
-                    }
-                },
-                "aggs": {
-                    "by_docket": {
-                        "terms": {"field": "docketId.keyword", "size": len(docket_ids)}
-                    }
-                }
-            }
+            comment_body = self._comment_total_query(docket_ids)
 
             doc_response = opensearch_client.search(index="documents", body=doc_query)
-            comment_response = opensearch_client.search(index="comments", body=comment_query)
+
+            try:
+                comment_response = opensearch_client.search(
+                    index="comments,comments_extracted_text",
+                    body=comment_body,
+                )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(f"OpenSearch comment totals multi-index failed, comments only: {e}")
+                comment_response = opensearch_client.search(
+                    index="comments", body=comment_body
+                )
 
             totals: Dict[str, Dict[str, int]] = {}
 
@@ -257,11 +373,12 @@ class DBLayer:
 
             for bucket in comment_response["aggregations"]["by_docket"]["buckets"]:
                 docket_id = str(bucket["key"])
+                n_comments = len(bucket.get("by_comment", {}).get("buckets", []))
                 totals.setdefault(docket_id, {
                     "document_total_count": 0,
                     "comment_total_count": 0
                 })
-                totals[docket_id]["comment_total_count"] = bucket["doc_count"]
+                totals[docket_id]["comment_total_count"] = n_comments
 
             return totals
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -287,25 +404,29 @@ class DBLayer:
             "matching_docs",
             [{"multi_match": {"query": t, "fields": ["title", "comment"]}} for t in terms]
         ))
-        comment_resp = safe_search("comments", self._build_docket_agg_query(
-            "matching_comments",
-            [{"match_phrase": {"commentText": t}} for t in terms]
-        ))
+        comment_resp = safe_search(
+            "comments",
+            self._build_docket_agg_query_unique_comments(
+                "matching_comments",
+                [{"match_phrase": {"commentText": t}} for t in terms],
+            ),
+        )
         extracted_resp = safe_search(
             "comments_extracted_text",
-            self._build_docket_agg_query(
-                "matching_extracted", [{"match_phrase": {"extractedText": t}} for t in terms]
+            self._build_docket_agg_query_unique_comments(
+                "matching_extracted",
+                [{"match_phrase": {"extractedText": t}} for t in terms],
             ),
         )
         self._accumulate_counts(
             docket_counts, buckets(doc_resp), "matching_docs", "document_match_count"
         )
-        self._accumulate_counts(
-            docket_counts, buckets(comment_resp), "matching_comments", "comment_match_count"
-        )
-        self._accumulate_counts(
-            docket_counts, buckets(extracted_resp), "matching_extracted", "comment_match_count"
-        )
+        merged_comments = self._merge_unique_comment_matches(comment_resp, extracted_resp)
+        for did, cnt in merged_comments.items():
+            docket_counts.setdefault(
+                did, {"document_match_count": 0, "comment_match_count": 0}
+            )
+            docket_counts[did]["comment_match_count"] = cnt
         return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
 
 

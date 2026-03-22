@@ -25,6 +25,19 @@ if ! command -v psql &>/dev/null && command -v brew &>/dev/null; then
     brew services start postgresql
 fi
 
+# Install OpenSearch if missing (Mac/Homebrew)
+if ! command -v curl &>/dev/null; then
+    echo "curl is required but not installed."
+    exit 1
+fi
+if ! curl -sSf "http://localhost:9200" >/dev/null 2>&1 && command -v brew &>/dev/null; then
+    echo "Ensuring OpenSearch is installed via Homebrew..."
+    if ! brew list --formula | grep -qx "opensearch"; then
+        brew install opensearch
+    fi
+    brew services start opensearch 2>/dev/null || true
+fi
+
 # Setup Postgres DB if not already initialized
 brew services start postgresql 2>/dev/null || true
 if [[ "$FORCE_SEED" == "1" ]]; then
@@ -33,6 +46,18 @@ else
     if ! psql -lqt postgres 2>/dev/null | grep -qw mirrulations; then
         ./db/setup_postgres.sh
     fi
+fi
+
+# Ensure OpenSearch service is up; start if needed.
+if command -v brew &>/dev/null; then
+    brew services start opensearch 2>/dev/null || true
+fi
+
+# Seed OpenSearch indices/data for search numerators/denominators.
+if [[ -x ".venv/bin/python" ]]; then
+    PYTHONPATH="$PWD/src" .venv/bin/python db/ingest_opensearch.py
+else
+    PYTHONPATH="$PWD/src" python db/ingest_opensearch.py
 fi
 
 # Build the React frontend

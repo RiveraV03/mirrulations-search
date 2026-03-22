@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 
 
 class MockDBLayer:  # pylint: disable=too-few-public-methods
@@ -302,23 +302,19 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
             )
         ]
 
-        # Match comments (commentText)
-        matching_comments = [
-            comment for comment in data["comments"]
-            if any(
-                matches_phrase(comment["commentText"], term)
-                for term in terms
-            )
-        ]
+        # Match comments (commentText) — one count per distinct commentId per docket.
+        comment_ids_by_docket: Dict[str, Set[str]] = {}
+        for comment in data["comments"]:
+            if any(matches_phrase(comment["commentText"], term) for term in terms):
+                did = comment["docketId"]
+                comment_ids_by_docket.setdefault(did, set()).add(comment["commentId"])
 
-        # Match extracted text (extractedText) - counts as comments
-        matching_extracted = [
-            extracted for extracted in data["comments_extracted_text"]
-            if any(
-                matches_phrase(extracted["extractedText"], term)
-                for term in terms
-            )
-        ]
+        # Extracted attachment text — same commentId can appear on many chunks; count once.
+        extracted_ids_by_docket: Dict[str, Set[str]] = {}
+        for extracted in data["comments_extracted_text"]:
+            if any(matches_phrase(extracted["extractedText"], term) for term in terms):
+                did = extracted["docketId"]
+                extracted_ids_by_docket.setdefault(did, set()).add(extracted["commentId"])
 
         # Group by docket
         docket_counts = {}
@@ -331,21 +327,15 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
             })
             docket_counts[docket_id]["document_match_count"] += 1
 
-        for comment in matching_comments:
-            docket_id = comment["docketId"]
-            docket_counts.setdefault(docket_id, {
+        for did in set(comment_ids_by_docket) | set(extracted_ids_by_docket):
+            merged = comment_ids_by_docket.get(did, set()) | extracted_ids_by_docket.get(did, set())
+            if not merged:
+                continue
+            docket_counts.setdefault(did, {
                 "document_match_count": 0,
                 "comment_match_count": 0
             })
-            docket_counts[docket_id]["comment_match_count"] += 1
-
-        for extracted in matching_extracted:
-            docket_id = extracted["docketId"]
-            docket_counts.setdefault(docket_id, {
-                "document_match_count": 0,
-                "comment_match_count": 0
-            })
-            docket_counts[docket_id]["comment_match_count"] += 1
+            docket_counts[did]["comment_match_count"] = len(merged)
 
         return [
             {
@@ -381,14 +371,23 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
             })
             totals[did]["document_total_count"] += 1
 
+        # Distinct commentId across comments + extracted (matches OpenSearch denominator).
+        comment_ids_by_docket: Dict[str, Set[str]] = {}
         for comment in data["comments"]:
             did = str(comment["docketId"])
             if did not in docket_ids_str:
                 continue
+            comment_ids_by_docket.setdefault(did, set()).add(comment["commentId"])
+        for extracted in data["comments_extracted_text"]:
+            did = str(extracted["docketId"])
+            if did not in docket_ids_str:
+                continue
+            comment_ids_by_docket.setdefault(did, set()).add(extracted["commentId"])
+        for did, cids in comment_ids_by_docket.items():
             totals.setdefault(did, {
                 "document_total_count": 0,
                 "comment_total_count": 0,
             })
-            totals[did]["comment_total_count"] += 1
+            totals[did]["comment_total_count"] = len(cids)
 
         return totals
