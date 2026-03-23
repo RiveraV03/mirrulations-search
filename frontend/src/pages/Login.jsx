@@ -4,7 +4,7 @@ import "../styles/Login.css";
 
 const Login = () => {
   const handleGoogleLogin = () => {
-    console.log("Google login clicked");
+    window.location.href = "/login";
   };
 
   return (
@@ -15,7 +15,7 @@ const Login = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 2.4, ease: "easeInOut" }}
       >
-        <h2>Login with</h2>
+        <h2>Welcome to Mirrulations Search! Please Login with your Google Account.</h2>
 
         <motion.button
           className="google-btn"
@@ -23,7 +23,7 @@ const Login = () => {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.97 }}
         >
-          Google
+          Login
 
           <span className="google-icon">
             <svg viewBox="0 0 48 48">

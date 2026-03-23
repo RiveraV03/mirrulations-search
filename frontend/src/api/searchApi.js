@@ -39,6 +39,9 @@ export async function searchDockets(query, docket_type = '', agency = [], cfr_pa
         `/search/?${params.toString()}`
     )
 
+	if (response.status === 401) {
+		throw new Error("UNAUTHORIZED")
+	}
 	if (!response.ok) {
 		throw new Error(`Search request failed: ${response.status}`)
 	}
@@ -55,4 +58,12 @@ export async function searchDockets(query, docket_type = '', agency = [], cfr_pa
 	  }
 
 	return { results, pagination }
+}
+
+export async function getAuthStatus() {
+	const response = await fetch("/auth/status")
+	if (!response.ok) {
+		return { logged_in: false }
+	}
+	return response.json()
 }
