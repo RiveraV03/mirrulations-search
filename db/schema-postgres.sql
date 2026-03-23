@@ -112,13 +112,23 @@ CREATE TABLE IF NOT EXISTS cfrparts (
 -- frDocNum will be null at table creation & is retrieved from federal reserve & inserted into the table at the first query
 
 CREATE TABLE IF NOT EXISTS federal_register_documents (
-    docket_id VARCHAR(50) NOT NULL,
-    document_id VARCHAR(50) NOT NULL REFERENCES documents(document_id),
-    agency_id VARCHAR(20) NOT NULL,
+    document_number VARCHAR(50) NOT NULL,
+    document_id VARCHAR(50) REFERENCES documents(document_id),
     document_title TEXT,
     document_type VARCHAR(50),
-    fr_doc_num VARCHAR(20),
-    cfr_title VARCHAR(10),
-    cfr_part VARCHAR(50),
-    PRIMARY KEY (document_id)
+    abstract TEXT,
+    publication_date DATE,
+    effective_on DATE,
+    docket_ids TEXT[],
+    agency_id VARCHAR(20),
+    agency_names TEXT[],
+    topics TEXT[],
+    significant BOOLEAN,
+    regulations_id_numbers TEXT[],
+    html_url VARCHAR(2000),
+    pdf_url VARCHAR(2000),
+    json_url VARCHAR(2000),
+    start_page INTEGER,
+    end_page INTEGER,
+    PRIMARY KEY (document_number)
 );
