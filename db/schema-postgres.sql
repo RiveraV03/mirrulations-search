@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS cfrparts (
 
 CREATE TABLE IF NOT EXISTS federal_register_documents (
     document_number VARCHAR(50) NOT NULL,
-    document_id VARCHAR(50) NOT NULL REFERENCES documents(document_id),
+    document_id VARCHAR(50) REFERENCES documents(document_id),
     document_title TEXT,
     document_type VARCHAR(50),
     abstract TEXT,
@@ -130,5 +130,5 @@ CREATE TABLE IF NOT EXISTS federal_register_documents (
     json_url VARCHAR(2000),
     start_page INTEGER,
     end_page INTEGER,
-    PRIMARY KEY (document_id)
+    PRIMARY KEY (document_number)
 );
