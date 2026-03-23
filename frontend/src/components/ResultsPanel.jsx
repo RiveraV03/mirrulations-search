@@ -1,7 +1,15 @@
 import {ColorRing} from 'react-loader-spinner'
 const ECFR_URL = "https://www.ecfr.gov";
 
-export default function ResultsPanel({ results, loading, hasSearched }) {
+export default function ResultsPanel({ results, loading, hasSearched, unauthorized }) {
+
+  if (unauthorized) {
+    return (
+      <div className="results">
+        <p>Please <a href="/login">log in</a> to search.</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

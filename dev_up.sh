@@ -20,10 +20,15 @@ fi
 # Build the React frontend
 (cd frontend && npm install && npm run build)
 
-# Load .env so Gunicorn (run via sudo) inherits USE_POSTGRES, DB_*, etc.
-set -a
+# Load .env variables
 [[ -f .env ]] && source .env
-set +a
+
+# Generate JWT_SECRET if not set
+if [[ -z "${JWT_SECRET:-}" ]]; then
+    JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+    echo "JWT_SECRET=$JWT_SECRET" >> .env
+    echo "Generated JWT_SECRET and saved to .env"
+fi
 
 # Stop existing Gunicorn if running (so we can start fresh)
 if [[ -f gunicorn.pid ]]; then
@@ -33,5 +38,17 @@ fi
 
 # Start the gunicorn server on port 80 using the configuration in conf/gunicorn.py
 export PYTHONPATH="$PWD/src"
-sudo -E OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES .venv/bin/gunicorn -c conf/gunicorn.py mirrsearch.app:app
+sudo OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+  PYTHONPATH="$PYTHONPATH" \
+  USE_POSTGRES="$USE_POSTGRES" \
+  DB_HOST="$DB_HOST" \
+  DB_PORT="$DB_PORT" \
+  DB_NAME="$DB_NAME" \
+  DB_USER="$DB_USER" \
+  DB_PASSWORD="$DB_PASSWORD" \
+  BASE_URL="$BASE_URL" \
+  GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
+  GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
+  JWT_SECRET="$JWT_SECRET" \
+  .venv/bin/gunicorn -c conf/gunicorn.py mirrsearch.app:app
 echo "Mirrulations search has been started"

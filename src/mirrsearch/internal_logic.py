@@ -10,7 +10,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self.db_layer = db_layer if db_layer is not None else get_db()
 
     def search(self, query, docket_type_param=None, agency=None,
-               cfr_part_param=None, page=1, page_size=10):
+               cfr_part_param=None, start_date=None, end_date=None, page=1, page_size=10):
         # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         """
         Search with pagination support.
@@ -20,6 +20,8 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             docket_type_param: Filter by docket type
             agency: Filter by agency
             cfr_part_param: Filter by CFR part
+            start_date: Filter by start date (YYYY-MM-DD)
+            end_date: Filter by end date (YYYY-MM-DD)
             page: Page number (1-indexed)
             page_size: Number of results per page
 
@@ -30,7 +32,9 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             query,
             docket_type_param,
             agency,
-            cfr_part_param
+            cfr_part_param,
+            start_date=start_date,
+            end_date=end_date
         )
 
         total_results = len(all_results)

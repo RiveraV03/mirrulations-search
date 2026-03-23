@@ -113,20 +113,20 @@ def test_search_dockets_postgres_agency_and_docket_type_filter():
 
 
 def test_get_cfr_docket_ids_single_part():
-    """Single CFR part queries federal_register_documents with title+part ILIKE clauses"""
+    """Single CFR part queries federal_register_documents with title+part exact clauses"""
     db = DBLayer(conn=_FakeConn([("CMS-2025-0304",)]))
     result = db._get_cfr_docket_ids([{"title": "Title 42", "part": "413"}])
     sql, params = db.conn.cursor_obj.executed
     assert "federal_register_documents" in sql
-    assert "cfr_title ILIKE %s" in sql
-    assert "cfr_part ILIKE %s" in sql
-    assert "%Title 42%" in params
-    assert "%413%" in params
+    assert "cfr_title = %s" in sql
+    assert "cfr_part = %s" in sql
+    assert "Title 42" in params
+    assert "413" in params
     assert result == {"CMS-2025-0304"}
 
 
 def test_get_cfr_docket_ids_multi_part():
-    """Multiple CFR parts produce OR'd title+part ILIKE clauses
+    """Multiple CFR parts produce OR'd title+part exact clauses
     against federal_register_documents"""
     db = DBLayer(conn=_FakeConn([("CMS-2025-0304",), ("CMS-2025-0240",)]))
     result = db._get_cfr_docket_ids([
@@ -135,9 +135,9 @@ def test_get_cfr_docket_ids_multi_part():
     ])
     sql, params = db.conn.cursor_obj.executed
     assert "federal_register_documents" in sql
-    assert sql.count("cfr_part ILIKE %s") == 2
-    assert "%413%" in params
-    assert "%512%" in params
+    assert sql.count("cfr_part = %s") == 2
+    assert "413" in params
+    assert "512" in params
     assert result == {"CMS-2025-0304", "CMS-2025-0240"}
 
 
@@ -331,15 +331,15 @@ def test_search_dockets_by_cfr_deduplicates_docket_ids():
 
 
 def test_search_dockets_by_cfr_queries_federal_register_documents():
-    """SQL targets federal_register_documents with cfr_title and cfr_part ILIKE clauses"""
+    """SQL targets federal_register_documents with cfr_title and cfr_part = clauses"""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_by_cfr([{"title": "Title 42", "part": "413"}])
     sql, params = db.conn.cursor_obj.executed
     assert "federal_register_documents" in sql
-    assert "cfr_title ILIKE %s" in sql
-    assert "cfr_part ILIKE %s" in sql
-    assert "%Title 42%" in params
-    assert "%413%" in params
+    assert "cfr_title = %s" in sql
+    assert "cfr_part = %s" in sql
+    assert "Title 42" in params
+    assert "413" in params
 
 
 # --- _search_dockets_by_document_title tests ---
