@@ -21,7 +21,15 @@ function scoreResult(item) {
 }
 
 
-export default function ResultsPanel({ results, loading, hasSearched, query, documentNumerator, documentDenominator }) {
+export default function ResultsPanel({ results, loading, hasSearched, query, unauthorized }) {
+ if (unauthorized) {
+   return (
+     <div className="results">
+       <p>Please <a href="/login">log in</a> to search.</p>
+     </div>
+   );
+ }
+
  if (loading) {
    return (
      <div className="results">

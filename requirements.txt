@@ -1,4 +1,7 @@
 flask
+PyJWT
+google-auth-oauthlib
+google-auth
 pylint
 pytest 
 gunicorn

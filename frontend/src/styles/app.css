@@ -163,12 +163,18 @@
 	padding: 0 14px;
 	border-radius: 12px;
 	border: 1px solid transparent;
+	display: inline-flex;
+  	align-items: center;
+  	justify-content: center;
 	cursor:pointer;
 	font-weight: 800;
   }
   
-  .btn-primary{ background:#5a5fe6; color:#fff; }
+  .btn-primary{ background:#5a5fe6; color:#fff; text-decoration:none; }
   .btn-primary:hover{ background:#4a50da; }
+
+  .auth-section{ display:flex; align-items:center; gap:12px; }
+  .auth-name{ font-weight:600; color:#333; }
   
   .btn-ghost{
 	background: transparent;
@@ -362,4 +368,8 @@
   .page-button:hover {
 	scale: 1.04;
 
+  }
+
+  .calendar-div {
+	margin-top: 20px;
   }

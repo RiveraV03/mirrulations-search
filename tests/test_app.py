@@ -10,13 +10,30 @@ from mirrsearch.app import create_app
 from mirrsearch.db import get_postgres_connection, get_opensearch_connection
 
 
+class MockOAuthHandler:
+    """Mock OAuth handler that always authenticates as a test user"""
+    def get_authorization_url(self):
+        return "http://mock-auth-url", None
+
+    def validate_jwt_token(self, token):  # pylint: disable=unused-argument
+        return "Test User|test@example.com"
+
+    def exchange_code_for_user_info(self, code):  # pylint: disable=unused-argument
+        return {"name": "Test User", "email": "test@example.com"}
+
+    def create_jwt_token(self, user_id):  # pylint: disable=unused-argument
+        return "mock-token"
+
+
 @pytest.fixture
 def app(tmp_path):
     """Create and configure a test app instance"""
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "index.html").write_text("<html></html>")
-    test_app = create_app(dist_dir=str(dist), db_layer=MockDBLayer())
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=MockDBLayer(), oauth_handler=MockOAuthHandler()
+    )
     test_app.config['TESTING'] = True
     return test_app
 
@@ -24,7 +41,9 @@ def app(tmp_path):
 @pytest.fixture
 def client(app):  # pylint: disable=redefined-outer-name
     """Create a test client for the app"""
-    return app.test_client()
+    c = app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+    return c
 
 
 def test_search_endpoint_exists(client):  # pylint: disable=redefined-outer-name
@@ -196,6 +215,106 @@ def test_search_with_agency_and_filter(client):  # pylint: disable=redefined-out
     for doc in data:
         assert doc['agency_id'] == 'CMS'
         assert doc['document_type'] == 'Proposed Rule'
+
+
+def test_search_returns_401_without_cookie(app):  # pylint: disable=redefined-outer-name
+    """Search endpoint returns 401 when no JWT cookie is present"""
+    anon = app.test_client()
+    response = anon.get('/search/')
+    assert response.status_code == 401
+
+
+def test_login_route_redirects(app):  # pylint: disable=redefined-outer-name
+    """Login route redirects to Google authorization URL"""
+    anon = app.test_client()
+    response = anon.get('/login')
+    assert response.status_code == 302
+    assert "mock-auth-url" in response.headers['Location']
+
+
+def test_logout_route_clears_cookie(app):  # pylint: disable=redefined-outer-name
+    """Logout route redirects to home and clears jwt_token cookie"""
+    anon = app.test_client()
+    anon.set_cookie("jwt_token", "mock-token")
+    response = anon.get('/logout')
+    assert response.status_code == 302
+    assert any(
+        'jwt_token' in h and 'expires' in h.lower()
+        for h in response.headers.getlist('Set-Cookie')
+    )
+
+
+def test_auth_status_logged_in(client):  # pylint: disable=redefined-outer-name
+    """Auth status returns logged_in true when valid cookie present"""
+    response = client.get('/auth/status')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['logged_in'] is True
+    assert data['name'] == 'Test User'
+    assert data['email'] == 'test@example.com'
+
+
+def test_auth_status_not_logged_in(app):  # pylint: disable=redefined-outer-name
+    """Auth status returns logged_in false when no cookie"""
+    anon = app.test_client()
+    response = anon.get('/auth/status')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['logged_in'] is False
+
+
+def test_invalid_cookie_treated_as_unauthenticated(tmp_path):
+    """An invalid JWT cookie results in 401 on search"""
+    from mirrsearch.oauth_handler import TokenInvalidError  # pylint: disable=import-outside-toplevel
+
+    class RejectingOAuthHandler:  # pylint: disable=too-few-public-methods
+        """OAuth handler that always rejects tokens"""
+        def validate_jwt_token(self, token):  # pylint: disable=unused-argument
+            raise TokenInvalidError("bad token")
+
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=MockDBLayer(), oauth_handler=RejectingOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+    anon.set_cookie("jwt_token", "invalid-token")
+    response = anon.get('/search/')
+    assert response.status_code == 401
+
+
+def test_home_route_with_oauth_code_redirects(app):  # pylint: disable=redefined-outer-name
+    """Home route exchanges OAuth code and redirects"""
+    anon = app.test_client()
+    response = anon.get('/?code=valid-code')
+    assert response.status_code == 302
+    assert 'jwt_token' in response.headers.get('Set-Cookie', '')
+
+
+def test_home_route_with_bad_oauth_code_redirects(tmp_path):
+    """Home route redirects to / when OAuth code exchange fails"""
+    class FailingOAuthHandler:
+        """OAuth handler that always fails code exchange"""
+        def exchange_code_for_user_info(self, code):  # pylint: disable=unused-argument
+            from mirrsearch.oauth_handler import OAuthCodeError  # pylint: disable=import-outside-toplevel
+            raise OAuthCodeError("bad code")
+
+        def validate_jwt_token(self, token):  # pylint: disable=unused-argument
+            from mirrsearch.oauth_handler import TokenInvalidError  # pylint: disable=import-outside-toplevel
+            raise TokenInvalidError("invalid")
+
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=MockDBLayer(), oauth_handler=FailingOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+    response = anon.get('/?code=bad-code')
+    assert response.status_code == 302
 
 
 def test_home_route_with_index_html():

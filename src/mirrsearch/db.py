@@ -119,17 +119,19 @@ def _opensearch_comment_id_terms_size() -> int:
 class DBLayer:
     conn: Any = None
 
-    def search(
+    def search(  # pylint: disable=too-many-arguments,too-many-positional-arguments
             self,
             query: str,
             docket_type_param: str = None,
             agency: List[str] = None,
-            cfr_part_param: List[str] = None) \
+            cfr_part_param: List[str] = None,
+            start_date: str = None,
+            end_date: str = None) \
             -> List[Dict[str, Any]]:
         if self.conn is None:
             return []
         results = self._search_dockets_postgres(
-            query, docket_type_param, agency, cfr_part_param
+            query, docket_type_param, agency, cfr_part_param, start_date, end_date
         )
         exact_pairs = _cfr_exact_title_part_pairs(cfr_part_param)
         if not exact_pairs:
@@ -161,10 +163,12 @@ class DBLayer:
             cur.execute(sql, params)
             return {row[0] for row in cur.fetchall()}
 
-    def _search_dockets_postgres(  # pylint: disable=too-many-locals
+    def _search_dockets_postgres(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
             self, query: str, docket_type_param: str = None,
             agency: List[str] = None,
-            cfr_part_param: List[str] = None) -> List[Dict[str, Any]]:
+            cfr_part_param: List[str] = None,
+            start_date: str = None,
+            end_date: str = None) -> List[Dict[str, Any]]:
         sql = """
             SELECT DISTINCT
                 d.docket_id,
@@ -191,6 +195,12 @@ class DBLayer:
             clauses = " OR ".join("d.agency_id ILIKE %s" for _ in agency)
             sql += f" AND ({clauses})"
             params.extend(f"%{a}%" for a in agency)
+        if start_date:
+            sql += " AND d.modify_date::date >= %s::date"
+            params.append(start_date)
+        if end_date:
+            sql += " AND d.modify_date::date <= %s::date"
+            params.append(end_date)
 
         cfr_patterns = cfr_part_filter_patterns(cfr_part_param)
         if cfr_patterns:
