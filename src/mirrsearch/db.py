@@ -35,14 +35,14 @@ class DBLayer:
 
     def _get_cfr_docket_ids(self, cfr_part_param: List[Dict[str, str]]) -> set:
         clauses = " OR ".join(
-            "(cfr_title ILIKE %s AND cfr_part ILIKE %s)"
+            "(cfr_title = %s AND cfr_part = %s)"
             for _ in cfr_part_param
         )
         sql = f"SELECT DISTINCT docket_id FROM federal_register_documents WHERE ({clauses})"
         params = []
         for c in cfr_part_param:
-            params.append(f"%{c['title']}%")
-            params.append(f"%{c['part']}%")
+            params.append(str(c['title']))
+            params.append(str(c['part']))
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
             return {row[0] for row in cur.fetchall()}
@@ -114,14 +114,14 @@ class DBLayer:
         if not cfr_part_param:
             return set()
         clauses = " OR ".join(
-            "(cfr_title ILIKE %s AND cfr_part ILIKE %s)"
+            "(cfr_title = %s AND cfr_part = %s)"
             for _ in cfr_part_param
         )
         sql = f"SELECT DISTINCT docket_id FROM federal_register_documents WHERE ({clauses})"
         params = []
         for c in cfr_part_param:
-            params.append(f"%{c['title']}%")
-            params.append(f"%{c['part']}%")
+            params.append(str(c['title']))
+            params.append(str(c['part']))
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
             return {row[0] for row in cur.fetchall()}
