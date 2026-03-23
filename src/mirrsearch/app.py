@@ -20,6 +20,8 @@ def _get_search_params():
         'docket_type': request.args.get('docket_type'),
         'agency': [v for v in request.args.getlist('agency') if v] or None,
         'cfr_part': cfr_parts_parsed,
+        'start_date': request.args.get('start_date') or None,
+        'end_date': request.args.get('end_date') or None,
     }
 
 
@@ -69,6 +71,8 @@ def create_app(dist_dir=None, db_layer=None):
             params['docket_type'],
             params['agency'],
             params['cfr_part'],
+            params['start_date'],
+            params['end_date'],
             page=page,
             page_size=page_size
         )
