@@ -149,6 +149,11 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
 
         return _build_paginated_response(result['results'], result['pagination'])
 
+    @flask_app.route("/agencies")
+    def agencies():
+        result = InternalLogic("sample_database", db_layer=db_layer).get_agencies()
+        return jsonify(result)
+
     return flask_app
 
 

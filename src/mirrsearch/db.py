@@ -323,6 +323,13 @@ class DBLayer:
         )
         return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
 
+    def get_agencies(self) -> List[str]:
+        if self.conn is None:
+            return []
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT agency_id FROM dockets ORDER BY agency_id")
+            return [row[0] for row in cur.fetchall()]
+
 
 def _get_secrets_from_aws() -> Dict[str, str]:
     if boto3 is None:

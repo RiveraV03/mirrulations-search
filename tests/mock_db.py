@@ -78,6 +78,9 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
             ]
         return results
 
+    def get_agencies(self) -> List[str]:
+        return sorted({item["agency_id"] for item in self._items()})
+
     # pylint: disable=line-too-long
     def _opensearch_items(self) -> Dict[str, List[Dict[str, Any]]]:
         """Dummy OpenSearch data matching real production structure"""

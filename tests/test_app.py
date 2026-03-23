@@ -331,6 +331,14 @@ def test_home_route_with_index_html():
         assert response.status_code == 200
         assert b'Home' in response.data
 
+def test_agencies_returns_list(client): # pylint: disable=redefined-outer-name
+    """Test that agencies endpoint returns a JSON list"""
+    response = client.get('/agencies')
+    assert response.status_code == 200
+    assert response.is_json
+    data = response.get_json()
+    assert isinstance(data, list)
+
 
 @patch('mirrsearch.db.psycopg2.connect')
 def test_get_postgres_connection(mock_connect):
