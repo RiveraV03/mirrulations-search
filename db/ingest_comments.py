@@ -288,7 +288,7 @@ def parse_args():
     return p.parse_args()
 
 
-df main():
+def main():
     args = parse_args()
 
     docket_dir = prompt_docket_dir()
