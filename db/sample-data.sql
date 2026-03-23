@@ -84,6 +84,86 @@ INSERT INTO dockets (
     'This proposed rule addresses changes to the physician fee schedule and  Medicare Part B payment policies to ensure that payment systems are updated to reflect changes in medical practice, relative value of services, and changes in the statute; codification of new policies for the Medicare Prescription Drug Inflation Rebate Program under the Inflation Reduction Act of 2022; the Ambulatory Specialty Model; updates to the Medicare Diabetes Prevention Program expanded model; updates to drugs and biological products paid under Part B; Medicare Shared Savings Program requirements; updates to the Quality Payment Program; updates to policies for Rural Health Clinics and Federally Qualified Health Centers update to the Ambulance Fee Schedule regulations; codification of the Inflation Reduction Act and Consolidated Appropriations Act, 2023 provisions; and updates to the Medicare Promoting Interoperability Program.'
 );
 
+INSERT INTO dockets (
+    docket_id,
+    docket_api_link,
+    agency_id,
+    docket_category,
+    docket_type,
+    effective_date,
+    flex_field1,
+    flex_field2,
+    modify_date,
+    organization,
+    petition_nbr,
+    program,
+    rin,
+    short_title,
+    flex_subtype1,
+    flex_subtype2,
+    docket_title,
+    docket_abstract
+) VALUES (
+    'OSHA-2025-0005',
+    'https://api.regulations.gov/v4/dockets/OSHA-2025-0005',
+    'OSHA',
+    NULL,
+    'Nonrulemaking',
+    NULL,
+    NULL,
+    NULL,
+    '2025-07-24T13:04:43Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Japan Electrical Safety & Environmental Technology Laboratories - NRTL Application',
+    'Japan Electrical Safety & Environmental Technology Laboratories - NRTL Application'
+);
+
+INSERT INTO dockets (
+    docket_id,
+    docket_api_link,
+    agency_id,
+    docket_category,
+    docket_type,
+    effective_date,
+    flex_field1,
+    flex_field2,
+    modify_date,
+    organization,
+    petition_nbr,
+    program,
+    rin,
+    short_title,
+    flex_subtype1,
+    flex_subtype2,
+    docket_title,
+    docket_abstract
+) VALUES (
+    'FAA-2025-0618',
+    'https://api.regulations.gov/v4/dockets/FAA-2025-0618',
+    'FAA',
+    'Pending',
+    'Rulemaking',
+    NULL,
+    NULL,
+    NULL,
+    '2026-03-12T13:10:41Z',
+    NULL,
+    NULL,
+    NULL,
+    '2120-AA64',
+    NULL,
+    'Airworthiness Directives',
+    NULL,
+    'AD-2024-00637-T; The Boeing Company 767-200 Series; 767-300 Series; 767-300F Series; 767-400ER Series airplanes; Inspection of lower underwing longeron fitting',
+    'Airworthiness Directives'
+);
+
 -- =========================================
 -- DOCUMENTS
 -- =========================================
@@ -660,13 +740,724 @@ INSERT INTO documents(
     NULL
 );
 
+INSERT INTO documents(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code
+) VALUES (
+    'CMS-2025-0240-0002',
+    'CMS-2025-0240',
+    'https://api.regulations.gov/v4/documents/CMS-2025-0240-0002',
+    NULL,
+    NULL,
+    'CMS',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2025-08-30T03:59:59Z',
+    '2025-07-02T04:00:00Z',
+    NULL,
+    'Proposed Rule',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2025-08-31T09:00:09Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2025-07-02T04:00:00Z',
+    NULL,
+    NULL,
+    '2025-07-02T04:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Medicare Program: End-Stage Renal Disease Prospective Payment System, Payment for Renal Dialysis Services Furnished to Individuals with Acute Kidney Injury, End-Stage Renal Disease Quality Incentive Program, and End-Stage Renal Disease Treatment Choices Model',
+    ARRAY['Health Facilities','Medicare','Puerto Rico','Reporting and Recordkeeping Requirements','Administrative Practices and Procedures','Health Care','Health Insurance','Intergovernmental Relations','Penalties','Privacy'],
+    FALSE,
+    NULL
+);
+
+INSERT INTO documents(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code
+) VALUES (
+    'CMS-2025-0240-0214',
+    'CMS-2025-0240',
+    'https://api.regulations.gov/v4/documents/CMS-2025-0240-0214',
+    NULL,
+    NULL,
+    'CMS',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2025-11-24T05:00:00Z',
+    NULL,
+    'Rule',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2025-11-24T21:44:12Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2025-11-24T05:00:00Z',
+    NULL,
+    NULL,
+    '2025-11-24T05:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Medicare Program: End-Stage Renal Disease Prospective Payment System, Payment for Renal Dialysis Services Furnished to Individuals with Acute Kidney Injury, End-Stage Renal Disease Quality Incentive Program, and End-Stage Renal Disease Treatment Choices Model',
+    ARRAY['Health Facilities','Medicare','Puerto Rico','Reporting and Recordkeeping Requirements','Administrative Practices and Procedures','Health Care','Health Insurance','Intergovernmental Relations','Penalties','Privacy'],
+    FALSE,
+    NULL
+);
+
+INSERT INTO documents(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code
+) VALUES (
+    'OSHA-2025-0005-0001',
+    'OSHA-2025-0005',
+    'https://api.regulations.gov/v4/documents/OSHA-2025-0005-0001',
+    NULL,
+    NULL,
+    'OSHA',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2025-05-28T03:59:59Z',
+    '2025-04-25T04:00:00Z',
+    NULL,
+    'Notice',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2025-04-25T13:06:45Z',
+    TRUE,
+    NULL,
+    NULL,
+    '2025-04-25T04:00:00Z',
+    NULL,
+    NULL,
+    '2025-04-25T04:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Nationally Recognized Testing Laboratory (NRTL)',
+    'Japan Electrical Safety & Environment Technology Laboratories: Application for Recognition',
+    NULL,
+    FALSE,
+    NULL
+);
+
+INSERT INTO documents (
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code
+) VALUES (
+    'FAA-2025-0618-0001',
+    'FAA-2025-0618',
+    'https://api.regulations.gov/v4/documents/FAA-2025-0618-0001',
+    NULL,
+    NULL,
+    'FAA',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2025-05-28T03:59:59Z',
+    '2025-04-10T04:00:00Z',
+    NULL,
+    'Proposed Rule',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2026-01-31T13:00:03Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2025-04-10T04:00:00Z',
+    NULL,
+    NULL,
+    '2025-04-10T04:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Notice of Proposed Rulemaking (NPRM)',
+    'Airworthiness Directives: The Boeing Company Airplanes',
+    [
+        "Air Transportation",
+        "Aircraft",
+        "Aviation Safety",
+        "Incorporation by Reference",
+        "Safety"
+    ],
+    FALSE,
+    NULL
+);
+
+INSERT INTO documents (
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code
+) VALUES (
+    'FAA-2025-0618-0002',
+    'FAA-2025-0618',
+    'https://api.regulations.gov/v4/documents/FAA-2025-0618-0002',
+    NULL,
+    NULL,
+    'FAA',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    'Docket No. FAA-2025-0618; Project Identifier AD-2024-00637-T',
+    NULL,
+    NULL,
+    NULL,
+    'Supporting & Related Material',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'FAA',
+    'Federal',
+    NULL,
+    NULL,
+    '2025-04-10T15:48:32Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2025-04-10T04:00:00Z',
+    NULL,
+    NULL,
+    '2025-04-10T04:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Supplement',
+    'U.S. DOT/FAA - Supplemental AD Documents',
+    NULL,
+    FALSE,
+    NULL
+);
+
+INSERT INTO documents(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code
+) VALUES (
+    'FAA-2025-0618-0009',
+    'FAA-2025-0618',
+    'https://api.regulations.gov/v4/documents/FAA-2025-0618-0009',
+    NULL,
+    NULL,
+    'FAA',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    'The Boeing Company: Docket No. FAA-2025-0618; Project Identifier AD-2024-00637-T.',
+    NULL,
+    NULL,
+    NULL,
+    'Public Submission',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'FAA',
+    'Federal',
+    NULL,
+    NULL,
+    '2026-01-27T20:55:35Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2025-10-03T04:00:00Z',
+    NULL,
+    NULL,
+    '2025-10-03T00:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Comment(s)',
+    'U.S. DOT/FAA - Supplemental AD Documents',
+    NULL,
+    FALSE,
+    NULL
+);
+
+INSERT INTO documents(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code
+) VALUES (
+    'FAA-2025-0618-0010',
+    'FAA-2025-0618',
+    'https://api.regulations.gov/v4/documents/FAA-2025-0618-0010',
+    NULL,
+    NULL,
+    'FAA',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    'Docket No. FAA-2025-0618; Project Identifier AD-2024-00637-T',
+    NULL,
+    NULL,
+    NULL,
+    'Supporting & Related Material',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'FAA',
+    'Federal',
+    NULL,
+    NULL,
+    '2026-01-13T01:12:25Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2026-01-12T05:00:00Z',
+    NULL,
+    NULL,
+    '2026-01-12T05:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Supplement',
+    'U.S. DOT/FAA - Supplemental AD Documents',
+    NULL,
+    FALSE,
+    NULL
+);
+
+INSERT INTO documents(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code
+) VALUES (
+    'FAA-2025-0618-0011',
+    'FAA-2025-0618',
+    'https://api.regulations.gov/v4/documents/FAA-2025-0618-0011',
+    NULL,
+    NULL,
+    'FAA',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2026-03-12T04:00:00Z',
+    NULL,
+    'Rule',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2026-03-12T17:10:42Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2026-03-12T04:00:00Z',
+    NULL,
+    NULL,
+    '2026-03-12T04:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Final Rule',
+    'Airworthiness Directives: The Boeing Company Airplanes',
+    ARRAY['Air Transportation','Aircraft','Aviation Safety','Incorporation by Reference','Safety'],
+    FALSE,
+    NULL
+);
+
 -- =========================================
 -- LINKS
 -- =========================================
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
@@ -676,7 +1467,7 @@ INSERT INTO links(
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
@@ -686,7 +1477,7 @@ INSERT INTO links(
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
@@ -696,7 +1487,7 @@ INSERT INTO links(
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
@@ -706,7 +1497,7 @@ INSERT INTO links(
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
@@ -716,7 +1507,7 @@ INSERT INTO links(
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
@@ -726,7 +1517,7 @@ INSERT INTO links(
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
@@ -736,7 +1527,7 @@ INSERT INTO links(
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
@@ -746,7 +1537,7 @@ INSERT INTO links(
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
@@ -756,12 +1547,22 @@ INSERT INTO links(
 
 INSERT INTO links(
     title,
-    cfrPart,
+    cfrpart,
     link
 ) VALUES (
     42,
     512,
     'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-H/part-512?toc=1'
+);
+
+INSERT INTO links(
+    title,
+    cfrpart,
+    link
+) VALUES (
+    14,
+    39,
+    'https://www.ecfr.gov/current/title-14/chapter-I/subchapter-C/part-39?toc=1'
 );
 
 -- =========================================
@@ -772,7 +1573,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0001',
     NULL,
@@ -784,7 +1585,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0001',
     NULL,
@@ -796,7 +1597,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0001',
     NULL,
@@ -808,7 +1609,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0001',
     NULL,
@@ -820,7 +1621,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0001',
     NULL,
@@ -832,7 +1633,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0001',
     NULL,
@@ -844,7 +1645,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0001',
     NULL,
@@ -856,7 +1657,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0001',
     NULL,
@@ -868,7 +1669,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0001',
     NULL,
@@ -880,7 +1681,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0009',
     '2025-13271',
@@ -892,7 +1693,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0009',
     '2025-13271',
@@ -904,7 +1705,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0009',
     '2025-13271',
@@ -916,7 +1717,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0009',
     '2025-13271',
@@ -928,7 +1729,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0009',
     '2025-13271',
@@ -940,7 +1741,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0009',
     '2025-13271',
@@ -952,7 +1753,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-0009',
     '2025-13271',
@@ -964,7 +1765,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14108',
     '2025-19787',
@@ -976,7 +1777,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14108',
     '2025-19787',
@@ -988,7 +1789,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14108',
     '2025-19787',
@@ -1000,7 +1801,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14108',
     '2025-19787',
@@ -1012,7 +1813,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14108',
     '2025-19787',
@@ -1024,7 +1825,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14108',
     '2025-19787',
@@ -1036,7 +1837,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14108',
     '2025-19787',
@@ -1048,7 +1849,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14109',
     '2025-21458',
@@ -1060,7 +1861,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14109',
     '2025-21458',
@@ -1072,7 +1873,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14109',
     '2025-21458',
@@ -1084,7 +1885,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14109',
     '2025-21458',
@@ -1096,7 +1897,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14109',
     '2025-21458',
@@ -1108,7 +1909,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14109',
     '2025-21458',
@@ -1120,7 +1921,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-14109',
     '2025-21458',
@@ -1132,7 +1933,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-1544',
     '2025-15492',
@@ -1144,7 +1945,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-1544',
     '2025-15492',
@@ -1156,7 +1957,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-1544',
     '2025-15492',
@@ -1168,7 +1969,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-1544',
     '2025-15492',
@@ -1180,7 +1981,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0304-1544',
     '2025-15492',
@@ -1192,7 +1993,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0240-0001',
     '2025-20681',
@@ -1204,7 +2005,7 @@ INSERT INTO cfrParts(
     document_id,
     frDocNum,
     title,
-    cfrPart
+    cfrpart
 ) VALUES (
     'CMS-2025-0240-0001',
     '2025-20681',
@@ -1212,220 +2013,164 @@ INSERT INTO cfrParts(
     '512'
 );
 
-INSERT INTO comments(
-    comment_id,
-    api_link,
+INSERT INTO cfrParts(
     document_id,
-    agency_id,
-    document_type,
-    posted_date,
-    comment
+    frDocNum,
+    title,
+    cfrPart
 ) VALUES (
-    'comment-0001',
-    'http://example.com/comment/1',
-    'CMS-2025-0240-0001',
-    'CMS',
-    'Public Submission',
-    '2025-06-30T04:00:00Z',
-    'This is a sample comment for testing'
+    'CMS-2025-0240-0214',
+    '2025-20681',
+    42,
+    '413'
 );
 
-INSERT INTO comments(
-    comment_id,
-    api_link,
+INSERT INTO cfrParts(
     document_id,
-    duplicate_comment_count,
-    address1,
-    address2,
-    agency_id,
-    city,
-    comment_category,
-    comment,
-    country,
-    docket_id,
-    document_type,
-    email,
-    fax,
-    flex_field1,
-    flex_field2,
-    first_name,
-    submitter_gov_agency,
-    submitter_gov_agency_type,
-    last_name,
-    modification_date,
-    submitter_org,
-    phone,
-    posted_date,
-    postmark_date,
-    reason_withdrawn,
-    received_date,
-    restriction_reason,
-    restriction_reason_type,
-    state_province_region,
-    comment_subtype,
-    comment_title,
-    is_withdrawn,
-    postal_code
-    )
-    VALUES (
-    'CMS-2025-0240-0017',
-    'https://www.regulations.gov/comment/CMS-2025-0240-0017',
-    'CMS-2025-0240-0001',
-    0,
-    Null,
-    Null,
-    'CMS',
-    Null,
-    'Association - Other',
-    'Thank you for the opportunity to submit comments on the End-Stage Renal Disease Quality Incentive Program, specifically on the request for information on the measure concepts under consideration for future years. We at the Center to Advance Palliative Care (CAPC) applaud CMS for recognizing well-being as an important measure concept for patients living with end-stage kidney disease, as well as for their family caregivers. We would like to recommend that a new measure, "access to palliative care" be included as a quality measure for all beneficiaries over age 75 receiving dialysis. As you can see from the publication attached, The Case for Palliative Care in Kidney Care, the prevalence of many debilitating symptoms is quite high among patients receiving hemodialysis in the U.S., and palliative care has been proven to make significantly increase patient well-being by expertly managing these symptoms. Moreover, the involvement of specialty palliative care for the population on hemodialysis greatly reduces avoidable Medicare spending -- by those very improvements in patient and family well-being. In terms of measuring access to palliative care, we recommend that the denominator be limited to those aged 75 or older, as that is the population most likely to have complex co-morbidities and who can thus benefit most from palliative care services. For the numerator, the program might consider a claims-based measure, counting those patients with a Z 51.5 diagnosis code. (Note that while this Z code is not reliable across all Medicare beneficiaries, it is more likely to be valid for outpatient hemodialysis, particularly with CMS guidance on the use of the code.) CMS can pilot the measure and determine a national or regional baseline, and build the quality incentive targets from the baseline collected. Moreover, the use of "access to palliative care" as a quality measure is not unprecedented. Several private health plans use this in their own network quality incentive programs, as described in this blog: https://bettercareplaybook.org/_blog/2020/8/driving-improvements-hospital-care-through-palliative-care-quality-incentives. The measure concept has also been explored for inclusion in some past CMMI models. Thank you again for the opportunity to submit this recommendation. If you have questions or need further information, please contact Allison Silvers, Chief Health Care Transformation Officer at the Center to Advance Palliative Care at allison.silvers@mssm.edu.',
-    NULL,
-    'CMS-2025-0240',
-    'Public Submission',
-    Null,
-    Null,
-    Null,
-    Null,
-    Null,
-    Null,
-    Null,
-    '2025-08-05T20:39:59Z',
-    Null,
-    Null,
-    '2025-08-05T04:00:00Z',
-    '2025-08-05T04:00:00Z',
-    Null,
-    FALSE,
-    '2025-08-05T04:00:00Z',
-    Null,
-    Null,
-    Null,
-    'Public Comment',
-    'Comment on CMS-2025-0240-0001',
-    FALSE,
-    Null
+    frDocNum,
+    title,
+    cfrPart
+) VALUES (
+    'CMS-2025-0240-0214',
+    '2025-20681',
+    42,
+    '512'
 );
+
+INSERT INTO cfrParts(
+    document_id,
+    frDocNum,
+    title,
+    cfrPart
+) VALUES (
+    'FAA-2025-0618-0011',
+    '2026-04829',
+    14,
+    '39'
+);
+
 -- =========================================
 -- FEDERAL REGISTER DOCUMENTS
 -- =========================================
 -- Made up for now until we have actual data
 
 INSERT INTO federal_register_documents (
-    docket_id,
+    document_number,
     document_id,
-    agency_id,
     document_title,
     document_type,
-    fr_doc_num,
-    cfr_title,
-    cfr_part
+    abstract,
+    publication_date,
+    effective_on,
+    docket_ids,
+    agency_id,
+    agency_names,
+    topics,
+    significant,
+    regulations_id_numbers,
+    html_url,
+    pdf_url,
+    json_url,
+    start_page,
+    end_page
 ) VALUES (
-    'CMS-2025-0304',
-    'CMS-2025-0304-0001',
-    'CMS',
-    'Medicare and Medicaid Programs; CY 2026 Payment Policies under the Physician Fee Schedule and Other Changes to Part B Payment and Coverage Policies (CMS-1832-P)',
-    'Proposed Rule',
+    '2025-07127',
     NULL,
-    '42',
-    '405'
+    'Japan Electrical Safety & Environment Technology Laboratories: Application for Recognition',
+    'Notice',
+    'In this notice, OSHA announces the application of Japan Electrical Safety & Environment Technology Laboratories (JET), for recognition as a Nationally Recognized Testing Laboratory (NRTL) and presents the agency''s preliminary finding to grant this recognition.',
+    '2025-04-25',
+    NULL,
+    ARRAY['Docket No. OSHA-2025-0005'],
+    'labor-department',
+    ARRAY['Labor Department', 'Occupational Safety and Health Administration'],
+    ARRAY[]::TEXT[],
+    NULL,
+    ARRAY[]::TEXT[],
+    'https://www.federalregister.gov/documents/2025/04/25/2025-07127/japan-electrical-safety-and-environment-technology-laboratories-application-for-recognition',
+    'https://www.govinfo.gov/content/pkg/FR-2025-04-25/pdf/2025-07127.pdf',
+    'https://www.federalregister.gov/api/v1/documents/2025-07127?publication_date=2025-04-25',
+    17462,
+    17464
 );
 
 INSERT INTO federal_register_documents (
-    docket_id,
+    document_number,
     document_id,
-    agency_id,
     document_title,
     document_type,
-    fr_doc_num,
-    cfr_title,
-    cfr_part
+    abstract,
+    publication_date,
+    effective_on,
+    docket_ids,
+    agency_id,
+    agency_names,
+    topics,
+    significant,
+    regulations_id_numbers,
+    html_url,
+    pdf_url,
+    json_url,
+    start_page,
+    end_page
 ) VALUES (
-    'CMS-2025-0304',
-    'CMS-2025-0304-0009',
-    'CMS',
-    'Medicare and Medicaid Programs: Calendar Year 2026 Payment Policies under the Physician Fee Schedule and Other Changes to Part B Payment and Coverage Policies; Medicare Shared Savings Program Requirements; and Medicare Prescription Drug Inflation Rebate Program',
-    'Proposed Rule',
-    '2025-13271',
-    '42',
-    '405'
+    '2025-13887',
+    NULL,
+    'Japan Electrical Safety & Environment Technology Laboratories: Grant of Recognition',
+    'Notice',
+    'In this notice, OSHA announces the final decision to grant recognition to Japan Electrical Safety & Environment Technology Laboratories (JET), for recognition as a Nationally Recognized Testing Laboratory (NRTL).',
+    '2025-07-24',
+    '2025-07-24',
+    ARRAY['Docket No. OSHA-2025-0005'],
+    'labor-department',
+    ARRAY['Labor Department', 'Occupational Safety and Health Administration'],
+    ARRAY[]::TEXT[],
+    NULL,
+    ARRAY[]::TEXT[],
+    'https://www.federalregister.gov/documents/2025/07/24/2025-13887/japan-electrical-safety-and-environment-technology-laboratories-grant-of-recognition',
+    'https://www.govinfo.gov/content/pkg/FR-2025-07-24/pdf/2025-13887.pdf',
+    'https://www.federalregister.gov/api/v1/documents/2025-13887?publication_date=2025-07-24',
+    34897,
+    34899
 );
 
 INSERT INTO federal_register_documents (
-    docket_id,
+    document_number,
     document_id,
-    agency_id,
     document_title,
     document_type,
-    fr_doc_num,
-    cfr_title,
-    cfr_part
-) VALUES (
-    'CMS-2025-0304',
-    'CMS-2025-0304-1544',
-    'CMS',
-    'Medicare and Medicaid Programs: Calendar Year 2026 Payment Policies under the Physician Fee Schedule and Other Changes to Part B Payment and Coverage Policies; Medicare Shared Savings Program Requirements; and Medicare Prescription Drug Inflation Rebate Program; Correction',
-    'Proposed Rule',
-    '2025-15492',
-    '42',
-    '405'
-);
-
-INSERT INTO federal_register_documents (
-    docket_id,
-    document_id,
+    abstract,
+    publication_date,
+    effective_on,
+    docket_ids,
     agency_id,
-    document_title,
-    document_type,
-    fr_doc_num,
-    cfr_title,
-    cfr_part
+    agency_names,
+    topics,
+    significant,
+    regulations_id_numbers,
+    html_url,
+    pdf_url,
+    json_url,
+    start_page,
+    end_page
 ) VALUES (
-    'CMS-2025-0304',
-    'CMS-2025-0304-14108',
-    'CMS',
-    'Medicare and Medicaid Programs: Calendar Year 2026 Payment Policies under the Physician Fee Schedule and Other Changes to Part B Payment and Coverage Policies; Medicare Shared Savings Program Requirements; and Medicare Prescription Drug Inflation Rebate Program',
+    '2026-04829',
+    NULL,
+    'Airworthiness Directives; The Boeing Company Airplanes',
     'Rule',
-    '2025-19787',
-    '42',
-    '405'
-);
-
-INSERT INTO federal_register_documents (
-    docket_id,
-    document_id,
-    agency_id,
-    document_title,
-    document_type,
-    fr_doc_num,
-    cfr_title,
-    cfr_part
-) VALUES (
-    'CMS-2025-0304',
-    'CMS-2025-0304-14109',
-    'CMS',
-    'Medicare and Medicaid Programs: Calendar Year 2026 Payment Policies Under the Physician Fee Schedule and Other Changes to Part B Payment and Coverage Policies; Medicare Shared Savings Program Requirements; and Medicare Prescription Drug Inflation Rebate Program; Correction',
-    'Rule',
-    '2025-21458',
-    '42',
-    '405'
-);
-
-INSERT INTO federal_register_documents (
-    docket_id,
-    document_id,
-    agency_id,
-    document_title,
-    document_type,
-    fr_doc_num,
-    cfr_title,
-    cfr_part
-) VALUES (
-    'CMS-2025-0240',
-    'CMS-2025-0240-0001',
-    'CMS',
-    'CY 2026 Changes to the End-Stage Renal Disease (ESRD) Prospective Payment System and Quality Incentive Program. CMS1830-P Display',
-    'Proposed Rule',
-    '2025-20681',
-    '42',
-    '413'
+    'The FAA is adopting a new airworthiness directive (AD) for certain The Boeing Company Model 767-200, -300, -300F, and -400ER series airplanes. This AD was prompted by discovery of a crack at one of the forward lower fastener holes following replacement of a cracked underwing longeron (UWL) fitting. This AD requires performing an open hole high frequency eddy current (HFEC) inspection for cracks of the fastener holes common to the UWL fitting, upper drag splice angle, and lower drag splice angle, and applicable on-condition actions. The FAA is issuing this AD to address the unsafe condition on these products.',
+    '2026-03-12',
+    '2026-04-16',
+    ARRAY['Docket No. FAA-2025-0618', 'Project Identifier AD-2024-00637-T', 'Amendment 39-23280', 'AD 2026-05-07'],
+    'transportation-depar',
+    ARRAY['Transportation Department', 'Federal Aviation Administration'],
+    ARRAY['Air transportation', 'Aircraft', 'Aviation safety', 'Incorporation by reference', 'Safety'],
+    FALSE,
+    ARRAY['2120-AA64'],
+    'https://www.federalregister.gov/documents/2026/03/12/2026-04829/airworthiness-directives-the-boeing-company-airplanes',
+    'https://www.govinfo.gov/content/pkg/FR-2026-03-12/pdf/2026-04829.pdf',
+    'https://www.federalregister.gov/api/v1/documents/2026-04829?publication_date=2026-03-12',
+    12059,
+    12064
 );
 

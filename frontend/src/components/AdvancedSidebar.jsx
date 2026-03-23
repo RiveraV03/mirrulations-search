@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { motion } from "motion/react"
-
+import Calendar from 'react-calendar';
+import 'react-calendar/dist/Calendar.css';
 
 function CollapsibleSection({ title, defaultOpen = true, children, right }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -28,10 +29,10 @@ function CollapsibleSection({ title, defaultOpen = true, children, right }) {
 export default function AdvancedSidebar({
   advOpen,
   setAdvOpen,
-  //yearFrom,
-  //setYearFrom,
-  //yearTo,
-  //setYearTo,
+  yearFrom,
+  setYearFrom,
+  yearTo,
+  setYearTo,
   agencySearch,
   setAgencySearch,
   agenciesToShow,
@@ -48,6 +49,7 @@ export default function AdvancedSidebar({
   activeCount,
 }) {
   const docTypes = ["Rulemaking", "Nonrulemaking"];
+  const [value, setOnchange] = useState([new Date(), new Date()]);
   //const statuses = ["Open", "Closed", "Pending"];
   const [agencyOrder, setAgencyOrder] = useState([]);
   const [selectedTitle, setSelectedTitle] = useState("");
@@ -173,6 +175,14 @@ export default function AdvancedSidebar({
     });
   };
 
+  const normalizeDate = (val, isEnd = false) => {
+    const yearOnly = /^\d{4}$/.test(val.trim());
+    if (yearOnly) {
+      return isEnd ? `${val.trim()}-12-31` : `${val.trim()}-01-01`;
+    }
+    return val;
+  };
+
   const filteredCfrParts = useMemo(() => {
     const rawQuery = cfrSearch.trim();
     if (!rawQuery) return cfrOrder;
@@ -245,7 +255,9 @@ export default function AdvancedSidebar({
 
       {advOpen && (
         <div className="advBody">
-          {/* Date 
+
+          {/**Date Section */}
+
           <section className="section">
             <h3>Date Range</h3>
 
@@ -254,49 +266,121 @@ export default function AdvancedSidebar({
                 type="button"
                 className="chip"
                 onClick={() => {
-                  setYearFrom("2021");
-                  setYearTo("2023");
-                }}
-              >
-                2021–2023
-              </button>
-
-              <button
-                type="button"
-                className="chip"
-                onClick={() => {
-                  setYearFrom("2024");
-                  setYearTo("2024");
-                }}
-              >
-                2024
-              </button>
-
-              <button
-                type="button"
-                className="chip"
-                onClick={() => {
                   setYearFrom("");
                   setYearTo("");
+                  setOnchange([null, null]);
                 }}
               >
                 All time
               </button>
+              <button
+            type="button"
+            className="chip"
+            onClick={() => {
+              const end = new Date();
+              const start = new Date();
+              start.setFullYear(start.getFullYear() - 1);
+
+              const format = (d) => d.toISOString().split("T")[0];
+              setYearFrom(format(start));
+              setYearTo(format(end));
+              setOnchange([start, end]);
+            }}
+          >
+            Past Year
+          </button>
+
+          <button
+            type="button"
+            className="chip"
+            onClick={() => {
+              const end = new Date();
+              const start = new Date();
+              start.setMonth(start.getMonth() - 6);
+
+              const format = (d) => d.toISOString().split("T")[0];
+              setYearFrom(format(start));
+              setYearTo(format(end));
+              setOnchange([start, end]);
+            }}
+          >
+            Past 6 Months
+          </button>
+
             </div>
 
             <div className="row">
-              <input
-                value={yearFrom}
-                onChange={(e) => setYearFrom(e.target.value)}
-                placeholder="From"
-              />
-              <input
-                value={yearTo}
-                onChange={(e) => setYearTo(e.target.value)}
-                placeholder="To"
+            <input
+            value={yearFrom}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setYearFrom(raw);
+
+              // Only normalize + sync calendar once it looks complete
+              const normalized = normalizeDate(raw, false);
+              const isYearOnly = /^\d{4}$/.test(raw.trim());
+
+              if (isYearOnly) {
+                const endNorm = `${raw.trim()}-12-31`;
+                setYearTo(endNorm);                          // auto-fill To
+                setOnchange([new Date(normalized), new Date(endNorm)]);
+              } else if (normalized && yearTo) {
+                setOnchange([new Date(normalized), new Date(yearTo)]);
+              }
+            }}
+            placeholder="YYYY or YYYY-MM-DD"
+          />
+
+          <input
+            value={yearTo}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setYearTo(raw);
+
+              const normalized = normalizeDate(raw, true);
+              const isYearOnly = /^\d{4}$/.test(raw.trim());
+
+              if (isYearOnly) {
+                const startNorm = yearFrom || `${raw.trim()}-01-01`;
+                setOnchange([new Date(startNorm), new Date(normalized)]);
+              } else if (yearFrom && normalized) {
+                setOnchange([new Date(yearFrom), new Date(normalized)]);
+              }
+            }}
+            placeholder="YYYY or YYYY-MM-DD"
+          />
+            </div>
+
+            <div className="calendar-div">
+              <Calendar
+                selectRange={true}
+                onChange={(range) => {
+                  if (!Array.isArray(range)) return;
+
+                  let [start, end] = range;
+
+                  // Handle first click (no end yet)
+                  if (!end) {
+                    setOnchange([start, null]);
+                    setYearFrom(start.toISOString().split("T")[0]);
+                    return;
+                  }
+
+                  // Auto-swap if user selects backwards
+                  if (start > end) {
+                    [start, end] = [end, start];
+                  }
+
+                  const format = (d) => d.toISOString().split("T")[0];
+
+                  setOnchange([start, end]);
+                  setYearFrom(format(start));
+                  setYearTo(format(end));
+                }}
+                value={value}
               />
             </div>
-          </section> */}
+          </section>
 
           {/* Agency */}
           <CollapsibleSection title="Agency">

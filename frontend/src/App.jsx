@@ -69,7 +69,9 @@ const activeCount =
           docType,
           selectedAgencyList,
           selectedCfrList,
-          newPage
+          newPage,
+          yearFrom,
+          yearTo
         );
     
         setResults(data.results);
@@ -101,6 +103,12 @@ const clearAdvanced = () => {
 
   useEffect(()=> {
     console.log(results)
+    console.log("Sending filters:", {
+  query,
+  docType,
+  yearFrom,
+  yearTo,
+});
   },[results])
 
 return (

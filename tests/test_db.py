@@ -113,20 +113,20 @@ def test_search_dockets_postgres_agency_and_docket_type_filter():
 
 
 def test_get_cfr_docket_ids_single_part():
-    """Single CFR part queries federal_register_documents with title+part ILIKE clauses"""
+    """Single CFR part queries federal_register_documents with title+part exact clauses"""
     db = DBLayer(conn=_FakeConn([("CMS-2025-0304",)]))
     result = db._get_cfr_docket_ids([{"title": "Title 42", "part": "413"}])
     sql, params = db.conn.cursor_obj.executed
     assert "federal_register_documents" in sql
-    assert "cfr_title ILIKE %s" in sql
-    assert "cfr_part ILIKE %s" in sql
-    assert "%Title 42%" in params
-    assert "%413%" in params
+    assert "cfr_title = %s" in sql
+    assert "cfr_part = %s" in sql
+    assert "Title 42" in params
+    assert "413" in params
     assert result == {"CMS-2025-0304"}
 
 
 def test_get_cfr_docket_ids_multi_part():
-    """Multiple CFR parts produce OR'd title+part ILIKE clauses
+    """Multiple CFR parts produce OR'd title+part exact clauses
     against federal_register_documents"""
     db = DBLayer(conn=_FakeConn([("CMS-2025-0304",), ("CMS-2025-0240",)]))
     result = db._get_cfr_docket_ids([
@@ -135,9 +135,9 @@ def test_get_cfr_docket_ids_multi_part():
     ])
     sql, params = db.conn.cursor_obj.executed
     assert "federal_register_documents" in sql
-    assert sql.count("cfr_part ILIKE %s") == 2
-    assert "%413%" in params
-    assert "%512%" in params
+    assert sql.count("cfr_part = %s") == 2
+    assert "413" in params
+    assert "512" in params
     assert result == {"CMS-2025-0304", "CMS-2025-0240"}
 
 
@@ -331,15 +331,15 @@ def test_search_dockets_by_cfr_deduplicates_docket_ids():
 
 
 def test_search_dockets_by_cfr_queries_federal_register_documents():
-    """SQL targets federal_register_documents with cfr_title and cfr_part ILIKE clauses"""
+    """SQL targets federal_register_documents with cfr_title and cfr_part = clauses"""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_by_cfr([{"title": "Title 42", "part": "413"}])
     sql, params = db.conn.cursor_obj.executed
     assert "federal_register_documents" in sql
-    assert "cfr_title ILIKE %s" in sql
-    assert "cfr_part ILIKE %s" in sql
-    assert "%Title 42%" in params
-    assert "%413%" in params
+    assert "cfr_title = %s" in sql
+    assert "cfr_part = %s" in sql
+    assert "Title 42" in params
+    assert "413" in params
 
 
 # --- _search_dockets_by_document_title tests ---
@@ -561,3 +561,218 @@ def test_get_opensearch_connection(monkeypatch):
     assert captured["hosts"] == [{"host": "localhost", "port": 9200}]
     assert captured["use_ssl"] is False
     assert captured["verify_certs"] is False
+
+# --- OpenSearch text_match_terms tests ---
+
+class _FakeOpenSearch:  # pylint: disable=too-few-public-methods
+    """Fake OpenSearch client that returns canned responses for multiple indices"""
+    def __init__(self, doc_buckets, comment_buckets, extracted_buckets):
+        self.doc_buckets = doc_buckets
+        self.comment_buckets = comment_buckets
+        self.extracted_buckets = extracted_buckets
+        self.searches = []
+
+    def search(self, index, body):
+        self.searches.append((index, body))
+
+        if index == "documents":
+            return {
+                "aggregations": {
+                    "by_docket": {
+                        "buckets": self.doc_buckets
+                    }
+                }
+            }
+        if index == "comments":
+            return {
+                "aggregations": {
+                    "by_docket": {
+                        "buckets": self.comment_buckets
+                    }
+                }
+            }
+        if index == "comments_extracted_text":
+            return {
+                "aggregations": {
+                    "by_docket": {
+                        "buckets": self.extracted_buckets
+                    }
+                }
+            }
+        return {"aggregations": {"by_docket": {"buckets": []}}}
+
+
+def test_text_match_terms_searches_comments_and_extracted():
+    """Test text_match_terms searches comments and extracted text"""
+    doc_buckets = []
+    comment_buckets = [
+        {"key": "CMS-2025-0240", "matching_comments": {"doc_count": 2}}
+    ]
+    extracted_buckets = [
+        {"key": "CMS-2025-0240", "matching_extracted": {"doc_count": 4}}
+    ]
+
+    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+    db = DBLayer()
+
+    results = db.text_match_terms(["medicare"], opensearch_client=fake_client)
+
+    # Should have searched all three indices
+    assert len(fake_client.searches) == 3
+    assert fake_client.searches[0][0] == "documents"
+    assert fake_client.searches[1][0] == "comments"
+    assert fake_client.searches[2][0] == "comments_extracted_text"
+
+    # Should combine comment sources: 6 comments (2 + 4)
+    assert len(results) == 1
+    assert results[0]["docket_id"] == "CMS-2025-0240"
+    assert results[0]["comment_match_count"] == 6
+
+
+def test_text_match_terms_combines_comment_sources():
+    """Test that comments and extracted text are both counted as comments"""
+    doc_buckets = []
+    comment_buckets = [
+        {"key": "DEA-2024-0059", "matching_comments": {"doc_count": 1}}
+    ]
+    extracted_buckets = [
+        {"key": "DEA-2024-0059", "matching_extracted": {"doc_count": 1}}
+    ]
+
+    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+    db = DBLayer()
+
+    results = db.text_match_terms(["cannabis"], opensearch_client=fake_client)
+
+    assert len(results) == 1
+    assert results[0]["docket_id"] == "DEA-2024-0059"
+    assert results[0]["comment_match_count"] == 2  # 1 comment + 1 extracted
+
+
+def test_text_match_terms_multiple_dockets_comments():
+    """Test searching comments across multiple dockets"""
+    doc_buckets = []
+    comment_buckets = [
+        {"key": "CMS-2025-0240", "matching_comments": {"doc_count": 2}},
+        {"key": "DEA-2024-0059", "matching_comments": {"doc_count": 1}}
+    ]
+    extracted_buckets = [
+        {"key": "CMS-2025-0240", "matching_extracted": {"doc_count": 4}}
+    ]
+
+    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+    db = DBLayer()
+
+    results = db.text_match_terms(["test"], opensearch_client=fake_client)
+
+    assert len(results) == 2
+
+    cms = next(r for r in results if r["docket_id"] == "CMS-2025-0240")
+    assert cms["comment_match_count"] == 6  # 2 + 4
+
+    dea = next(r for r in results if r["docket_id"] == "DEA-2024-0059")
+    assert dea["comment_match_count"] == 1
+
+
+def test_text_match_terms_uses_filtered_aggregations():
+    """Verify the OpenSearch queries use filtered aggregations"""
+    fake_client = _FakeOpenSearch([], [], [])
+    db = DBLayer()
+
+    db.text_match_terms(["medicare", "medicaid"], opensearch_client=fake_client)
+
+    # Check all three queries were made
+    assert len(fake_client.searches) == 3
+
+    # Check comments query structure
+    comment_index, comment_body = fake_client.searches[1]
+    assert comment_index == "comments"
+    assert comment_body["size"] == 0
+    assert "aggs" in comment_body
+    assert "matching_comments" in comment_body["aggs"]["by_docket"]["aggs"]
+    assert "filter" in comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]
+
+    # Check extracted text query structure
+    extracted_index, extracted_body = fake_client.searches[2]
+    assert extracted_index == "comments_extracted_text"
+    assert "matching_extracted" in extracted_body["aggs"]["by_docket"]["aggs"]
+
+
+def test_text_match_terms_returns_correct_structure():
+    """Verify each result has the required fields"""
+    doc_buckets = []
+    comment_buckets = [{"key": "TEST-001", "matching_comments": {"doc_count": 5}}]
+    extracted_buckets = []
+
+    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+    db = DBLayer()
+
+    results = db.text_match_terms(["test"], opensearch_client=fake_client)
+
+    assert len(results) == 1
+    assert "docket_id" in results[0]
+    assert "document_match_count" in results[0]
+    assert "comment_match_count" in results[0]
+    assert isinstance(results[0]["docket_id"], str)
+    assert isinstance(results[0]["document_match_count"], int)
+    assert isinstance(results[0]["comment_match_count"], int)
+
+
+def test_text_match_terms_handles_empty_results():
+    """When OpenSearch returns no buckets, return empty list"""
+    fake_client = _FakeOpenSearch([], [], [])
+    db = DBLayer()
+
+    results = db.text_match_terms(["nonexistent"], opensearch_client=fake_client)
+
+    assert not results
+
+
+def test_text_match_terms_only_returns_comment_matches():
+    """Only dockets with comment match_count > 0 are included"""
+    doc_buckets = []
+    comment_buckets = [
+        {"key": "HAS-MATCH", "matching_comments": {"doc_count": 5}},
+        {"key": "NO-MATCH", "matching_comments": {"doc_count": 0}}
+    ]
+    extracted_buckets = []
+
+    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+    db = DBLayer()
+
+    results = db.text_match_terms(["test"], opensearch_client=fake_client)
+
+    assert len(results) == 1
+    assert results[0]["docket_id"] == "HAS-MATCH"
+
+
+def test_text_match_terms_docket_only_in_comments():
+    """When a docket only has matching comment text"""
+    doc_buckets = []
+    comment_buckets = [{"key": "COMMENT-ONLY", "matching_comments": {"doc_count": 10}}]
+    extracted_buckets = []
+
+    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+    db = DBLayer()
+
+    results = db.text_match_terms(["test"], opensearch_client=fake_client)
+
+    assert len(results) == 1
+    assert results[0]["docket_id"] == "COMMENT-ONLY"
+    assert results[0]["comment_match_count"] == 10
+
+
+def test_text_match_terms_docket_only_in_extracted():
+    """When a docket only has matching extracted text"""
+    doc_buckets = []
+    comment_buckets = []
+    extracted_buckets = [{"key": "EXTRACTED-ONLY", "matching_extracted": {"doc_count": 3}}]
+
+    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+    db = DBLayer()
+
+    results = db.text_match_terms(["test"], opensearch_client=fake_client)
+
+    assert len(results) == 1
+    assert results[0]["docket_id"] == "EXTRACTED-ONLY"
+    assert results[0]["comment_match_count"] == 3

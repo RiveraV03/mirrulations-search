@@ -8,7 +8,8 @@ from mirrsearch.internal_logic import InternalLogic
 
 class MockDbLayer:  # pylint: disable=too-few-public-methods
     """Mock database layer for testing"""
-    def search(self, query, document_type=None, agency=None, cfr_part=None):
+    def search(self, query, document_type=None, agency=None, # pylint: disable=too-many-arguments,too-many-positional-arguments
+               cfr_part=None, start_date=None, end_date=None): # pylint: disable=unused-argument
         """Return 25 mock results for testing pagination"""
         # Unused parameters are intentional for interface compatibility
         _ = document_type, agency, cfr_part
