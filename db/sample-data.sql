@@ -1555,6 +1555,16 @@ INSERT INTO links(
     'https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-H/part-512?toc=1'
 );
 
+INSERT INTO links(
+    title,
+    cfrpart,
+    link
+) VALUES (
+    14,
+    39,
+    'https://www.ecfr.gov/current/title-14/chapter-I/subchapter-C/part-39?toc=1'
+);
+
 -- =========================================
 -- CFR PARTS
 -- =========================================
@@ -2025,6 +2035,18 @@ INSERT INTO cfrParts(
     '2025-20681',
     42,
     '512'
+);
+
+INSERT INTO cfrParts(
+    document_id,
+    frDocNum,
+    title,
+    cfrPart
+) VALUES (
+    'FAA-2025-0618-0011',
+    '2026-04829',
+    14,
+    '39'
 );
 
 -- =========================================
