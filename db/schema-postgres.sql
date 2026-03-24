@@ -130,5 +130,7 @@ CREATE TABLE IF NOT EXISTS federal_register_documents (
     json_url VARCHAR(2000),
     start_page INTEGER,
     end_page INTEGER,
+    title VARCHAR(50),
+    cfrpart VARCHAR(50),
     PRIMARY KEY (document_number)
 );
