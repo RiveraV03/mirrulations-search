@@ -53,18 +53,20 @@ echo "Creating database..."
 createdb "$DB_NAME"
 
 echo "Loading schema..."
-psql -d "$DB_NAME" -f "$SCHEMA_FILE"
+psql -v ON_ERROR_STOP=1 -d "$DB_NAME" -f "$SCHEMA_FILE"
 
 echo "Loading sample data..."
-psql -d "$DB_NAME" -f "$SAMPLE_FILE"
+psql -v ON_ERROR_STOP=1 -d "$DB_NAME" -f "$SAMPLE_FILE"
 
-# Verify: dockets and documents should have rows
-DOCKETS=$(psql -d "$DB_NAME" -tAc "SELECT count(*) FROM dockets;")
-DOCS=$(psql -d "$DB_NAME" -tAc "SELECT count(*) FROM documents;")
-if [ "$DOCKETS" -lt 1 ] || [ "$DOCS" -lt 1 ]; then
-    echo "Error: Sample data verification failed (dockets=$DOCKETS, documents=$DOCS)."
-    exit 1
-fi
+# Verify: all seed tables should have rows.
+TABLES=("dockets" "documents" "links" "cfrParts" "comments" "federal_register_documents")
+for table_name in "${TABLES[@]}"; do
+    row_count=$(psql -d "$DB_NAME" -tAc "SELECT count(*) FROM \"$table_name\";")
+    if [ "${row_count:-0}" -lt 1 ]; then
+        echo "Error: Sample data verification failed for table '$table_name' (count=$row_count)."
+        exit 1
+    fi
+done
 
 echo "Successfully created database '$DB_NAME' with schema and sample data."
 echo "Connect with: psql $DB_NAME"

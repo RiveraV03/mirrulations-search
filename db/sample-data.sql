@@ -714,9 +714,9 @@ INSERT INTO documents(
     NULL,
     NULL,
     NULL,
-    NULL,
-    NULL,
-    NULL,
+    NULL,  -- flex_field1
+    NULL,  -- flex_field2
+    NULL,  -- first_name
     NULL,
     NULL,
     NULL,
@@ -2173,3 +2173,4 @@ INSERT INTO federal_register_documents (
     12059,
     12064
 );
+
