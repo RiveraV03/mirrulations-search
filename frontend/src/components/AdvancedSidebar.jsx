@@ -183,10 +183,16 @@ export default function AdvancedSidebar({
   }, [agenciesToShow, agencyOrder]);
 
   const visibleAgencies = useMemo(() => {
-    if (agencySearch.trim()) {
-      return orderedAgencies;
+    const q = agencySearch.trim().toLowerCase();
+  
+    // If user typed something, filter by their query
+    if (q) {
+      return orderedAgencies.filter(
+        a => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
+      );
     }
-
+  
+    // If nothing is in the search bar, show atleast 5 agencies
     const minVisible = Math.max(5, selectedAgencies.size);
     return orderedAgencies.slice(0, minVisible);
   }, [agencySearch, orderedAgencies, selectedAgencies.size]);
