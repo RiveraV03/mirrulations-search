@@ -164,6 +164,46 @@ INSERT INTO dockets (
     'Airworthiness Directives'
 );
 
+INSERT INTO dockets (
+    docket_id,
+    docket_api_link,
+    agency_id,
+    docket_category,
+    docket_type,
+    effective_date,
+    flex_field1,
+    flex_field2,
+    modify_date,
+    organization,
+    petition_nbr,
+    program,
+    rin,
+    short_title,
+    flex_subtype1,
+    flex_subtype2,
+    docket_title,
+    docket_abstract
+) VALUES (
+    'FAA-2025-5043',
+    'https://api.regulations.gov/v4/dockets/FAA-2025-5043',
+    'FAA',
+    'Pending',
+    'Rulemaking',
+    NULL,
+    NULL,
+    NULL,
+    '2026-03-13T14:23:24Z',
+    NULL,
+    NULL,
+    NULL,
+    '2120-AA64',
+    NULL,
+    'Airworthiness Directives',
+    NULL,
+    'MCAI-2024-00780-R; AIRBUS HELICOPTERS SA 330 and AS 332 Tail Rotor – Rotor Head Bearing Stack of the Spindle',
+    'Airworthiness Directives'
+);
+
 -- =========================================
 -- DOCUMENTS
 -- =========================================
