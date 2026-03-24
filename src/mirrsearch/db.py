@@ -68,7 +68,7 @@ class DBLayer:
                 l.link
             FROM dockets d
             JOIN documents doc ON doc.docket_id = d.docket_id
-            LEFT JOIN cfrparts cp ON cp.document_id = doc.document_id
+            LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
             LEFT JOIN links l ON l.title = cp.title AND l.cfrpart = cp.cfrpart
             WHERE d.docket_title ILIKE %s
         """
@@ -178,7 +178,7 @@ class DBLayer:
                 d.modify_date, cp.title, cp.cfrpart, l.link
             FROM dockets d
             JOIN documents doc ON doc.docket_id = d.docket_id
-            LEFT JOIN cfrparts cp ON cp.document_id = doc.document_id
+            LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
             LEFT JOIN links l ON l.title = cp.title AND l.cfrpart = cp.cfrpart
             WHERE d.docket_id = ANY(%s)
         """
