@@ -2121,7 +2121,9 @@ INSERT INTO federal_register_documents (
     'https://www.govinfo.gov/content/pkg/FR-2025-04-25/pdf/2025-07127.pdf',
     'https://www.federalregister.gov/api/v1/documents/2025-07127?publication_date=2025-04-25',
     17462,
-    17464
+    17464,
+    NULL,
+    NULL
 );
 
 INSERT INTO federal_register_documents (
@@ -2163,7 +2165,9 @@ INSERT INTO federal_register_documents (
     'https://www.govinfo.gov/content/pkg/FR-2025-07-24/pdf/2025-13887.pdf',
     'https://www.federalregister.gov/api/v1/documents/2025-13887?publication_date=2025-07-24',
     34897,
-    34899
+    34899,
+    NULL,
+    NULL
 );
 
 INSERT INTO federal_register_documents (
@@ -2205,6 +2209,8 @@ INSERT INTO federal_register_documents (
     'https://www.govinfo.gov/content/pkg/FR-2026-03-12/pdf/2026-04829.pdf',
     'https://www.federalregister.gov/api/v1/documents/2026-04829?publication_date=2026-03-12',
     12059,
-    12064
+    12064,
+    14,
+    39 
 );
 
