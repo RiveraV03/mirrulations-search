@@ -19,9 +19,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           conclusion=$(gh api \
-              repos/${{ github.repository }}/actions/workflows/static_analysis.yml/runs \
-              --jq ".workflow_runs[] | select(.head_sha==\"${{ github.event.workflow_run.head_sha }}\") | .conclusion" \
-              | head -1)
+            repos/${{ github.repository }}/actions/workflows/static_analysis.yml/runs \
+            --jq ".workflow_runs[] | select(.head_sha==\"${{ github.event.workflow_run.head_sha }}\") | .conclusion" \
+            | head -1)
           if [ "$conclusion" != "success" ]; then
             echo "Static Analysis has not passed for this commit"
             exit 1
@@ -33,6 +33,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: AWS_REGION,AWS_SECRET_NAME
+          command_timeout: 30m
           script: |
             cd /home/ec2-user/mirrulations-search
             git fetch origin main

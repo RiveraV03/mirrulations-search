@@ -14,7 +14,12 @@ def _get_search_params():
     if cfr_parts_raw:
         cfr_parts_parsed = []
         for cfr_str in cfr_parts_raw:
+            # Ignore malformed values instead of crashing request parsing.
+            if ':' not in cfr_str:
+                continue
             title, part = cfr_str.split(':', 1)
+            if not title or not part:
+                continue
             cfr_parts_parsed.append({'title': title, 'part': part})
 
     return {

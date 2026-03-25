@@ -217,24 +217,44 @@ def test_text_match_terms_structure(db):
         assert isinstance(item["comment_match_count"], int)
 
 
+def test_text_match_terms_finds_drug(db):
+    """Find dockets for 'drug'"""
+    result = db.text_match_terms(["drug"])
+
+    # Should find CMS-2025-0001 (1 doc)
+    assert len(result) == 1
+
+    # CMS-2025-0001: 1 doc with "Drug" in documentText, 0 comments
+    cms_2025_0001 = next((r for r in result if r["docket_id"] == "CMS-2025-0001"), None)
+    assert cms_2025_0001 is not None
+    assert cms_2025_0001["document_match_count"] == 1
+    assert cms_2025_0001["comment_match_count"] == 0
+
+
 def test_text_match_terms_finds_medicare(db):
     """Find dockets for 'medicare'"""
     result = db.text_match_terms(["medicare"])
 
-    # Should find both CMS dockets (2025 and 2019)
-    assert len(result) == 2
+    # Should find 3 dockets: CMS-2025-0001, CMS-2025-0240, CMS-2019-0100
+    assert len(result) == 3
 
-    # CMS-2025-0240: 2 docs + 2 comments + 4 extracted = 2 docs, 6 comments
+    # CMS-2025-0001: 1 doc with "Medicare" in documentText, 0 comments
+    cms_2025_0001 = next((r for r in result if r["docket_id"] == "CMS-2025-0001"), None)
+    assert cms_2025_0001 is not None
+    assert cms_2025_0001["document_match_count"] == 1
+    assert cms_2025_0001["comment_match_count"] == 0
+
+    # CMS-2025-0240: 4 extracted (distinct commentId) → doc; 2 comment bodies → com
     cms_2025 = next((r for r in result if r["docket_id"] == "CMS-2025-0240"), None)
     assert cms_2025 is not None
-    assert cms_2025["document_match_count"] == 2
-    assert cms_2025["comment_match_count"] == 6
+    assert cms_2025["document_match_count"] == 4
+    assert cms_2025["comment_match_count"] == 2
 
-    # CMS-2019-0100: 0 docs + 4 comments + 2 extracted = 0 docs, 6 comments
+    # CMS-2019-0100: 2 extracted with "medicare"; 4 comment bodies
     cms_2019 = next((r for r in result if r["docket_id"] == "CMS-2019-0100"), None)
     assert cms_2019 is not None
-    assert cms_2019["document_match_count"] == 0
-    assert cms_2019["comment_match_count"] == 6
+    assert cms_2019["document_match_count"] == 2
+    assert cms_2019["comment_match_count"] == 4
 
 
 def test_text_match_terms_finds_marijuana(db):
@@ -245,7 +265,7 @@ def test_text_match_terms_finds_marijuana(db):
     r = result[0]
 
     assert r["docket_id"] == "DEA-2024-0059"
-    assert r["document_match_count"] == 2  # 2 documents with "Marijuana" in title
+    assert r["document_match_count"] == 0
     assert r["comment_match_count"] == 1  # 1 comment with "marijuana"
 
 
@@ -257,20 +277,8 @@ def test_text_match_terms_finds_cannabis(db):
     r = result[0]
 
     assert r["docket_id"] == "DEA-2024-0059"
-    assert r["document_match_count"] == 0  # No documents with "cannabis" in title
-    assert r["comment_match_count"] == 1  # 1 extracted text with "cannabis"
-
-
-def test_text_match_terms_finds_esrd(db):
-    """Find CMS docket for 'ESRD'"""
-    result = db.text_match_terms(["ESRD"])
-
-    assert len(result) == 1
-    r = result[0]
-
-    assert r["docket_id"] == "CMS-2025-0240"
-    assert r["document_match_count"] == 1  # 1 doc with "ESRD" in title (0214 and 0001)
-    assert r["comment_match_count"] == 1  # 1 extracted text with "ESRD"
+    assert r["document_match_count"] == 1  # extracted PDF text; one logical commentId
+    assert r["comment_match_count"] == 0
 
 
 def test_text_match_terms_no_results(db):

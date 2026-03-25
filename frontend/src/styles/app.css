@@ -334,6 +334,15 @@
     font-size: 14px;
     color: #555;
   }
+
+  .fraction-line{
+    margin-top: 8px;
+    font-size: 14px;
+  }
+
+  .fraction-line strong{
+    font-weight: 900;
+  }
   
   .result-summary {
     margin-top: 12px;

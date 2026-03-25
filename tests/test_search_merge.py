@@ -1,0 +1,218 @@
+# pylint: disable=too-few-public-methods,unused-argument
+"""Tests for OpenSearch merge path in InternalLogic.search()."""
+from datetime import date
+
+from mirrsearch.internal_logic import InternalLogic
+
+
+class _FakeDbMerge:
+    def __init__(self, sql_rows, os_hits, by_id_rows):
+        self._sql_rows = sql_rows
+        self._os_hits = os_hits
+        self._by_id_rows = by_id_rows
+        self.get_dockets_by_ids_calls = []
+
+    def search(self, query, *args, **kwargs):  # pylint: disable=unused-argument
+        return list(self._sql_rows)
+
+    def text_match_terms(self, terms, opensearch_client=None):
+        return list(self._os_hits)
+
+    def get_dockets_by_ids(self, docket_ids):
+        self.get_dockets_by_ids_calls.append(list(docket_ids))
+        return list(self._by_id_rows)
+
+    def get_docket_document_comment_totals(self, docket_ids, opensearch_client=None):  # pylint: disable=unused-argument
+        # Provide deterministic denominators for assertions.
+        dids = [str(d) for d in docket_ids]
+        totals = {
+            "A": {"document_total_count": 10, "comment_total_count": 2},
+            "B": {"document_total_count": 4, "comment_total_count": 5},
+            "C": {"document_total_count": 7, "comment_total_count": 3},
+        }
+        return {d: totals[d] for d in dids if d in totals}
+
+
+def test_search_json_sanitizes_modify_date():
+    """Postgres-style date objects become ISO strings for JSON responses."""
+    sql_rows = [
+        {
+            "docket_id": "A",
+            "docket_title": "t",
+            "cfr_refs": [],
+            "modify_date": date(2024, 6, 15),
+        },
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits=[], by_id_rows=[])
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", page=1, page_size=10)
+    assert out["results"][0]["modify_date"] == "2024-06-15"
+
+
+def test_merge_opensearch_empty_uses_sql_only_with_match_source():
+    db = _FakeDbMerge(
+        sql_rows=[{"docket_id": "A", "docket_title": "t", "cfr_refs": []}],
+        os_hits=[],
+        by_id_rows=[],
+    )
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", page=1, page_size=10)
+    assert len(out["results"]) == 1
+    assert out["results"][0]["match_source"] == "title"
+    assert out["results"][0]["documentNumerator"] == 0
+    assert out["results"][0]["commentNumerator"] == 0
+    assert out["results"][0]["documentDenominator"] == 10
+    assert out["results"][0]["commentDenominator"] == 2
+    assert not db.get_dockets_by_ids_calls
+
+
+
+def test_merge_appends_full_text_with_counts_and_order():  # pylint: disable=too-many-statements
+    sql_rows = [{"docket_id": "A", "docket_title": "ta", "cfr_refs": []}]
+    os_hits = [
+        {"docket_id": "A", "document_match_count": 9, "comment_match_count": 1},
+        {"docket_id": "B", "document_match_count": 2, "comment_match_count": 3},
+        {"docket_id": "C", "document_match_count": 1, "comment_match_count": 0},
+    ]
+    by_id_rows = [
+        {"docket_id": "C", "docket_title": "tc", "cfr_refs": []},
+        {"docket_id": "B", "docket_title": "tb", "cfr_refs": []},
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits, by_id_rows)
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", page=1, page_size=10)
+    merged = out["results"]
+    assert [r["docket_id"] for r in merged] == ["A", "B", "C"]
+    assert merged[0]["match_source"] == "title"
+    assert merged[0]["documentNumerator"] == 9
+    assert merged[0]["commentNumerator"] == 1
+    assert merged[0]["documentDenominator"] == 10
+    assert merged[0]["commentDenominator"] == 2
+    assert merged[1]["match_source"] == "full_text"
+    assert merged[1]["documentNumerator"] == 2
+    assert merged[1]["commentNumerator"] == 3
+    assert merged[1]["documentDenominator"] == 4
+    assert merged[1]["commentDenominator"] == 5
+    assert merged[2]["match_source"] == "full_text"
+    assert merged[2]["documentNumerator"] == 1
+    assert merged[2]["documentDenominator"] == 7
+    assert db.get_dockets_by_ids_calls == [["B", "C"]]
+
+
+def test_merge_skips_os_docket_missing_in_postgres():
+    sql_rows = [{"docket_id": "A", "docket_title": "ta", "cfr_refs": []}]
+    os_hits = [{"docket_id": "B", "document_match_count": 1, "comment_match_count": 0}]
+    db = _FakeDbMerge(sql_rows, os_hits, by_id_rows=[])
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", page=1, page_size=10)
+    assert len(out["results"]) == 1
+    assert out["results"][0]["docket_id"] == "A"
+    assert out["results"][0]["documentNumerator"] == 0
+    assert out["results"][0]["commentNumerator"] == 0
+    assert out["results"][0]["documentDenominator"] == 10
+    assert out["results"][0]["commentDenominator"] == 2
+
+
+def test_row_docket_key_accepts_id_for_mocks():
+    db = _FakeDbMerge(
+        sql_rows=[{"id": 1, "title": "x", "cfr_refs": []}],
+        os_hits=[],
+        by_id_rows=[],
+    )
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", page=1, page_size=2)
+    assert out["results"][0]["match_source"] == "title"
+    assert out["results"][0]["documentNumerator"] == 0
+    assert out["results"][0]["commentNumerator"] == 0
+    assert out["results"][0]["documentDenominator"] == 0
+    assert out["results"][0]["commentDenominator"] == 0
+
+
+def test_merge_full_text_dropped_when_agency_filter_no_match():
+    """OpenSearch-only dockets must satisfy the same agency filter as title search."""
+    sql_rows = [{"docket_id": "A", "docket_title": "ta", "cfr_refs": [], "agency_id": "CMS"}]
+    os_hits = [
+        {"docket_id": "A", "document_match_count": 1, "comment_match_count": 0},
+        {"docket_id": "B", "document_match_count": 5, "comment_match_count": 1},
+    ]
+    by_id_rows = [
+        {"docket_id": "B", "docket_title": "tb", "cfr_refs": [], "agency_id": "EPA"},
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits, by_id_rows)
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", agency=["CMS"], page=1, page_size=10)
+    assert len(out["results"]) == 1
+    assert out["results"][0]["docket_id"] == "A"
+    assert db.get_dockets_by_ids_calls == [["B"]]
+
+
+def test_merge_full_text_kept_when_agency_filter_matches():
+    sql_rows = [{"docket_id": "A", "docket_title": "ta", "cfr_refs": [], "agency_id": "CMS"}]
+    os_hits = [
+        {"docket_id": "B", "document_match_count": 2, "comment_match_count": 0},
+    ]
+    by_id_rows = [
+        {"docket_id": "B", "docket_title": "tb", "cfr_refs": [], "agency_id": "CMS-FOO"},
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits, by_id_rows)
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", agency=["CMS"], page=1, page_size=10)
+    # B ranks above A (higher match counts vs totals from _FakeDbMerge).
+    assert [r["docket_id"] for r in out["results"]] == ["B", "A"]
+
+
+def test_merge_full_text_dropped_when_docket_type_filter_no_match():
+    sql_rows = [
+        {"docket_id": "A", "docket_title": "ta", "cfr_refs": [], "agency_id": "X",
+         "docket_type": "Rulemaking"},
+    ]
+    os_hits = [{"docket_id": "B", "document_match_count": 1, "comment_match_count": 0}]
+    by_id_rows = [
+        {"docket_id": "B", "docket_title": "tb", "cfr_refs": [], "agency_id": "X",
+         "docket_type": "Notice"},
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits, by_id_rows)
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", docket_type_param="Rulemaking", page=1, page_size=10)
+    assert len(out["results"]) == 1
+    assert out["results"][0]["docket_id"] == "A"
+
+
+def test_merge_full_text_dropped_when_cfr_part_filter_no_match():
+    sql_rows = [
+        {"docket_id": "A", "docket_title": "ta", "cfr_refs": [
+            {"title": "Title 42", "cfrParts": {"413": "http://a"}},
+        ], "agency_id": "CMS"},
+    ]
+    os_hits = [{"docket_id": "B", "document_match_count": 1, "comment_match_count": 0}]
+    by_id_rows = [
+        {"docket_id": "B", "docket_title": "tb", "cfr_refs": [
+            {"title": "Title 40", "cfrParts": {"99": "http://b"}},
+        ], "agency_id": "CMS"},
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits, by_id_rows)
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search(
+        "q",
+        cfr_part_param=[{"title": "42 CFR", "part": "413"}],
+        page=1,
+        page_size=10,
+    )
+    assert len(out["results"]) == 1
+    assert out["results"][0]["docket_id"] == "A"
+
+
+def test_merge_os_hits_all_title_matches_falls_back_to_title_only():
+    """OpenSearch returns hits but none are new vs title search → no get_dockets_by_ids."""
+    sql_rows = [{"docket_id": "A", "docket_title": "ta", "cfr_refs": []}]
+    os_hits = [{"docket_id": "A", "document_match_count": 9, "comment_match_count": 1}]
+    db = _FakeDbMerge(sql_rows, os_hits, by_id_rows=[])
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", page=1, page_size=10)
+    assert len(out["results"]) == 1
+    assert out["results"][0]["match_source"] == "title"
+    assert out["results"][0]["documentNumerator"] == 9
+    assert out["results"][0]["commentNumerator"] == 1
+    assert out["results"][0]["documentDenominator"] == 10
+    assert out["results"][0]["commentDenominator"] == 2
+    assert not db.get_dockets_by_ids_calls

@@ -2,7 +2,6 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIRRSEARCH_SERVICE="mirrsearch.service"
 MIRRSEARCH_SERVICE_PATH="/etc/systemd/system/${MIRRSEARCH_SERVICE}"
-
 DOMAIN="dev.mirrulations.org"
 
 cd "${PROJECT_ROOT}"
@@ -24,13 +23,58 @@ DB_PORT=5432
 DB_NAME=mirrulations
 DB_USER=postgres
 DB_PASSWORD=postgres
+OPENSEARCH_HOST=localhost
+OPENSEARCH_PORT=9200
+OPENSEARCH_USE_SSL=true
+OPENSEARCH_USER=admin
+OPENSEARCH_PASSWORD='M1rrulations!Search'
 ENVEOF
     echo "Created .env with defaults (edit for RDS or custom credentials)"
+fi
+
+# Older checkouts: .env may exist but omit OpenSearch TLS/auth (template only runs when missing).
+if [[ -f .env ]] && ! grep -q '^OPENSEARCH_USER=' .env; then
+    cat >> .env <<'ENVEOF'
+
+# OpenSearch (HTTPS + basic auth; must match install_demo_configuration password)
+OPENSEARCH_USE_SSL=true
+OPENSEARCH_USER=admin
+OPENSEARCH_PASSWORD='M1rrulations!Search'
+ENVEOF
+    echo "Appended OpenSearch TLS/auth to .env — set OPENSEARCH_PASSWORD if yours differs."
 fi
 
 # Load .env for DB_HOST check
 [[ -f .env ]] && source .env
 DB_HOST="${DB_HOST:-localhost}"
+
+# Add swap if not already present (needed for OpenSearch on small instances)
+if ! swapon --show | grep -q /swapfile; then
+    sudo dd if=/dev/zero of=/swapfile bs=128M count=4
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo '/swapfile swap swap defaults 0 0' | sudo tee -a /etc/fstab
+fi
+
+# Install OpenSearch
+if [[ ! -f /usr/share/opensearch/bin/opensearch ]]; then
+    sudo curl -SL https://artifacts.opensearch.org/releases/bundle/opensearch/3.x/opensearch-3.x.repo \
+        -o /etc/yum.repos.d/opensearch-3.x.repo
+    export OPENSEARCH_INITIAL_ADMIN_PASSWORD='M1rrulations!Search'
+    sudo -E yum install -y opensearch
+
+    # Run demo config manually with password (install scriptlet fails without it)
+    sudo OPENSEARCH_INITIAL_ADMIN_PASSWORD='M1rrulations!Search' \
+        /usr/share/opensearch/plugins/opensearch-security/tools/install_demo_configuration.sh -y -i -s
+
+    # Lower heap for small EC2 instances
+    sudo sed -i 's/-Xms1g/-Xms256m/' /etc/opensearch/jvm.options
+    sudo sed -i 's/-Xmx1g/-Xmx256m/' /etc/opensearch/jvm.options
+
+    sudo systemctl enable opensearch
+    sudo systemctl start opensearch
+fi
 
 # Install Postgres (AL2: amazon-linux-extras + yum; AL2023: dnf)
 if ! command -v psql &>/dev/null || [[ "$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1" ]]; then
@@ -80,7 +124,6 @@ fi
 (cd frontend && npm install && npm run build)
 
 sudo systemctl stop mirrsearch 2>/dev/null || true
-
 sudo cp "${PROJECT_ROOT}/${MIRRSEARCH_SERVICE}" "${MIRRSEARCH_SERVICE_PATH}"
 sudo systemctl daemon-reload
 ./prod_up.sh

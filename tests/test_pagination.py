@@ -23,6 +23,15 @@ class MockDbLayer:  # pylint: disable=too-few-public-methods
             for i in range(1, 26)
         ]
 
+    def text_match_terms(self, terms, opensearch_client=None):  # pylint: disable=unused-argument
+        return []
+
+    def get_dockets_by_ids(self, docket_ids):  # pylint: disable=unused-argument
+        return []
+
+    def get_docket_document_comment_totals(self, docket_ids, opensearch_client=None):  # pylint: disable=unused-argument
+        return {}
+
 
 class MockOAuthHandler:  # pylint: disable=too-few-public-methods
     """Mock OAuth handler that always authenticates as a test user"""

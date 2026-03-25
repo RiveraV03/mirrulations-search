@@ -25,6 +25,15 @@ psql -d $DB_NAME -f "$SCRIPT_DIR/schema-postgres.sql"
 echo "Inserting seed data..."
 psql -d $DB_NAME -f "$SCRIPT_DIR/sample-data.sql"
 
+if [ -n "${EXTRA_SEED_SQL_FILE:-}" ]; then
+  if [ -f "$EXTRA_SEED_SQL_FILE" ]; then
+    echo "Applying extra seed data: $EXTRA_SEED_SQL_FILE"
+    psql -d $DB_NAME -f "$EXTRA_SEED_SQL_FILE"
+  else
+    echo "Warning: EXTRA_SEED_SQL_FILE set but file not found: $EXTRA_SEED_SQL_FILE"
+  fi
+fi
+
 echo ""
 echo "Database '$DB_NAME' is fully initialized."
 echo "Connect with:"

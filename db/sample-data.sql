@@ -1088,13 +1088,7 @@ INSERT INTO documents (
     NULL,
     'Notice of Proposed Rulemaking (NPRM)',
     'Airworthiness Directives: The Boeing Company Airplanes',
-    [
-        "Air Transportation",
-        "Aircraft",
-        "Aviation Safety",
-        "Incorporation by Reference",
-        "Safety"
-    ],
+    '{"Air Transportation","Aircraft","Aviation Safety","Incorporation by Reference","Safety"}',
     FALSE,
     NULL
 );
