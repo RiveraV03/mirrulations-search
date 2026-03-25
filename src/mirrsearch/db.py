@@ -204,8 +204,15 @@ class DBLayer:
 
         cfr_patterns = cfr_part_filter_patterns(cfr_part_param)
         if cfr_patterns:
-            clauses = " OR ".join("cp.cfrPart ILIKE %s" for _ in cfr_patterns)
-            sql += f" AND ({clauses})"
+            clauses = " OR ".join("cp3.cfrPart ILIKE %s" for _ in cfr_patterns)
+            sql += (
+                " AND EXISTS ("
+                "SELECT 1 FROM documents d3 "
+                "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum "
+                "WHERE d3.docket_id = d.docket_id "
+                f"AND ({clauses})"
+                ")"
+            )
             params.extend(f"%{p}%" for p in cfr_patterns)
         exact_pairs = _cfr_exact_title_part_pairs(cfr_part_param)
         if exact_pairs:
