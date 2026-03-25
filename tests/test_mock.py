@@ -244,17 +244,17 @@ def test_text_match_terms_finds_medicare(db):
     assert cms_2025_0001["document_match_count"] == 1
     assert cms_2025_0001["comment_match_count"] == 0
 
-    # CMS-2025-0240: 0 docs, 2 comments + 4 extracted = 6 comments
+    # CMS-2025-0240: 4 extracted (distinct commentId) → doc; 2 comment bodies → com
     cms_2025 = next((r for r in result if r["docket_id"] == "CMS-2025-0240"), None)
     assert cms_2025 is not None
-    assert cms_2025["document_match_count"] == 0
-    assert cms_2025["comment_match_count"] == 6
+    assert cms_2025["document_match_count"] == 4
+    assert cms_2025["comment_match_count"] == 2
 
-    # CMS-2019-0100: 0 docs, 4 comments + 2 extracted = 6 comments
+    # CMS-2019-0100: 2 extracted with "medicare"; 4 comment bodies
     cms_2019 = next((r for r in result if r["docket_id"] == "CMS-2019-0100"), None)
     assert cms_2019 is not None
-    assert cms_2019["document_match_count"] == 0
-    assert cms_2019["comment_match_count"] == 6
+    assert cms_2019["document_match_count"] == 2
+    assert cms_2019["comment_match_count"] == 4
 
 
 def test_text_match_terms_finds_marijuana(db):
@@ -277,8 +277,8 @@ def test_text_match_terms_finds_cannabis(db):
     r = result[0]
 
     assert r["docket_id"] == "DEA-2024-0059"
-    assert r["document_match_count"] == 0
-    assert r["comment_match_count"] == 1  # 1 extracted text with "cannabis" appears twice
+    assert r["document_match_count"] == 1  # extracted PDF text; one logical commentId
+    assert r["comment_match_count"] == 0
 
 
 def test_text_match_terms_no_results(db):

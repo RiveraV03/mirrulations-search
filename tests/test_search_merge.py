@@ -12,7 +12,7 @@ class _FakeDbMerge:
         self._by_id_rows = by_id_rows
         self.get_dockets_by_ids_calls = []
 
-    def search(self, query, docket_type_param=None, agency=None, cfr_part_param=None):
+    def search(self, query, *args, **kwargs):  # pylint: disable=unused-argument
         return list(self._sql_rows)
 
     def text_match_terms(self, terms, opensearch_client=None):

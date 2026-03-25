@@ -119,7 +119,7 @@ def _opensearch_comment_id_terms_size() -> int:
 class DBLayer:
     conn: Any = None
 
-    def search(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def search(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
             self,
             query: str,
             docket_type_param: str = None,
@@ -163,7 +163,7 @@ class DBLayer:
             cur.execute(sql, params)
             return {row[0] for row in cur.fetchall()}
 
-    def _search_dockets_postgres(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    def _search_dockets_postgres(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-branches,too-many-statements
             self, query: str, docket_type_param: str = None,
             agency: List[str] = None,
             cfr_part_param: List[str] = None,
