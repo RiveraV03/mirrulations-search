@@ -2280,6 +2280,16 @@ INSERT INTO cfrparts(
     '39'
 );
 
+INSERT INTO cfrparts(
+    frDocNum,
+    title,
+    cfrPart
+) VALUES (
+    '2026-22162',
+    14,
+    '39'
+);
+
 -- =========================================
 -- FEDERAL REGISTER DOCUMENTS
 -- =========================================
