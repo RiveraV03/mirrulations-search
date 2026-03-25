@@ -281,7 +281,7 @@ export default function AdvancedSidebar({
               const start = new Date();
               start.setFullYear(start.getFullYear() - 1);
 
-              const format = (d) => d.toISOString().split("T")[0];
+              const format = (d) => d.toLocaleDateString("en-CA");
               setYearFrom(format(start));
               setYearTo(format(end));
               setOnchange([start, end]);
@@ -298,7 +298,7 @@ export default function AdvancedSidebar({
               const start = new Date();
               start.setMonth(start.getMonth() - 6);
 
-              const format = (d) => d.toISOString().split("T")[0];
+              const format = (d) => d.toLocaleDateString("en-CA");
               setYearFrom(format(start));
               setYearTo(format(end));
               setOnchange([start, end]);
@@ -371,7 +371,7 @@ export default function AdvancedSidebar({
                     [start, end] = [end, start];
                   }
 
-                  const format = (d) => d.toISOString().split("T")[0];
+                  const format = (d) => d.toLocaleDateString("en-CA");
 
                   setOnchange([start, end]);
                   setYearFrom(format(start));
