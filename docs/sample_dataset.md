@@ -148,6 +148,26 @@ This section documents the expected search results for specific keywords against
 
 ---
 
+## Prerequisites
+
+Before loading the sample dataset, make sure the following are set up on your machine.
+
+**AWS CLI** — required by `ingest_comments.py` to download data from the public mirrulations S3 bucket.
+
+Install the AWS CLI if you don't have it:
+```bash
+brew install awscli
+```
+
+Verify it is installed:
+```bash
+aws --version
+```
+
+You do not need AWS credentials for this — the mirrulations S3 bucket is public and uses unsigned access. However the AWS CLI itself must be present on your system or the download will fail.
+
+---
+
 ## How to Load the Sample Dataset
 
 ### Step 1 — PostgreSQL: dockets and documents
