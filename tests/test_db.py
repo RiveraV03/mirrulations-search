@@ -196,18 +196,19 @@ def test_search_dockets_postgres_no_filter_no_extra_clauses():
 
 
 def test_search_dockets_postgres_cfr_filter_from_api_dict():
-    """Dict CFR filter applies cfrPart ILIKE and exact FRD title+part EXISTS."""
+    """Dict CFR filter applies exact cfrPart = via EXISTS and exact FRD title+part EXISTS."""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres(
         "renal",
         cfr_part_param=[{"title": "42 CFR Parts 413 and 512", "part": "413"}],
     )
     sql, params = db.conn.cursor_obj.executed
-    assert "cp.cfrPart ILIKE %s" in sql
-    assert "JOIN cfrparts cp2 ON cp2.document_id = d2.document_id" in sql
+    assert "cp3.cfrPart = %s" in sql
+    assert "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum" in sql
+    assert "JOIN cfrparts cp2 ON cp2.frdocnum = d2.frdocnum" in sql
     assert "cp2.title = %s" in sql
     assert "cp2.cfrPart = %s" in sql
-    assert params == ["%renal%", "%413%", "42 CFR Parts 413 and 512", "413"]
+    assert params == ["%renal%", "413", "42 CFR Parts 413 and 512", "413"]
 
 
 def test_search_dockets_postgres_cfr_empty_dict_skips_cfr_clause():
@@ -253,8 +254,9 @@ def test_search_dockets_postgres_cfr_filter_plain_string():
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("z", cfr_part_param=["413"])
     sql, params = db.conn.cursor_obj.executed
-    assert "cp.cfrPart ILIKE %s" in sql
-    assert params == ["%z%", "%413%"]
+    assert "cp3.cfrPart = %s" in sql
+    assert "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum" in sql
+    assert params == ["%z%", "413"]
 
 
 # --- _search_dockets_postgres tests ---

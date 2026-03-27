@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS dockets (
 -- Stores document metadata; references dockets
 -- When a new document is added then a column in the CFR part table should be added
 
-CREATE TABLE IF NOT EXISTS documents (
+CREATE TABLE IF NOT EXISTS documentsWithFRdoc (
     document_id VARCHAR(50) NOT NULL PRIMARY KEY,
     docket_id VARCHAR(50) NOT NULL,
     document_api_link VARCHAR(2000) NOT NULL UNIQUE,
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS documents (
     author_date TIMESTAMP WITH TIME ZONE,
     comment_category VARCHAR(200),
     city VARCHAR(100),
-    comment TEXT, -- inline comment text from the document itself (e.g. rule summary text)
+    comment TEXT,
     comment_end_date TIMESTAMP WITH TIME ZONE,
     comment_start_date TIMESTAMP WITH TIME ZONE,
     country VARCHAR(100),
@@ -63,46 +63,20 @@ CREATE TABLE IF NOT EXISTS documents (
     is_open_for_comment BOOLEAN DEFAULT FALSE,
     submitter_org VARCHAR(200),
     phone VARCHAR(40),
-    posted_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    posted_date TIMESTAMP WITH TIME ZONE,
     postmark_date TIMESTAMP WITH TIME ZONE,
     reason_withdrawn VARCHAR(1000),
     receive_date TIMESTAMP WITH TIME ZONE,
     reg_writer_instruction TEXT,
     restriction_reason VARCHAR(1000),
-    restriction_reason_type VARCHAR(20),
+    restriction_reason_type VARCHAR(100),
     state_province_region VARCHAR(100),
     subtype VARCHAR(100),
     document_title VARCHAR(500),
     topics VARCHAR(250)[],
     is_withdrawn BOOLEAN DEFAULT FALSE,
-    postal_code VARCHAR(10)
-);
-
--- =========================================
--- LINKS TABLE
--- =========================================
--- Stores links for corresponding cfr parts; references cfr parts
-
-CREATE TABLE IF NOT EXISTS links (
-    title VARCHAR(50),
-    cfrpart VARCHAR(50),
-    link VARCHAR(2000) UNIQUE,
-    PRIMARY KEY (title, cfrpart)
-);
-
--- =========================================
--- CFR PARTS TABLE
--- =========================================
--- Stores cfr part numbers for corresponding documents; references documents
--- cfrPart and frDocNum will be null at table creation & are retrieved from federal reserve & inserted into the table at the first query
-
-CREATE TABLE IF NOT EXISTS cfrparts (
-    document_id VARCHAR(50) NOT NULL REFERENCES documents(document_id),
-    frDocNum VARCHAR(50),
-    title VARCHAR(50),
-    cfrpart VARCHAR(50),
-    PRIMARY KEY (document_id, cfrpart),
-    FOREIGN KEY (title, cfrpart) REFERENCES links(title, cfrpart)
+    postal_code VARCHAR(10),
+    frdocnum VARCHAR(50)
 );
 
 -- =========================================
@@ -114,7 +88,7 @@ CREATE TABLE IF NOT EXISTS cfrparts (
 CREATE TABLE IF NOT EXISTS comments (
     comment_id VARCHAR(50) NOT NULL PRIMARY KEY,
     api_link VARCHAR(2000) NOT NULL UNIQUE,
-    document_id VARCHAR(50) REFERENCES documents(document_id),
+    document_id VARCHAR(50) REFERENCES documentsWithFRdoc(document_id),
     duplicate_comment_count INT DEFAULT 0 NOT NULL,
     address1 VARCHAR(200),
     address2 VARCHAR(200),
@@ -148,14 +122,40 @@ CREATE TABLE IF NOT EXISTS comments (
     is_withdrawn BOOLEAN DEFAULT FALSE,
     postal_code VARCHAR(20)
 );
+
+-- =========================================
+-- LINKS TABLE
+-- =========================================
+-- Stores links for corresponding cfr parts; references cfr parts
+
+CREATE TABLE IF NOT EXISTS links (
+    title VARCHAR(50),
+    cfrpart VARCHAR(50),
+    link VARCHAR(2000) UNIQUE,
+    PRIMARY KEY (title, cfrpart)
+);
+
+-- =========================================
+-- CFR PARTS TABLE
+-- =========================================
+-- Stores cfr part numbers for corresponding documents; references documents
+-- cfrPart and frDocNum will be null at table creation & are retrieved from federal reserve & inserted into the table at the first query
+
+CREATE TABLE IF NOT EXISTS cfrparts (
+    frdocnum VARCHAR(50) NOT NULL,
+    title VARCHAR(50) NOT NULL,
+    cfrpart VARCHAR(50) NOT NULL,
+    PRIMARY KEY (frdocnum, title, cfrpart)
+);
+
+-- =========================================
 -- FEDERAL REGISTER DOCUMENTS TABLE
 -- =========================================
--- Stores federal register document information; references documents
--- frDocNum will be null at table creation & is retrieved from federal reserve & inserted into the table at the first query
+-- Stores FR-native document metadata keyed by Federal Register document number.
 
 CREATE TABLE IF NOT EXISTS federal_register_documents (
-    document_number VARCHAR(50) NOT NULL,
-    document_id VARCHAR(50) REFERENCES documents(document_id),
+    document_number VARCHAR(50) NOT NULL PRIMARY KEY,
+    document_id VARCHAR(50),
     document_title TEXT,
     document_type VARCHAR(50),
     abstract TEXT,
@@ -166,11 +166,12 @@ CREATE TABLE IF NOT EXISTS federal_register_documents (
     agency_names TEXT[],
     topics TEXT[],
     significant BOOLEAN,
-    regulations_id_numbers TEXT[],
+    regulation_id_numbers TEXT[],
     html_url VARCHAR(2000),
     pdf_url VARCHAR(2000),
     json_url VARCHAR(2000),
     start_page INTEGER,
-    end_page INTEGER,
-    PRIMARY KEY (document_number)
+    title VARCHAR(50),
+    cfrpart VARCHAR(50),
+    end_page INTEGER
 );

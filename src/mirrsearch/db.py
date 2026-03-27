@@ -151,8 +151,8 @@ class DBLayer:
         clauses = " OR ".join("(cp.title = %s AND cp.cfrPart = %s)" for _ in cfr_pairs)
         sql = f"""
             SELECT DISTINCT d.docket_id
-            FROM documents d
-            JOIN cfrparts cp ON cp.document_id = d.document_id
+            FROM documentsWithFRdoc d
+            JOIN cfrparts cp ON cp.frdocnum = d.frdocnum
             WHERE ({clauses})
         """
         params: List[str] = []
@@ -180,8 +180,8 @@ class DBLayer:
                 cp.cfrPart,
                 l.link
             FROM dockets d
-            JOIN documents doc ON doc.docket_id = d.docket_id
-            LEFT JOIN cfrparts cp ON cp.document_id = doc.document_id
+            JOIN documentsWithFRdoc doc ON doc.docket_id = d.docket_id
+            LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
             LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
             WHERE d.docket_title ILIKE %s
         """
@@ -204,11 +204,16 @@ class DBLayer:
 
         cfr_patterns = cfr_part_filter_patterns(cfr_part_param)
         if cfr_patterns:
-            clauses = " OR ".join("cp.cfrPart ILIKE %s" for _ in cfr_patterns)
-            sql += f" AND ({clauses})"
-            params.extend(f"%{p}%" for p in cfr_patterns)
-        # For dict-style filters ({title, part}), also constrain dockets by exact
-        # CFR title/part mapping in cfrparts (via documents->docket_id) in this first query.
+            clauses = " OR ".join("cp3.cfrPart = %s" for _ in cfr_patterns)
+            sql += (
+                " AND EXISTS ("
+                "SELECT 1 FROM documentsWithFRdoc d3 "
+                "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum "
+                "WHERE d3.docket_id = d.docket_id "
+                f"AND ({clauses})"
+                ")"
+            )
+            params.extend(cfr_patterns)
         exact_pairs = _cfr_exact_title_part_pairs(cfr_part_param)
         if exact_pairs:
             exact_clauses = " OR ".join(
@@ -217,8 +222,8 @@ class DBLayer:
             )
             sql += (
                 " AND EXISTS ("
-                "SELECT 1 FROM documents d2 "
-                "JOIN cfrparts cp2 ON cp2.document_id = d2.document_id "
+                "SELECT 1 FROM documentsWithFRdoc d2 "
+                "JOIN cfrparts cp2 ON cp2.frdocnum = d2.frdocnum "
                 "WHERE d2.docket_id = d.docket_id "
                 f"AND ({exact_clauses})"
                 ")"
@@ -273,8 +278,8 @@ class DBLayer:
                 cp.cfrPart,
                 l.link
             FROM dockets d
-            JOIN documents doc ON doc.docket_id = d.docket_id
-            LEFT JOIN cfrparts cp ON cp.document_id = doc.document_id
+            JOIN documentsWithFRdoc doc ON doc.docket_id = d.docket_id
+            LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
             LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
             WHERE d.docket_id = ANY(%s)
             ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart

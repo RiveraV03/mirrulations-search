@@ -164,11 +164,51 @@ INSERT INTO dockets (
     'Airworthiness Directives'
 );
 
+INSERT INTO dockets (
+    docket_id,
+    docket_api_link,
+    agency_id,
+    docket_category,
+    docket_type,
+    effective_date,
+    flex_field1,
+    flex_field2,
+    modify_date,
+    organization,
+    petition_nbr,
+    program,
+    rin,
+    short_title,
+    flex_subtype1,
+    flex_subtype2,
+    docket_title,
+    docket_abstract
+) VALUES (
+    'FAA-2025-5043',
+    'https://api.regulations.gov/v4/dockets/FAA-2025-5043',
+    'FAA',
+    'Pending',
+    'Rulemaking',
+    NULL,
+    NULL,
+    NULL,
+    '2026-03-13T14:23:24Z',
+    NULL,
+    NULL,
+    NULL,
+    '2120-AA64',
+    NULL,
+    'Airworthiness Directives',
+    NULL,
+    'MCAI-2024-00780-R; AIRBUS HELICOPTERS SA 330 and AS 332 Tail Rotor – Rotor Head Bearing Stack of the Spindle',
+    'Airworthiness Directives'
+);
+
 -- =========================================
 -- DOCUMENTS
 -- =========================================
 
-INSERT INTO documents (
+INSERT INTO documentsWithFRdoc (
     document_id,
     docket_id,
     document_api_link,
@@ -210,7 +250,8 @@ INSERT INTO documents (
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'CMS-2025-0304-0001',
     'CMS-2025-0304',
@@ -253,10 +294,11 @@ INSERT INTO documents (
     'Medicare and Medicaid Programs; CY 2026 Payment Policies under the Physician Fee Schedule and Other Changes to Part B Payment and Coverage Policies; Medicare Shared Savings Program Requirements; and Medicare Prescription Drug Inflation Rebate Program (CMS-1832-P)',
     NULL,
     FALSE,
+    NULL,
     NULL
 );
 
-INSERT INTO documents (
+INSERT INTO documentsWithFRdoc (
     document_id,
     docket_id,
     document_api_link,
@@ -298,7 +340,8 @@ INSERT INTO documents (
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'CMS-2025-0304-0009',
     'CMS-2025-0304',
@@ -363,10 +406,11 @@ INSERT INTO documents (
         'Intergovernmental Relations'
         ],
     FALSE,
-    NULL
+    NULL,
+    '2025-13271'
 );
 
-INSERT INTO documents (
+INSERT INTO documentsWithFRdoc (
     document_id,
     docket_id,
     document_api_link,
@@ -408,7 +452,8 @@ INSERT INTO documents (
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'CMS-2025-0304-1544',
     'CMS-2025-0304',
@@ -451,10 +496,11 @@ INSERT INTO documents (
     'Medicare and Medicaid Programs: Calendar Year 2026 Payment Policies under the Physician Fee Schedule and Other Changes to Part B Payment and Coverage Policies; Medicare Shared Savings Program Requirements; and Medicare Prescription Drug Inflation Rebate Program; Correction',
     NULL,
     FALSE,
-    NULL
+    NULL,
+    '2025-15492'
 );
 
-INSERT INTO documents (
+INSERT INTO documentsWithFRdoc (
     document_id,
     docket_id,
     document_api_link,
@@ -496,7 +542,8 @@ INSERT INTO documents (
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'CMS-2025-0304-14108',
     'CMS-2025-0304',
@@ -561,10 +608,11 @@ INSERT INTO documents (
         'Intergovernmental Relations'
         ],
     FALSE,
-    NULL
+    NULL,
+    '2025-19787'
 );
 
-INSERT INTO documents (
+INSERT INTO documentsWithFRdoc (
     document_id,
     docket_id,
     document_api_link,
@@ -606,7 +654,8 @@ INSERT INTO documents (
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'CMS-2025-0304-14109',
     'CMS-2025-0304',
@@ -649,10 +698,11 @@ INSERT INTO documents (
     'Medicare and Medicaid Programs: Calendar Year 2026 Payment Policies Under the Physician Fee Schedule and Other Changes to Part B Payment and Coverage Policies; Medicare Shared Savings Program Requirements; and Medicare Prescription Drug Inflation Rebate Program; Correction',
     NULL,
     FALSE,
-    NULL
+    NULL,
+    '2025-21458'
 );
 
-INSERT INTO documents(
+INSERT INTO documentsWithFRdoc(
     document_id,
     docket_id,
     document_api_link,
@@ -694,7 +744,8 @@ INSERT INTO documents(
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'CMS-2025-0240-0001',
     'CMS-2025-0240',
@@ -737,10 +788,11 @@ INSERT INTO documents(
     'CY 2026 Changes to the End-Stage Renal Disease (ESRD) Prospective Payment System and Quality Incentive Program. CMS1830-P Display',
     NULL,
     FALSE,
+    NULL,
     NULL
 );
 
-INSERT INTO documents(
+INSERT INTO documentsWithFRdoc(
     document_id,
     docket_id,
     document_api_link,
@@ -782,7 +834,8 @@ INSERT INTO documents(
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'CMS-2025-0240-0002',
     'CMS-2025-0240',
@@ -825,10 +878,11 @@ INSERT INTO documents(
     'Medicare Program: End-Stage Renal Disease Prospective Payment System, Payment for Renal Dialysis Services Furnished to Individuals with Acute Kidney Injury, End-Stage Renal Disease Quality Incentive Program, and End-Stage Renal Disease Treatment Choices Model',
     ARRAY['Health Facilities','Medicare','Puerto Rico','Reporting and Recordkeeping Requirements','Administrative Practices and Procedures','Health Care','Health Insurance','Intergovernmental Relations','Penalties','Privacy'],
     FALSE,
-    NULL
+    NULL,
+    '2025-12368'
 );
 
-INSERT INTO documents(
+INSERT INTO documentsWithFRdoc(
     document_id,
     docket_id,
     document_api_link,
@@ -870,7 +924,8 @@ INSERT INTO documents(
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'CMS-2025-0240-0214',
     'CMS-2025-0240',
@@ -913,10 +968,11 @@ INSERT INTO documents(
     'Medicare Program: End-Stage Renal Disease Prospective Payment System, Payment for Renal Dialysis Services Furnished to Individuals with Acute Kidney Injury, End-Stage Renal Disease Quality Incentive Program, and End-Stage Renal Disease Treatment Choices Model',
     ARRAY['Health Facilities','Medicare','Puerto Rico','Reporting and Recordkeeping Requirements','Administrative Practices and Procedures','Health Care','Health Insurance','Intergovernmental Relations','Penalties','Privacy'],
     FALSE,
-    NULL
+    NULL,
+    '2025-20681'
 );
 
-INSERT INTO documents(
+INSERT INTO documentsWithFRdoc(
     document_id,
     docket_id,
     document_api_link,
@@ -958,7 +1014,8 @@ INSERT INTO documents(
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'OSHA-2025-0005-0001',
     'OSHA-2025-0005',
@@ -1001,10 +1058,11 @@ INSERT INTO documents(
     'Japan Electrical Safety & Environment Technology Laboratories: Application for Recognition',
     NULL,
     FALSE,
-    NULL
+    NULL,
+    '2025-07127'
 );
 
-INSERT INTO documents (
+INSERT INTO documentsWithFRdoc (
     document_id,
     docket_id,
     document_api_link,
@@ -1046,7 +1104,8 @@ INSERT INTO documents (
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'FAA-2025-0618-0001',
     'FAA-2025-0618',
@@ -1055,7 +1114,6 @@ INSERT INTO documents (
     NULL,
     'FAA',
     FALSE,
-    NULL,
     NULL,
     NULL,
     NULL,
@@ -1088,12 +1146,13 @@ INSERT INTO documents (
     NULL,
     'Notice of Proposed Rulemaking (NPRM)',
     'Airworthiness Directives: The Boeing Company Airplanes',
-    '{"Air Transportation","Aircraft","Aviation Safety","Incorporation by Reference","Safety"}',
+    ARRAY['Air Transportation', 'Aircraft', 'Aviation Safety', 'Incorporation by Reference', 'Safety'],
     FALSE,
-    NULL
+    NULL,
+    '2025-06061'
 );
 
-INSERT INTO documents (
+INSERT INTO documentsWithFRdoc (
     document_id,
     docket_id,
     document_api_link,
@@ -1135,7 +1194,8 @@ INSERT INTO documents (
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'FAA-2025-0618-0002',
     'FAA-2025-0618',
@@ -1178,10 +1238,11 @@ INSERT INTO documents (
     'U.S. DOT/FAA - Supplemental AD Documents',
     NULL,
     FALSE,
+    NULL,
     NULL
 );
 
-INSERT INTO documents(
+INSERT INTO documentsWithFRdoc(
     document_id,
     docket_id,
     document_api_link,
@@ -1223,7 +1284,8 @@ INSERT INTO documents(
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'FAA-2025-0618-0009',
     'FAA-2025-0618',
@@ -1266,10 +1328,11 @@ INSERT INTO documents(
     'U.S. DOT/FAA - Supplemental AD Documents',
     NULL,
     FALSE,
+    NULL,
     NULL
 );
 
-INSERT INTO documents(
+INSERT INTO documentsWithFRdoc(
     document_id,
     docket_id,
     document_api_link,
@@ -1311,7 +1374,8 @@ INSERT INTO documents(
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'FAA-2025-0618-0010',
     'FAA-2025-0618',
@@ -1354,10 +1418,11 @@ INSERT INTO documents(
     'U.S. DOT/FAA - Supplemental AD Documents',
     NULL,
     FALSE,
+    NULL,
     NULL
 );
 
-INSERT INTO documents(
+INSERT INTO documentsWithFRdoc(
     document_id,
     docket_id,
     document_api_link,
@@ -1399,7 +1464,8 @@ INSERT INTO documents(
     document_title,
     topics,
     is_withdrawn,
-    postal_code
+    postal_code,
+    frdocnum
 ) VALUES (
     'FAA-2025-0618-0011',
     'FAA-2025-0618',
@@ -1442,6 +1508,367 @@ INSERT INTO documents(
     'Airworthiness Directives: The Boeing Company Airplanes',
     ARRAY['Air Transportation','Aircraft','Aviation Safety','Incorporation by Reference','Safety'],
     FALSE,
+    NULL,
+    '2026-04829'
+);
+
+INSERT INTO documentsWithFRdoc(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code,
+    frdocnum
+) VALUES (
+    'FAA-2025-5043-0001',
+    'FAA-2025-5043',
+    'https://api.regulations.gov/v4/documents/FAA-2025-5043-0001',
+    NULL,
+    NULL,
+    'FAA',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2026-01-23T04:59:59Z',
+    '2025-12-08T05:00:00Z',
+    NULL,
+    'Proposed Rule',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2025-12-08T18:46:43Z',
+    TRUE,
+    NULL,
+    NULL,
+    '2025-12-08T05:00:00Z',
+    NULL,
+    NULL,
+    '2025-12-08T05:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Notice of Proposed Rulemaking (NPRM)',
+    'Airworthiness Directives: Airbus Helicopters',
+    ARRAY['Air Transportation','Aircraft','Aviation Safety','Incorporation by Reference','Safety'],
+    FALSE,
+    NULL,
+    '2025-22162'
+);
+
+INSERT INTO documentsWithFRdoc(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code,
+    frdocnum
+) VALUES (
+    'FAA-2025-5043-0002',
+    'FAA-2025-5043',
+    'https://api.regulations.gov/v4/documents/FAA-2025-5043-0002',
+    NULL,
+    NULL,
+    'FAA',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    'Docket No. FAA-2025-5043<br/>1. EASA AD 2024-0250',
+    NULL,
+    NULL,
+    NULL,
+    'Supporting & Related Material',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'FAA',
+    'Federal',
+    NULL,
+    NULL,
+    '2025-12-09T18:38:57Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2025-12-09T05:00:00Z',
+    NULL,
+    NULL,
+    '2025-12-08T05:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Supplement',
+    'U.S. DOT/FAA - Supplemental AD Documents',
+    NULL,
+    FALSE,
+    NULL,
+    NULL
+);
+
+INSERT INTO documentsWithFRdoc(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code,
+    frdocnum
+) VALUES (
+    'FAA-2025-5043-0003',
+    'FAA-2025-5043',
+    'https://api.regulations.gov/v4/documents/FAA-2025-5043-0003',
+    NULL,
+    NULL,
+    'FAA',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2026-03-13T04:00:00Z',
+    NULL,
+    'Rule',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    '2026-03-13T17:02:49Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2026-03-13T04:00:00Z',
+    NULL,
+    NULL,
+    '2026-03-13T04:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Final Rule',
+    'Airworthiness Directives: Airbus Helicopters',
+    ARRAY['Air Transportation', 'Aircraft', 'Aviation Safety', 'Incorporation by Reference', 'Safety'],
+    FALSE,
+    NULL,
+    '2026-04919'
+);
+
+INSERT INTO documentsWithFRdoc(
+    document_id,
+    docket_id,
+    document_api_link,
+    address1,
+    address2,
+    agency_id,
+    is_late_comment,
+    author_date,
+    comment_category,
+    city,
+    comment,
+    comment_end_date,
+    comment_start_date,
+    country,
+    document_type,
+    effective_date,
+    email,
+    fax,
+    flex_field1,
+    flex_field2,
+    first_name,
+    submitter_gov_agency,
+    submitter_gov_agency_type,
+    implementation_date,
+    last_name,
+    modify_date,
+    is_open_for_comment,
+    submitter_org,
+    phone,
+    posted_date,
+    postmark_date,
+    reason_withdrawn,
+    receive_date,
+    reg_writer_instruction,
+    restriction_reason,
+    restriction_reason_type,
+    state_province_region,
+    subtype,
+    document_title,
+    topics,
+    is_withdrawn,
+    postal_code,
+    frdocnum
+) VALUES (
+    'FAA-2025-5043-0004',
+    'FAA-2025-5043',
+    'https://api.regulations.gov/v4/documents/FAA-2025-5043-0004',
+    NULL,
+    NULL,
+    'FAA',
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    'Docket No. FAA-2025-5043; Project Identifier MCAI-2024-00780-R; Amendment 39-23279; AD 2026-05-06<br/>AD-related information:<br/>1. Airbus ASB AS332-05-00-0002 Issue 001<br/>2. Airbus ASB SA330-05-00-0001 Issue 001<br/>3. EASA AD 2024-0250',
+    NULL,
+    NULL,
+    NULL,
+    'Supporting & Related Material',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'FAA',
+    'Federal',
+    NULL,
+    NULL,
+    '2026-03-13T18:23:24Z',
+    FALSE,
+    NULL,
+    NULL,
+    '2026-03-13T04:00:00Z',
+    NULL,
+    NULL,
+    '2026-03-13T04:00:00Z',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Supplement',
+    'U.S. DOT/FAA - Supplemental AD Documents',
+    NULL,
+    FALSE,
+    NULL,
     NULL
 );
 
@@ -1563,482 +1990,302 @@ INSERT INTO links(
 -- CFR PARTS
 -- =========================================
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-0001',
-    NULL,
-    42,
-    '405'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrpart
-) VALUES (
-    'CMS-2025-0304-0001',
-    NULL,
-    42,
-    '410'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrpart
-) VALUES (
-    'CMS-2025-0304-0001',
-    NULL,
-    42,
-    '414'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrpart
-) VALUES (
-    'CMS-2025-0304-0001',
-    NULL,
-    42,
-    '424'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrpart
-) VALUES (
-    'CMS-2025-0304-0001',
-    NULL,
-    42,
-    '425'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrpart
-) VALUES (
-    'CMS-2025-0304-0001',
-    NULL,
-    42,
-    '427'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrpart
-) VALUES (
-    'CMS-2025-0304-0001',
-    NULL,
-    42,
-    '428'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrpart
-) VALUES (
-    'CMS-2025-0304-0001',
-    NULL,
-    42,
-    '495'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrpart
-) VALUES (
-    'CMS-2025-0304-0001',
-    NULL,
-    42,
-    '512'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrpart
-) VALUES (
-    'CMS-2025-0304-0009',
     '2025-13271',
     42,
     '405'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-0009',
     '2025-13271',
     42,
     '410'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-0009',
     '2025-13271',
     42,
     '414'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-0009',
     '2025-13271',
     42,
     '424'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-0009',
     '2025-13271',
     42,
     '425'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-0009',
     '2025-13271',
     42,
     '427'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-0009',
     '2025-13271',
     42,
     '428'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14108',
     '2025-19787',
     42,
     '405'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14108',
     '2025-19787',
     42,
     '410'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14108',
     '2025-19787',
     42,
     '414'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14108',
     '2025-19787',
     42,
     '424'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14108',
     '2025-19787',
     42,
     '425'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14108',
     '2025-19787',
     42,
     '427'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14108',
     '2025-19787',
     42,
     '428'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14109',
     '2025-21458',
     42,
     '405'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14109',
     '2025-21458',
     42,
     '410'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14109',
     '2025-21458',
     42,
     '414'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14109',
     '2025-21458',
     42,
     '424'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14109',
     '2025-21458',
     42,
     '425'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14109',
     '2025-21458',
     42,
     '427'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-14109',
     '2025-21458',
     42,
     '428'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-1544',
     '2025-15492',
     42,
     '405'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-1544',
     '2025-15492',
     42,
     '410'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-1544',
     '2025-15492',
     42,
     '414'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-1544',
     '2025-15492',
     42,
     '424'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0304-1544',
     '2025-15492',
     42,
     '425'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0240-0001',
     '2025-20681',
     42,
     '413'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrpart
 ) VALUES (
-    'CMS-2025-0240-0001',
     '2025-20681',
     42,
     '512'
 );
 
-INSERT INTO cfrParts(
-    document_id,
+INSERT INTO cfrparts(
     frDocNum,
     title,
     cfrPart
 ) VALUES (
-    'CMS-2025-0240-0214',
-    '2025-20681',
-    42,
-    '413'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrPart
-) VALUES (
-    'CMS-2025-0240-0214',
-    '2025-20681',
-    42,
-    '512'
-);
-
-INSERT INTO cfrParts(
-    document_id,
-    frDocNum,
-    title,
-    cfrPart
-) VALUES (
-    'FAA-2025-0618-0011',
     '2026-04829',
+    14,
+    '39'
+);
+
+INSERT INTO cfrparts(
+    frDocNum,
+    title,
+    cfrPart
+) VALUES (
+    '2026-22162',
     14,
     '39'
 );
@@ -2061,12 +2308,14 @@ INSERT INTO federal_register_documents (
     agency_names,
     topics,
     significant,
-    regulations_id_numbers,
+    regulation_id_numbers,
     html_url,
     pdf_url,
     json_url,
     start_page,
-    end_page
+    end_page,
+    title,
+    cfrpart
 ) VALUES (
     '2025-07127',
     NULL,
@@ -2085,7 +2334,9 @@ INSERT INTO federal_register_documents (
     'https://www.govinfo.gov/content/pkg/FR-2025-04-25/pdf/2025-07127.pdf',
     'https://www.federalregister.gov/api/v1/documents/2025-07127?publication_date=2025-04-25',
     17462,
-    17464
+    17464,
+    NULL,
+    NULL
 );
 
 INSERT INTO federal_register_documents (
@@ -2101,12 +2352,14 @@ INSERT INTO federal_register_documents (
     agency_names,
     topics,
     significant,
-    regulations_id_numbers,
+    regulation_id_numbers,
     html_url,
     pdf_url,
     json_url,
     start_page,
-    end_page
+    end_page,
+    title,
+    cfrpart
 ) VALUES (
     '2025-13887',
     NULL,
@@ -2125,7 +2378,9 @@ INSERT INTO federal_register_documents (
     'https://www.govinfo.gov/content/pkg/FR-2025-07-24/pdf/2025-13887.pdf',
     'https://www.federalregister.gov/api/v1/documents/2025-13887?publication_date=2025-07-24',
     34897,
-    34899
+    34899,
+    NULL,
+    NULL
 );
 
 INSERT INTO federal_register_documents (
@@ -2141,12 +2396,14 @@ INSERT INTO federal_register_documents (
     agency_names,
     topics,
     significant,
-    regulations_id_numbers,
+    regulation_id_numbers,
     html_url,
     pdf_url,
     json_url,
     start_page,
-    end_page
+    end_page,
+    title,
+    cfrpart
 ) VALUES (
     '2026-04829',
     NULL,
@@ -2165,6 +2422,8 @@ INSERT INTO federal_register_documents (
     'https://www.govinfo.gov/content/pkg/FR-2026-03-12/pdf/2026-04829.pdf',
     'https://www.federalregister.gov/api/v1/documents/2026-04829?publication_date=2026-03-12',
     12059,
-    12064
+    12064,
+    14,
+    39 
 );
 
