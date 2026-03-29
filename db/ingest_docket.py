@@ -816,6 +816,23 @@ def _has_local_docket_or_docs(docket_dir: Path) -> bool:
     return bool(_paths(docket_dir, "docket")) or bool(_paths(docket_dir, "documents"))
 
 
+def _ddir_from_docket_id(did: str, args: argparse.Namespace) -> Path:
+    """``OUTPUT_FOLDER/DOCKET-ID/``; download from S3 if missing local docket/document JSON."""
+    ddir = Path(args.output_folder).resolve() / did
+    if args.download_only or not _has_local_docket_or_docs(ddir):
+        if args.download_only:
+            log.info("Downloading from S3 (--download-only)…")
+        else:
+            log.info("No docket/document JSON under %s — downloading from S3…", ddir)
+        download_docket_from_s3(
+            did,
+            output_folder=args.output_folder,
+            include_binary=args.include_binary,
+            no_comments=args.s3_no_comments,
+        )
+    return ddir
+
+
 def _resolve_docket_directory(args: argparse.Namespace) -> Path:
     """Return path to ``.../DOCKET-ID/`` after optional S3 download."""
     if args.download_s3:
@@ -833,32 +850,33 @@ def _resolve_docket_directory(args: argparse.Namespace) -> Path:
     if args.docket_dir:
         return Path(args.docket_dir).expanduser().resolve()
 
-    raw = input("Enter docket ID (e.g. FAA-2025-0618): ").strip()
+    if not sys.stdin.isatty():
+        log.error(
+            "This mode requires an interactive terminal to enter a docket ID. "
+            "Use --download-s3 DOCKET_ID or --docket-dir PATH for scripts/CI (see --help)."
+        )
+        sys.exit(1)
+
+    print("Docket ingest — enter a regulations.gov docket ID.", file=sys.stderr)
+    raw = input("Docket ID: ").strip()
     if not raw:
         log.error("Docket ID cannot be empty.")
         sys.exit(1)
     did = _normalize_docket_id(raw)
     if did != raw:
         log.info("Normalized docket ID: %s", did)
-    ddir = Path(args.output_folder).resolve() / did
-    if args.download_only or not _has_local_docket_or_docs(ddir):
-        if args.download_only:
-            log.info("Downloading from S3 (--download-only)…")
-        else:
-            log.info("No docket/document JSON under %s — downloading from S3…", ddir)
-        download_docket_from_s3(
-            did,
-            output_folder=args.output_folder,
-            include_binary=args.include_binary,
-            no_comments=args.s3_no_comments,
-        )
-    return ddir
+    return _ddir_from_docket_id(did, args)
 
 
 def parse_args():
     p = argparse.ArgumentParser(
         description="Download docket bundle from S3 (optional) and ingest dockets, documents, "
-        "and comments into Postgres."
+        "and comments into Postgres.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Without --download-s3 or --docket-dir, you are always prompted for a docket ID "
+            "(interactive terminal only). Data is stored under OUTPUT_FOLDER/<DOCKET-ID>/."
+        ),
     )
     p.set_defaults(s3_no_comments=False)
     p.add_argument(
@@ -976,7 +994,6 @@ def main():
             sys.exit(1)
     finally:
         conn.close()
-
 
 if __name__ == "__main__":
     main()
