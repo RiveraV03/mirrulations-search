@@ -1,66 +1,252 @@
 openapi: "3.0.0"
 info:
   title: Mirrulations Search API
-  version: "1.3.0"
-  description: API for searching regulatory documents in the Mirrulations system
+  version: "2.0.0"
+  description: API for searching regulatory documents in the Mirrulations system. Requires authentication via Google OAuth.
 
 paths:
+  /login:
+    get:
+      summary: Redirect to Google OAuth login
+      description: Redirects the user to Google's OAuth authorization page to begin the login flow.
+      responses:
+        "302":
+          description: Redirect to Google OAuth authorization URL
+
+  /logout:
+    get:
+      summary: Log out the current user
+      description: Clears the JWT cookie and redirects to the home page.
+      responses:
+        "302":
+          description: Redirect to home page after clearing session cookie
+
+  /auth/status:
+    get:
+      summary: Check authentication status
+      description: Returns whether the current user is logged in based on their JWT cookie.
+      responses:
+        "200":
+          description: Authentication status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logged_in:
+                    type: boolean
+                    example: true
+                  name:
+                    type: string
+                    example: "Jane Doe"
+                    description: Only present when logged_in is true
+                  email:
+                    type: string
+                    example: "jane@example.com"
+                    description: Only present when logged_in is true
+
+  /agencies:
+    get:
+      summary: Get list of all agencies
+      description: Returns a list of all agency IDs available in the system.
+      responses:
+        "200":
+          description: List of agency IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["CMS", "EPA", "FDA"]
+
   /search/:
     get:
-      summary: Search documents by keyword with optional filters
+      summary: Search dockets by keyword with optional filters
+      description: >
+        Returns a paginated list of dockets matching the search criteria.
+        Requires authentication via JWT cookie. Pagination metadata is returned
+        in HTTP response headers.
+      security:
+        - cookieAuth: []
       parameters:
         - name: str
           in: query
-          description: The search term to query against document titles and docket IDs
+          description: The search term to query against docket titles and document titles
           required: false
           schema:
             type: string
           example: "Medicare"
-        - name: document_type
+        - name: docket_type
           in: query
-          description: Filter results by document type
+          description: Filter results by docket type
           required: false
           schema:
             type: string
-          example: "Proposed Rule"
+          example: "Rulemaking"
         - name: agency
           in: query
-          description: Filter results by agency ID
+          description: Filter results by agency ID. Can be specified multiple times for multiple agencies.
           required: false
           schema:
             type: string
           example: "CMS"
         - name: cfr_part
           in: query
-          description: "Filter results by CFR part. NOTE: Not yet active - pending cfrparts table availability in RDS"
+          description: >
+            Filter results by CFR part. Format is "title:part" e.g. "42 CFR Parts 413 and 512:413".
+            Can be specified multiple times.
           required: false
           schema:
             type: string
-          example: "42 CFR Parts 413 and 512"
+          example: "42 CFR Parts 413 and 512:413"
+        - name: start_date
+          in: query
+          description: Filter results where modify_date >= start_date. Format YYYY-MM-DD.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-01-01"
+        - name: end_date
+          in: query
+          description: Filter results where modify_date <= end_date. Format YYYY-MM-DD.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-12-31"
+        - name: page
+          in: query
+          description: Page number (1-indexed). Defaults to 1.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: page_size
+          in: query
+          description: Number of results per page. Must be between 1 and 100. Defaults to 10.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          example: 10
       responses:
         "200":
-          description: A list of matching documents (max 50 results)
+          description: A paginated list of matching dockets
+          headers:
+            X-Page:
+              description: Current page number
+              schema:
+                type: integer
+              example: 1
+            X-Page-Size:
+              description: Number of results per page
+              schema:
+                type: integer
+              example: 10
+            X-Total-Results:
+              description: Total number of matching results
+              schema:
+                type: integer
+              example: 42
+            X-Total-Pages:
+              description: Total number of pages
+              schema:
+                type: integer
+              example: 5
+            X-Has-Next:
+              description: Whether there is a next page
+              schema:
+                type: string
+              example: "true"
+            X-Has-Prev:
+              description: Whether there is a previous page
+              schema:
+                type: string
+              example: "false"
           content:
             application/json:
               schema:
                 type: array
-                maxItems: 50
                 items:
                   type: object
                   properties:
                     docket_id:
                       type: string
                       example: "CMS-2025-0240"
-                    title:
+                    docket_title:
                       type: string
                       example: "CY 2026 Changes to the End-Stage Renal Disease..."
-                    cfrPart:
-                      type: string
-                      nullable: true
-                      example: null
                     agency_id:
                       type: string
                       example: "CMS"
-                    document_type:
+                    docket_type:
                       type: string
-                      example: "Proposed Rule"
+                      example: "Rulemaking"
+                    modify_date:
+                      type: string
+                      format: date
+                      example: "2024-11-24"
+                    cfrPart:
+                      type: array
+                      nullable: true
+                      items:
+                        type: object
+                        properties:
+                          title:
+                            type: string
+                            example: "42 CFR Parts 413 and 512"
+                          part:
+                            type: string
+                            example: "413"
+                          link:
+                            type: string
+                            nullable: true
+                            example: "https://example.com/cfr"
+                    match_source:
+                      type: string
+                      enum: ["title", "full_text"]
+                      example: "title"
+                    documentNumerator:
+                      type: integer
+                      description: Number of documents matching the search term
+                      example: 3
+                    commentNumerator:
+                      type: integer
+                      description: Number of comments matching the search term
+                      example: 12
+                    documentDenominator:
+                      type: integer
+                      description: Total number of documents in the docket
+                      example: 10
+                    commentDenominator:
+                      type: integer
+                      description: Total number of comments in the docket
+                      example: 150
+                    correlation_score:
+                      type: number
+                      format: float
+                      description: Relevance score used for ranking results
+                      example: 0.87
+        "401":
+          description: Unauthorized - user is not logged in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Unauthorized"
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: jwt_token
