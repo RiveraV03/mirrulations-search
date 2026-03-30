@@ -17,7 +17,7 @@ Directory layout after S3 download:
 
 Examples:
     python db/ingest_docket.py
-    python db/ingest_docket.py --download-s3 CMS-2025-0240 --output-folder .
+    python db/ingest_docket.py --download-s3 CMS-2025-0240
     python db/ingest_docket.py --docket-dir ./CMS-2025-0240
     python db/ingest_docket.py --download-s3 FAA-2025-0618 --download-only
 """
@@ -875,7 +875,8 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Without --download-s3 or --docket-dir, you are always prompted for a docket ID "
-            "(interactive terminal only). Data is stored under OUTPUT_FOLDER/<DOCKET-ID>/."
+            "(interactive terminal only). Data is stored under OUTPUT_FOLDER/<DOCKET-ID>/ "
+            "(default: dockets/<DOCKET-ID>/)."
         ),
     )
     p.set_defaults(s3_no_comments=False)
@@ -895,7 +896,11 @@ def parse_args():
         metavar="DOCKET_ID",
         help="Download docket bundle from mirrulations S3 into --output-folder/DOCKET_ID/",
     )
-    p.add_argument("--output-folder", default=".", help="Parent directory for S3 download")
+    p.add_argument(
+        "--output-folder",
+        default="dockets",
+        help="Parent directory for S3 download (default: dockets/)",
+    )
     p.add_argument(
         "--include-binary",
         action="store_true",

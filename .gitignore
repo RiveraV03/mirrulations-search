@@ -5,6 +5,9 @@ __pycache__
 .env
 .coverage
 .DS_Store
+# Keep the dockets directory present in the repo, but ignore any downloaded contents.
+dockets/*
+!dockets/.gitkeep
 frontend/dist/
 frontend/node_modules/
 gunicorn.pid
