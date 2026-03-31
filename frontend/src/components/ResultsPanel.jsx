@@ -1,4 +1,6 @@
 import {ColorRing} from 'react-loader-spinner'
+import { useState } from "react";
+import CollectionModal from "./CollectionModal";
 
 
 const ECFR_URL = "https://www.ecfr.gov";
@@ -22,6 +24,8 @@ function scoreResult(item) {
 
 
 export default function ResultsPanel({ results, loading, hasSearched, query, unauthorized }) {
+
+ const [modalDocketId, setModalDocketId] = useState(null);
  if (unauthorized) {
    return (
      <div className="results">
@@ -58,39 +62,50 @@ export default function ResultsPanel({ results, loading, hasSearched, query, una
 
  return (
    <div className="results">
+    {modalDocketId && (
+    <CollectionModal
+      docketId={modalDocketId}
+      onClose={() => setModalDocketId(null)}
+    />
+  )}
      <p className="results-summary">
        Showing results for "<strong>{query}</strong>" • {results.length} docket{results.length !== 1 ? "s" : ""} found
      </p>
      {sortedResults.map((item, index) => (
        <div key={item.docket_id || index} className="result-card">
-         <h3 className="result-title">{item.docket_title}</h3>
-         <div className="result-meta">
-           <p><strong>Agency:</strong> {item.agency_id}</p>
-           <p><strong>Docket-ID:</strong> {item.docket_id}</p>
-           <p><strong>Docket type:</strong> {item.docket_type}</p>
-           <p>
-             <strong>CFR:</strong>{" "}
-             {item.cfrPart && item.cfrPart.length > 0 ? (
-               item.cfrPart.map((p, idx) => (
-                 <span key={idx}>
-                   <a href={p.link} target="_blank" rel="noopener noreferrer">
-                     {p.title != null ? `${p.title} Part ${p.part}` : p.part}
-                   </a>
-                   {idx < item.cfrPart.length - 1 && ", "}
-                 </span>
-               ))
-             ) : (
-               <a href={ECFR_URL} target="_blank" rel="noopener noreferrer">None</a>
-             )}
-           </p>
-           <p><strong>Last modified date:</strong> {item.modify_date}</p>
-           <p><strong>Documents:</strong> {item.documentNumerator ?? 0}/{item.documentDenominator ?? 0}</p>
-           <p><strong>Comments:</strong> {item.commentNumerator ?? 0}/{item.commentDenominator ?? 0}</p>
-         </div>
-         {item.summary && (
-           <p className="result-summary">{item.summary}</p>
-         )}
-       </div>
+         <div className="result-card-body">
+            <div className="result-card-info">
+               <h3 className="result-title">{item.docket_title}</h3>
+               <div className="result-meta">
+                 <p><strong>Agency:</strong> {item.agency_id}</p>
+                 <p><strong>Docket-ID:</strong> {item.docket_id}</p>
+                 <p><strong>Docket type:</strong> {item.docket_type}</p>
+                 <p>
+                   <strong>CFR:</strong>{" "}
+                   {item.cfrPart && item.cfrPart.length > 0 ? (
+                     item.cfrPart.map((p, idx) => (
+                       <span key={idx}>
+                         <a href={p.link} target="_blank" rel="noopener noreferrer">
+                           {p.title != null ? `${p.title} Part ${p.part}` : p.part}
+                         </a>
+                         {idx < item.cfrPart.length - 1 && ", "}
+                       </span>
+                     ))
+                   ) : (
+                     <a href={ECFR_URL} target="_blank" rel="noopener noreferrer">None</a>
+                   )}
+                 </p>
+                 <p><strong>Last modified date:</strong> {item.modify_date}</p>
+                 <p><strong>Documents:</strong> {item.documentNumerator ?? 0}/{item.documentDenominator ?? 0}</p>
+                 <p><strong>Comments:</strong> {item.commentNumerator ?? 0}/{item.commentDenominator ?? 0}</p>
+               </div>
+               {item.summary && (
+                 <p className="result-summary">{item.summary}</p>
+               )}
+            </div>
+            <button className="btn-add-collection" onClick={() => setModalDocketId(item.docket_id)}>Add to Collection</button>
+          </div>
+        </div>
      ))}
    </div>
  );
