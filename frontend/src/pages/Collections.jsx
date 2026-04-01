@@ -7,7 +7,7 @@ import {
   getDocketsByIds,
 } from "../api/collectionsApi";
 import "../styles/collections.css";
-
+const ECFR_URL = "https://www.ecfr.gov";
 
 export default function Collections() {
   const [collections, setCollections] = useState([]);
