@@ -443,7 +443,7 @@ class DBLayer:
             print(f"OpenSearch totals query failed (fallback zeros): {e}")
             return {}
 
-    def _fetch_docket_totals(
+    def _fetch_docket_totals( # pylint: disable=too-many-locals
             self, opensearch_client, docket_ids: List[str]) -> Dict[str, Dict[str, int]]:
         """Execute totals queries and assemble per-docket counts."""
         doc_query = {
