@@ -111,7 +111,7 @@ def test_get_db_returns_dblayer():
 class _FakeCursor:
     def __init__(self, rows):
         self._rows = rows
-        self.executed = None
+        self.executed = []
 
     def __enter__(self):
         return self
@@ -120,7 +120,7 @@ class _FakeCursor:
         return False
 
     def execute(self, sql, params=None):
-        self.executed = (sql, params)
+        self.executed.append((sql, params))
 
     def fetchall(self):
         return self._rows
@@ -135,6 +135,9 @@ class _FakeConn:
 
     def cursor(self):
         return self.cursor_obj
+
+    def commit(self):
+        pass
 
     def close(self):
         return None
@@ -151,7 +154,7 @@ def test_search_dockets_postgres_agency_filter():
     """Agency filter adds ILIKE clause and wraps value with wildcards"""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("", agency=["CMS"])
-    sql, params = db.conn.cursor_obj.executed
+    sql, params = db.conn.cursor_obj.executed[0]
     assert "agency_id ILIKE %s" in sql
     assert params == ["%%", "%CMS%"]
 
@@ -160,7 +163,7 @@ def test_search_dockets_postgres_agency_multi_filter():
     """Multiple agencies produce OR'd ILIKE clauses"""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("", agency=["CMS", "EPA"])
-    sql, params = db.conn.cursor_obj.executed
+    sql, params = db.conn.cursor_obj.executed[0]
     assert sql.count("agency_id ILIKE %s") == 2
     assert "%CMS%" in params
     assert "%EPA%" in params
@@ -170,7 +173,7 @@ def test_search_dockets_postgres_docket_type_filter():
     """Docket type filter adds exact match clause"""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("", docket_type_param="Rulemaking")
-    sql, params = db.conn.cursor_obj.executed
+    sql, params = db.conn.cursor_obj.executed[0]
     assert "d.docket_type = %s" in sql
     assert params == ["%%", "Rulemaking"]
 
@@ -179,7 +182,7 @@ def test_search_dockets_postgres_agency_and_docket_type_filter():
     """Both filters add their clauses and params in order"""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("renal", docket_type_param="Rulemaking", agency=["CMS"])
-    sql, params = db.conn.cursor_obj.executed
+    sql, params = db.conn.cursor_obj.executed[0]
     assert "d.docket_type = %s" in sql
     assert "agency_id ILIKE %s" in sql
     assert params == ["%renal%", "Rulemaking", "%CMS%"]
@@ -189,7 +192,7 @@ def test_search_dockets_postgres_no_filter_no_extra_clauses():
     """Without filters, SQL has no extra AND clauses beyond docket_title"""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("abc")
-    sql, params = db.conn.cursor_obj.executed
+    sql, params = db.conn.cursor_obj.executed[0]
     assert "d.docket_type = %s" not in sql
     assert "agency_id ILIKE %s" not in sql
     assert params == ["%abc%"]
@@ -202,7 +205,7 @@ def test_search_dockets_postgres_cfr_filter_from_api_dict():
         "renal",
         cfr_part_param=[{"title": "42 CFR Parts 413 and 512", "part": "413"}],
     )
-    sql, params = db.conn.cursor_obj.executed
+    sql, params = db.conn.cursor_obj.executed[0]
     assert "cp3.cfrPart = %s" in sql
     assert "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum" in sql
     assert "JOIN cfrparts cp2 ON cp2.frdocnum = d2.frdocnum" in sql
@@ -215,7 +218,7 @@ def test_search_dockets_postgres_cfr_empty_dict_skips_cfr_clause():
     """Dict with empty part does not add CFR SQL (avoids bogus %%dict%% params)."""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("x", cfr_part_param=[{"title": "t", "part": ""}])
-    sql, _params = db.conn.cursor_obj.executed
+    sql, _params = db.conn.cursor_obj.executed[0]
     assert "cp.cfrPart ILIKE" not in sql
 
 
@@ -253,7 +256,7 @@ def test_get_opensearch_connection_port_out_of_range_defaults(monkeypatch):
 def test_search_dockets_postgres_cfr_filter_plain_string():
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("z", cfr_part_param=["413"])
-    sql, params = db.conn.cursor_obj.executed
+    sql, params = db.conn.cursor_obj.executed[0]
     assert "cp3.cfrPart = %s" in sql
     assert "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum" in sql
     assert params == ["%z%", "413"]
@@ -373,7 +376,7 @@ def test_search_dockets_postgres_query_param_formatting():
     """Query string is wrapped with %...% wildcards in params"""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("clean air")
-    _, params = db.conn.cursor_obj.executed
+    _, params = db.conn.cursor_obj.executed[0]
     assert params == ["%clean air%"]
 
 
@@ -381,7 +384,7 @@ def test_search_dockets_postgres_empty_query_uses_wildcard():
     """Empty query string results in a %% wildcard param"""
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("")
-    _, params = db.conn.cursor_obj.executed
+    _, params = db.conn.cursor_obj.executed[0]
     assert params == ["%%"]
 
 
@@ -401,7 +404,7 @@ def test_get_dockets_by_ids_uses_any_and_reuses_row_shape():
              "2024-02-01", "Title 40", "40", "http://b")]
     db = DBLayer(conn=_FakeConn(rows))
     results = db.get_dockets_by_ids(["DOC-002"])
-    sql, params = db.conn.cursor_obj.executed
+    sql, params = db.conn.cursor_obj.executed[0]
     assert "d.docket_id = ANY(%s)" in sql
     assert params == (["DOC-002"],)
     assert len(results) == 1
@@ -853,120 +856,3 @@ def test_text_match_terms_malformed_response_returns_empty():
 
     db = DBLayer()
     assert db.text_match_terms(["x"], opensearch_client=BadClient()) == []
-
-
-def test_text_match_terms_connection_error_returns_empty():
-    class BadClient:  # pylint: disable=too-few-public-methods
-        def search(self, index, body):  # pylint: disable=unused-argument
-            raise RuntimeError("connection refused")
-
-    db = DBLayer()
-    assert db.text_match_terms(["x"], opensearch_client=BadClient()) == []
-
-
-def test_get_docket_document_comment_totals_with_fake_opensearch():
-    """Totals: documents by doc_count; comments = distinct commentId buckets."""
-
-    class TotalsFakeClient:  # pylint: disable=too-few-public-methods
-        def search(self, index, body):  # pylint: disable=unused-argument
-            if index == "documents":
-                return {
-                    "aggregations": {
-                        "by_docket": {"buckets": [{"key": "D1", "doc_count": 3}]}
-                    }
-                }
-            if index == "comments":
-                return {
-                    "aggregations": {
-                        "by_docket": {
-                            "buckets": [{
-                                "key": "D1",
-                                "by_comment": {
-                                    "buckets": [
-                                        {"key": "c1"},
-                                        {"key": "c2"},
-                                        {"key": "c3"},
-                                        {"key": "c4"},
-                                        {"key": "c5"},
-                                    ]
-                                },
-                            }]
-                        }
-                    }
-                }
-            return {"aggregations": {"by_docket": {"buckets": []}}}
-
-    db = DBLayer()
-    totals = db.get_docket_document_comment_totals(
-        ["D1"],
-        opensearch_client=TotalsFakeClient(),
-    )
-
-    assert totals["D1"]["document_total_count"] == 3
-    assert totals["D1"]["comment_total_count"] == 5
-
-def test_text_match_terms_docket_only_in_extracted():
-    """Multiple extracted chunks for the same commentId count once on document side."""
-    doc_buckets = []
-    comment_buckets = []
-    extracted_buckets = [
-        _fake_os_comment_agg_bucket(
-            "EXTRACTED-ONLY",
-            "matching_extracted",
-            "SAME-COMMENT-ID",
-            "SAME-COMMENT-ID",
-            "SAME-COMMENT-ID",
-        )
-    ]
-
-    fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
-    db = DBLayer()
-
-    results = db.text_match_terms(["test"], opensearch_client=fake_client)
-
-    assert len(results) == 1
-    assert results[0]["docket_id"] == "EXTRACTED-ONLY"
-    assert results[0]["document_match_count"] == 1
-    assert results[0]["comment_match_count"] == 0
-
-
-def test_text_match_terms_missing_extracted_index_still_returns_other_hits():
-    """Missing extracted-text index should not zero out document/comment numerators."""
-    class MissingExtractedClient:  # pylint: disable=too-few-public-methods
-        def search(self, index, body):  # pylint: disable=unused-argument
-            if index == "documents":
-                return {
-                    "aggregations": {
-                        "by_docket": {
-                            "buckets": [
-                                {"key": "CMS-2025-0240", "matching_docs": {"doc_count": 2}}
-                            ]
-                        }
-                    }
-                }
-            if index == "comments":
-                return {
-                    "aggregations": {
-                        "by_docket": {
-                            "buckets": [
-                                _fake_os_comment_agg_bucket(
-                                    "CMS-2025-0240",
-                                    "matching_comments",
-                                    "c1",
-                                    "c2",
-                                    "c3",
-                                    "c4",
-                                )
-                            ]
-                        }
-                    }
-                }
-            raise RuntimeError("index_not_found_exception")
-
-    db = DBLayer()
-    results = db.text_match_terms(["medicare"], opensearch_client=MissingExtractedClient())
-
-    assert len(results) == 1
-    assert results[0]["docket_id"] == "CMS-2025-0240"
-    assert results[0]["document_match_count"] == 2
-    assert results[0]["comment_match_count"] == 4

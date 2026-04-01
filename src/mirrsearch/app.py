@@ -4,6 +4,7 @@ from flask import Flask, request, jsonify, send_from_directory, redirect, make_r
 from mirrsearch.internal_logic import InternalLogic
 from mirrsearch.oauth_handler import OAuthHandler, OAuthCodeError, OAuthVerificationError
 from mirrsearch.oauth_handler import TokenExpiredError, TokenInvalidError
+from mirrsearch.db import get_db
 
 
 def _get_search_params():
@@ -183,10 +184,69 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         result = InternalLogic("sample_database", db_layer=db_layer).get_agencies()
         return jsonify(result)
 
+    @flask_app.route("/collections", methods=["GET"])
+    def get_collections():
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        result = db_layer.get_collections(user["email"])
+        return jsonify(result)
+
+    @flask_app.route("/collections", methods=["POST"])
+    def create_collection():
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        body = request.get_json(silent=True) or {}
+        name = (body.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        collection_id = db_layer.create_collection(user["email"], name)
+        return jsonify({"collection_id": collection_id}), 201
+
+    @flask_app.route("/collections/<int:collection_id>", methods=["DELETE"])
+    def delete_collection(collection_id):
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        deleted = db_layer.delete_collection(collection_id, user["email"])
+        if not deleted:
+            return jsonify({"error": "Collection not found"}), 404
+        return "", 204
+
+    @flask_app.route("/collections/<int:collection_id>/dockets", methods=["POST"])
+    def add_docket_to_collection(collection_id):
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        body = request.get_json(silent=True) or {}
+        docket_id = (body.get("docket_id") or "").strip()
+        if not docket_id:
+            return jsonify({"error": "docket_id is required"}), 400
+        added = db_layer.add_docket_to_collection(collection_id, docket_id, user["email"])
+        if not added:
+            return jsonify({"error": "Collection not found"}), 404
+        return "", 204
+
+    @flask_app.route("/collections/<int:collection_id>/dockets/<docket_id>", methods=["DELETE"])
+    def remove_docket_from_collection(collection_id, docket_id):
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        removed = db_layer.remove_docket_from_collection(collection_id, docket_id, user["email"])
+        if not removed:
+            return jsonify({"error": "Collection not found"}), 404
+        return "", 204
+
     return flask_app
 
 
-app = create_app()
+app = create_app(db_layer=get_db())
 
 if __name__ == '__main__':
     app.run(port=80, debug=True)

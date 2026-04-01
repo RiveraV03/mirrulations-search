@@ -2,11 +2,15 @@ import re
 from typing import List, Dict, Any, Set
 
 
-class MockDBLayer:  # pylint: disable=too-few-public-methods
+class MockDBLayer:  # pylint: disable=too-many-public-methods
     """
     Mock DB layer that returns hardcoded dummy data for testing.
     Mirrors the interface of DBLayer without any DB connection.
     """
+
+    def __init__(self):
+        self._collections = {}
+        self._next_collection_id = 1
 
     def _items(self) -> List[Dict[str, Any]]:
         return [
@@ -289,6 +293,45 @@ class MockDBLayer:  # pylint: disable=too-few-public-methods
 
     def get_dockets_by_ids(self, docket_ids: List[str]) -> List[Dict[str, Any]]:  # pylint: disable=unused-argument
         return []
+
+    def get_collections(self, user_email: str) -> List[Dict[str, Any]]:
+        return [c for c in self._collections.values() if c["user_email"] == user_email]
+
+    def create_collection(self, user_email: str, name: str) -> int:
+        collection_id = self._next_collection_id
+        self._next_collection_id += 1
+        self._collections[collection_id] = {
+            "collection_id": collection_id,
+            "user_email": user_email,
+            "name": name,
+            "created_at": None,
+            "docket_ids": []
+        }
+        return collection_id
+
+    def delete_collection(self, collection_id: int, user_email: str) -> bool:
+        c = self._collections.get(collection_id)
+        if c is None or c["user_email"] != user_email:
+            return False
+        del self._collections[collection_id]
+        return True
+
+    def add_docket_to_collection(
+            self, collection_id: int, docket_id: str, user_email: str) -> bool:
+        c = self._collections.get(collection_id)
+        if c is None or c["user_email"] != user_email:
+            return False
+        if docket_id not in c["docket_ids"]:
+            c["docket_ids"].append(docket_id)
+        return True
+
+    def remove_docket_from_collection(
+            self, collection_id: int, docket_id: str, user_email: str) -> bool:
+        c = self._collections.get(collection_id)
+        if c is None or c["user_email"] != user_email:
+            return False
+        c["docket_ids"] = [d for d in c["docket_ids"] if d != docket_id]
+        return True
 
     def get_docket_document_comment_totals(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
             self,

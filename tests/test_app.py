@@ -9,7 +9,7 @@ from mock_db import MockDBLayer
 from mirrsearch.app import create_app
 from mirrsearch.db import get_postgres_connection, get_opensearch_connection
 
-
+# pylint: disable=duplicate-code
 class MockOAuthHandler:
     """Mock OAuth handler that always authenticates as a test user"""
     def get_authorization_url(self):
@@ -330,6 +330,130 @@ def test_home_route_with_index_html():
         response = test_client.get('/')
         assert response.status_code == 200
         assert b'Home' in response.data
+
+# --- Collections ---
+
+def test_get_collections_returns_empty_list(client):  # pylint: disable=redefined-outer-name
+    """GET /collections returns empty list when user has no collections"""
+    response = client.get('/collections')
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+
+def test_get_collections_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """GET /collections returns 401 without cookie"""
+    response = app.test_client().get('/collections')
+    assert response.status_code == 401
+
+
+def test_create_collection_returns_id(client):  # pylint: disable=redefined-outer-name
+    """POST /collections creates a collection and returns its id"""
+    response = client.post('/collections', json={"name": "My Collection"})
+    assert response.status_code == 201
+    data = response.get_json()
+    assert "collection_id" in data
+    assert isinstance(data["collection_id"], int)
+
+
+def test_create_collection_requires_name(client):  # pylint: disable=redefined-outer-name
+    """POST /collections returns 400 when name is missing"""
+    response = client.post('/collections', json={})
+    assert response.status_code == 400
+
+
+def test_create_collection_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """POST /collections returns 401 without cookie"""
+    response = app.test_client().post('/collections', json={"name": "Test"})
+    assert response.status_code == 401
+
+
+def test_delete_collection(client):  # pylint: disable=redefined-outer-name
+    """DELETE /collections/<id> deletes an existing collection"""
+    collection_id = client.post(
+        '/collections', json={"name": "To Delete"}
+    ).get_json()["collection_id"]
+    response = client.delete(f'/collections/{collection_id}')
+    assert response.status_code == 204
+
+
+def test_delete_collection_not_found(client):  # pylint: disable=redefined-outer-name
+    """DELETE /collections/<id> returns 404 for nonexistent collection"""
+    response = client.delete('/collections/9999')
+    assert response.status_code == 404
+
+
+def test_delete_collection_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """DELETE /collections/<id> returns 401 without cookie"""
+    response = app.test_client().delete('/collections/1')
+    assert response.status_code == 401
+
+
+def test_add_docket_to_collection(client):  # pylint: disable=redefined-outer-name
+    """POST /collections/<id>/dockets adds a docket to a collection"""
+    collection_id = client.post(
+        '/collections', json={"name": "My List"}
+    ).get_json()["collection_id"]
+    response = client.post(
+        f'/collections/{collection_id}/dockets', json={"docket_id": "CMS-2025-0240"}
+    )
+    assert response.status_code == 204
+
+
+def test_add_docket_requires_docket_id(client):  # pylint: disable=redefined-outer-name
+    """POST /collections/<id>/dockets returns 400 when docket_id is missing"""
+    collection_id = client.post(
+        '/collections', json={"name": "My List"}
+    ).get_json()["collection_id"]
+    response = client.post(f'/collections/{collection_id}/dockets', json={})
+    assert response.status_code == 400
+
+
+def test_add_docket_collection_not_found(client):  # pylint: disable=redefined-outer-name
+    """POST /collections/<id>/dockets returns 404 for nonexistent collection"""
+    response = client.post('/collections/9999/dockets', json={"docket_id": "CMS-2025-0240"})
+    assert response.status_code == 404
+
+
+def test_add_docket_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """POST /collections/<id>/dockets returns 401 without cookie"""
+    response = app.test_client().post(
+        '/collections/1/dockets', json={"docket_id": "CMS-2025-0240"}
+    )
+    assert response.status_code == 401
+
+
+def test_remove_docket_from_collection(client):  # pylint: disable=redefined-outer-name
+    """DELETE /collections/<id>/dockets/<docket_id> removes a docket"""
+    collection_id = client.post(
+        '/collections', json={"name": "My List"}
+    ).get_json()["collection_id"]
+    client.post(f'/collections/{collection_id}/dockets', json={"docket_id": "CMS-2025-0240"})
+    response = client.delete(f'/collections/{collection_id}/dockets/CMS-2025-0240')
+    assert response.status_code == 204
+
+
+def test_remove_docket_collection_not_found(client):  # pylint: disable=redefined-outer-name
+    """DELETE /collections/<id>/dockets/<docket_id> returns 404 for nonexistent collection"""
+    response = client.delete('/collections/9999/dockets/CMS-2025-0240')
+    assert response.status_code == 404
+
+
+def test_remove_docket_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """DELETE /collections/<id>/dockets/<docket_id> returns 401 without cookie"""
+    response = app.test_client().delete('/collections/1/dockets/CMS-2025-0240')
+    assert response.status_code == 401
+
+
+def test_get_collections_shows_added_dockets(client):  # pylint: disable=redefined-outer-name
+    """GET /collections reflects dockets added to a collection"""
+    collection_id = client.post(
+        '/collections', json={"name": "My List"}
+    ).get_json()["collection_id"]
+    client.post(f'/collections/{collection_id}/dockets', json={"docket_id": "CMS-2025-0240"})
+    data = client.get('/collections').get_json()
+    match = next(c for c in data if c["collection_id"] == collection_id)
+    assert "CMS-2025-0240" in match["docket_ids"]
+
 
 def test_agencies_returns_list(client): # pylint: disable=redefined-outer-name
     """Test that agencies endpoint returns a JSON list"""

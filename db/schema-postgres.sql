@@ -175,3 +175,36 @@ CREATE TABLE IF NOT EXISTS federal_register_documents (
     cfrpart VARCHAR(50),
     end_page INTEGER
 );
+
+-- =========================================
+-- USERS TABLE
+-- =========================================
+-- Stores users authenticated via Google OAuth
+
+CREATE TABLE IF NOT EXISTS users (
+    email VARCHAR(320) NOT NULL PRIMARY KEY,
+    name VARCHAR(200) NOT NULL
+);
+
+-- =========================================
+-- COLLECTIONS TABLE
+-- =========================================
+-- Stores collections (folders) created by users.
+
+CREATE TABLE IF NOT EXISTS collections (
+    collection_id SERIAL PRIMARY KEY,
+    user_email VARCHAR(320) NOT NULL REFERENCES users(email),
+    collection_name VARCHAR(200) NOT NULL
+);
+
+-- =========================================
+-- COLLECTION DOCKETS TABLE
+-- =========================================
+-- Stores which dockets belong to which collection
+
+CREATE TABLE IF NOT EXISTS collection_dockets (
+    collection_id INT NOT NULL REFERENCES collections(collection_id) ON DELETE CASCADE,
+    docket_id VARCHAR(50) NOT NULL REFERENCES dockets(docket_id),
+    PRIMARY KEY (collection_id, docket_id)
+);
+
