@@ -5,6 +5,7 @@ import {
   deleteCollection,
   removeDocketFromCollection,
 } from "../api/collectionsApi";
+import DownloadModal from "./DownloadModal";
 import "../styles/collections.css";
 
 export default function Collections() {
@@ -17,6 +18,8 @@ export default function Collections() {
   const [editMode, setEditMode] = useState(false);
   const [error, setError] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [checkedDockets, setCheckedDockets] = useState(new Set());
 
   const loadCollections = async () => {
     setLoading(true);
@@ -52,6 +55,10 @@ export default function Collections() {
     }
   }, [collections, selectedCollectionId]);
 
+  useEffect(() => {
+    setCheckedDockets(new Set());
+  }, [selectedCollectionId, editMode]);
+
   const handleCreate = async (e) => {
     e.preventDefault();
     const trimmedName = newCollectionName.trim();
@@ -66,10 +73,7 @@ export default function Collections() {
         name: trimmedName,
         docket_ids: [],
       };
-      setCollections((prev) => [
-        ...prev,
-        newCollection,
-      ]);
+      setCollections((prev) => [...prev, newCollection]);
       setSelectedCollectionId(created.collection_id);
       setShowCreateForm(false);
       setNewCollectionName("");
@@ -124,6 +128,14 @@ export default function Collections() {
     }
   };
 
+  const toggleCheckedDocket = (docketId) => {
+    setCheckedDockets((prev) => {
+      const next = new Set(prev);
+      next.has(docketId) ? next.delete(docketId) : next.add(docketId);
+      return next;
+    });
+  };
+
   if (unauthorized) {
     return (
       <section className="collections-page">
@@ -138,21 +150,45 @@ export default function Collections() {
   );
   const selectedDocketIds = selectedCollection?.docket_ids || [];
 
+  const docketsForModal =
+    checkedDockets.size > 0 ? Array.from(checkedDockets) : selectedDocketIds;
+
   const handleDownloadAll = () => {
     if (!selectedCollection) return;
-    const lines = [
-      `Collection: ${selectedCollection.name}`,
-      "",
-      ...selectedDocketIds.map((docketId) => docketId),
-    ];
-    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${selectedCollection.name.replace(/\s+/g, "-").toLowerCase()}-dockets.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
+    setShowDownloadModal(true);
   };
+
+  const DocketCheckbox = ({ docketId }) => {
+    const checked = checkedDockets.has(docketId);
+    return (
+      <div
+        onClick={(e) => { e.stopPropagation(); toggleCheckedDocket(docketId); }}
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 4,
+          border: `2px solid ${checked ? "#6b63d4" : "#ccc"}`,
+          background: checked ? "#6b63d4" : "white",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          cursor: "pointer",
+          transition: "all 0.15s",
+          alignSelf: "flex-start",
+          marginTop: 2,
+        }}
+      >
+        {checked && (
+          <svg width="11" height="9" viewBox="0 0 10 8" fill="none">
+            <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </div>
+    );
+  };
+
+  const checkedCount = checkedDockets.size;
 
   return (
     <section className="collections-page collections-layout">
@@ -224,8 +260,13 @@ export default function Collections() {
             <h1 className="collections-title">{selectedCollection.name}</h1>
             <div className="collections-toolbar">
               <p className="collections-summary">
-                Showing dockets in "{selectedCollection.name}" • {selectedDocketIds.length}{" "}
-                docket{selectedDocketIds.length === 1 ? "" : "s"} found
+                Showing dockets in "{selectedCollection.name}" •{" "}
+                {selectedDocketIds.length} docket{selectedDocketIds.length === 1 ? "" : "s"} found
+                {checkedCount > 0 && (
+                  <span style={{ color: "#6b63d4", marginLeft: 8, fontWeight: 600 }}>
+                    · {checkedCount} selected
+                  </span>
+                )}
               </p>
               <div className="collections-actions">
                 <button
@@ -241,7 +282,7 @@ export default function Collections() {
                   onClick={handleDownloadAll}
                   disabled={selectedDocketIds.length === 0}
                 >
-                  Download All
+                  {checkedCount > 0 ? `Download (${checkedCount})` : "Download All"}
                 </button>
                 {editMode && (
                   <button
@@ -260,22 +301,29 @@ export default function Collections() {
             ) : (
               <div className="collection-results">
                 {selectedDocketIds.map((docketId) => (
-                  <article key={docketId} className="collection-result-card">
-                    <h3>{docketId}</h3>
-                    <p><strong>Agency:</strong> CMS</p>
-                    <p><strong>Docket-ID:</strong> {docketId}</p>
-                    <p><strong>Docket type:</strong> Rulemaking</p>
-                    {editMode && (
-                      <button
-                        type="button"
-                        className="collection-remove-docket"
-                        onClick={() =>
-                          handleRemoveDocket(selectedCollection.collection_id, docketId)
-                        }
-                      >
-                        Remove from Collection
-                      </button>
-                    )}
+                  <article
+                    key={docketId}
+                    className="collection-result-card"
+                    style={{ display: "flex", alignItems: "flex-start", gap: 12 }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <h3>{docketId}</h3>
+                      <p><strong>Agency:</strong> CMS</p>
+                      <p><strong>Docket-ID:</strong> {docketId}</p>
+                      <p><strong>Docket type:</strong> Rulemaking</p>
+                      {editMode && (
+                        <button
+                          type="button"
+                          className="collection-remove-docket"
+                          onClick={() =>
+                            handleRemoveDocket(selectedCollection.collection_id, docketId)
+                          }
+                        >
+                          Remove from Collection
+                        </button>
+                      )}
+                    </div>
+                    <DocketCheckbox docketId={docketId} />
                   </article>
                 ))}
               </div>
@@ -283,6 +331,14 @@ export default function Collections() {
           </>
         )}
       </div>
+
+      {showDownloadModal && (
+        <DownloadModal
+          collectionName={selectedCollection?.name}
+          docketIds={docketsForModal}
+          onClose={() => setShowDownloadModal(false)}
+        />
+      )}
     </section>
   );
 }
