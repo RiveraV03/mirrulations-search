@@ -16,7 +16,6 @@ def _get_search_params():
     if cfr_parts_raw:
         cfr_parts_parsed = []
         for cfr_str in cfr_parts_raw:
-            # Ignore malformed values instead of crashing request parsing.
             if ':' not in cfr_str:
                 continue
             title, part = cfr_str.split(':', 1)
@@ -217,6 +216,21 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         if not deleted:
             return jsonify({"error": "Collection not found"}), 404
         return "", 204
+
+    @flask_app.route("/collections/<int:collection_id>/dockets", methods=["GET"])
+    def get_collection_dockets(collection_id):
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        page, page_size = _get_pagination_params()
+        logic = InternalLogic("sample_database", db_layer=db_layer)
+        result = logic.get_collection_dockets(
+            collection_id, user["email"], page=page, page_size=page_size
+        )
+        if result is None:
+            return jsonify({"error": "Collection not found"}), 404
+        return _build_paginated_response(result['results'], result['pagination'])
 
     @flask_app.route("/collections/<int:collection_id>/dockets", methods=["POST"])
     def add_docket_to_collection(collection_id):
