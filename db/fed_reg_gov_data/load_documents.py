@@ -96,15 +96,24 @@ def map_document(raw):
         log.warning("Skipping malformed JSON — missing key: %s", e)
         return None
 
-    document_id      = data.get("id")
-    docket_id        = attr.get("docketId")
-    modify_date      = attr.get("modifyDate")
-    doc_type         = attr.get("documentType")
+    document_id       = data.get("id")
+    docket_id         = attr.get("docketId") or (document_id.rsplit("-", 1)[0] if document_id else None)
+    modify_date       = attr.get("modifyDate")
+    doc_type          = attr.get("documentType")
     document_api_link = links.get("self")
-    agency_id        = attr.get("agencyId")
+    agency_id         = attr.get("agencyId")
 
-    if not all([document_id, docket_id, modify_date, doc_type, document_api_link, agency_id]):
-        log.warning("Skipping %s — missing required field(s)", document_id)
+    required = {
+        "document_id":       document_id,
+        "docket_id":         docket_id,
+        "modify_date":       modify_date,
+        "document_type":     doc_type,
+        "document_api_link": document_api_link,
+        "agency_id":         agency_id,
+    }
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        log.warning("Skipping %s — missing required field(s): %s", document_id, missing)
         return None
 
     return {
