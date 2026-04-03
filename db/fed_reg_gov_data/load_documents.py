@@ -14,7 +14,8 @@ WHAT IT DOES:
     and resume from where it left off.
 
 HOW TO USE:
-    1. Set the following environment variables (or provide a .env file):
+    1. Set the following environment variables (or provide a .env file)
+    NOTE(This is already made inside of the ec2 instance):
 
         DB_HOST         Hostname of the RDS PostgreSQL instance
         DB_PORT         Port (default: 5432)
@@ -30,7 +31,10 @@ HOW TO USE:
 
     3. Run the script:
 
-        python3 load_documents.py
+        nohup python3 load_documents.py > ~/load_output.log 2>&1 &
+
+        Check the output with:
+        tail -f ~/load_output.log
 
     To restart from scratch, delete the checkpoint file before running.
 """
