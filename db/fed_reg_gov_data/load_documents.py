@@ -1,4 +1,39 @@
 #!/usr/bin/env python3
+"""
+load_documents.py — Bulk-load regulations.gov document JSON files into the
+documentswithfrdoc table in the Mirrulations PostgreSQL database.
+
+WHAT IT DOES:
+    Scans a data directory recursively for files matching **/documents/*.json,
+    parses each file, maps the fields to the database schema, and inserts them
+    in batches using upsert (ON CONFLICT DO UPDATE). If a document already
+    exists, key fields like modify_date, topics, and comment dates are updated.
+
+    A checkpoint file tracks which files have been successfully inserted. If
+    the script is interrupted, re-running it will skip already-processed files
+    and resume from where it left off.
+
+HOW TO USE:
+    1. Set the following environment variables (or provide a .env file):
+
+        DB_HOST         Hostname of the RDS PostgreSQL instance
+        DB_PORT         Port (default: 5432)
+        DB_NAME         Database name
+        DB_USER         Database user
+        DB_PASSWORD     Database password
+        DATA_ROOT       Root directory containing the document JSON files
+                        (default: /mnt/search-data/data)
+        CHECKPOINT_FILE Path to the checkpoint file used for resume support
+                        (default: /mnt/search-data/load_documents_checkpoint.txt)
+
+    2. Ensure the RDS SSL certificate is present at /certs/global-bundle.pem.
+
+    3. Run the script:
+
+        python3 load_documents.py
+
+    To restart from scratch, delete the checkpoint file before running.
+"""
 
 import os
 import json
@@ -158,13 +193,13 @@ COLUMNS = [
 ]
 
 INSERT_SQL = f"""
-    INSERT INTO documentsWithFRdoc ({', '.join(COLUMNS)})
+    INSERT INTO documentswithfrdoc ({', '.join(COLUMNS)})
     VALUES %s
     ON CONFLICT (document_id) DO UPDATE SET
         modify_date          = EXCLUDED.modify_date,
         is_open_for_comment  = EXCLUDED.is_open_for_comment,
         is_withdrawn         = EXCLUDED.is_withdrawn,
-        frdocnum             = COALESCE(EXCLUDED.frdocnum, documentsWithFRdoc.frdocnum),
+        frdocnum             = COALESCE(EXCLUDED.frdocnum, documentswithfrdoc.frdocnum),
         document_title       = EXCLUDED.document_title,
         topics               = EXCLUDED.topics,
         comment_end_date     = EXCLUDED.comment_end_date,
