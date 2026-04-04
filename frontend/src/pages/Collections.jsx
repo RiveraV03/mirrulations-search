@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   getCollections,
   createCollection,
@@ -8,20 +8,12 @@ import {
 } from "../api/collectionsApi";
 import "../styles/collections.css";
 
-/** Must match ResultsPanel — overlay search result doc/comment counts onto /dockets rows. */
-const DOCKET_METRICS_SESSION_KEY = "mirrulations_docket_metrics_v1";
-
-function readRememberedMetrics() {
-  try {
-    const raw = sessionStorage.getItem(DOCKET_METRICS_SESSION_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
 const ECFR_URL = "https://www.ecfr.gov";
 const EMPTY_DOCKET_IDS = [];
+
+/** Stable archive: last modified (newest first) or title A–Z. */
+const SORT_MODIFIED = "modified";
+const SORT_ALPHABETICAL = "alphabetical";
 
 export default function Collections() {
   const [collections, setCollections] = useState([]);
@@ -34,20 +26,28 @@ export default function Collections() {
   const [error, setError] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
   const [docketDetails, setDocketDetails] = useState({});
-  /**
-   * modified_desc / modified_asc — last modified
-   * title_asc / title_desc — title A–Z / Z–A
-   * documents_desc / documents_asc — by documentDenominator (total documents)
-   * comments_desc / comments_asc — by commentDenominator (total comments)
-   * Counts use documentNumerator/Denominator & commentNumerator/Denominator like ResultsPanel,
-   * merged from search in this browser when those dockets were on a results page.
-   */
-  const [docketSortOrder, setDocketSortOrder] = useState("modified_desc");
+  const [sortMode, setSortMode] = useState(SORT_MODIFIED);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef(null);
 
   const selectedCollection = collections.find(
     (c) => c.collection_id === selectedCollectionId
   );
   const selectedDocketIds = selectedCollection?.docket_ids ?? EMPTY_DOCKET_IDS;
+
+  useEffect(() => {
+    function handlePointerDown(e) {
+      if (!sortMenuRef.current?.contains(e.target)) {
+        setSortMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, []);
 
   const loadCollections = async () => {
     setLoading(true);
@@ -86,19 +86,10 @@ export default function Collections() {
   useEffect(() => {
     if (!selectedDocketIds.length) return;
     getDocketsByIds(selectedDocketIds).then((results) => {
-      const stored = readRememberedMetrics();
       setDocketDetails((prev) => {
         const next = { ...prev };
         results.forEach((d) => {
-          const id = d.docket_id;
-          const m = stored[id];
-          next[id] = {
-            ...d,
-            documentNumerator: m?.documentNumerator ?? d.documentNumerator ?? 0,
-            documentDenominator: m?.documentDenominator ?? d.documentDenominator ?? 0,
-            commentNumerator: m?.commentNumerator ?? d.commentNumerator ?? 0,
-            commentDenominator: m?.commentDenominator ?? d.commentDenominator ?? 0,
-          };
+          next[d.docket_id] = d;
         });
         return next;
       });
@@ -119,10 +110,7 @@ export default function Collections() {
         name: trimmedName,
         docket_ids: [],
       };
-      setCollections((prev) => [
-        ...prev,
-        newCollection,
-      ]);
+      setCollections((prev) => [...prev, newCollection]);
       setSelectedCollectionId(created.collection_id);
       setShowCreateForm(false);
       setNewCollectionName("");
@@ -179,7 +167,6 @@ export default function Collections() {
 
   const sortedDocketIds = useMemo(() => {
     const ids = [...selectedDocketIds];
-    const row = (id) => docketDetails[id] ?? {};
     const getTime = (docketId) => {
       const raw = docketDetails[docketId]?.modify_date;
       if (raw == null || raw === "") return null;
@@ -190,30 +177,12 @@ export default function Collections() {
       const t = docketDetails[docketId]?.docket_title;
       return (t != null ? String(t) : "").trim();
     };
-    const docTotal = (id) => Number(row(id).documentDenominator ?? 0);
-    const comTotal = (id) => Number(row(id).commentDenominator ?? 0);
     ids.sort((a, b) => {
-      if (docketSortOrder === "documents_desc" || docketSortOrder === "documents_asc") {
-        const cmp = docTotal(b) - docTotal(a);
-        if (cmp !== 0) {
-          return docketSortOrder === "documents_desc" ? cmp : -cmp;
-        }
-        return String(a).localeCompare(String(b));
-      }
-      if (docketSortOrder === "comments_desc" || docketSortOrder === "comments_asc") {
-        const cmp = comTotal(b) - comTotal(a);
-        if (cmp !== 0) {
-          return docketSortOrder === "comments_desc" ? cmp : -cmp;
-        }
-        return String(a).localeCompare(String(b));
-      }
-      if (docketSortOrder === "title_asc" || docketSortOrder === "title_desc") {
-        const ta = getTitle(a);
-        const tb = getTitle(b);
-        const cmp = ta.localeCompare(tb, undefined, { sensitivity: "base" });
-        if (cmp !== 0) {
-          return docketSortOrder === "title_desc" ? -cmp : cmp;
-        }
+      if (sortMode === SORT_ALPHABETICAL) {
+        const cmp = getTitle(a).localeCompare(getTitle(b), undefined, {
+          sensitivity: "base",
+        });
+        if (cmp !== 0) return cmp;
         return String(a).localeCompare(String(b));
       }
       const ta = getTime(a);
@@ -221,11 +190,13 @@ export default function Collections() {
       if (ta == null && tb == null) return 0;
       if (ta == null) return 1;
       if (tb == null) return -1;
-      const cmp = ta - tb;
-      return docketSortOrder === "modified_desc" ? -cmp : cmp;
+      return tb - ta;
     });
     return ids;
-  }, [selectedDocketIds, docketDetails, docketSortOrder]);
+  }, [selectedDocketIds, docketDetails, sortMode]);
+
+  const sortLabel =
+    sortMode === SORT_ALPHABETICAL ? "Alphabetical" : "Last modified";
 
   if (unauthorized) {
     return (
@@ -254,12 +225,11 @@ export default function Collections() {
 
   return (
     <section className="collections-page collections-layout">
-      <div className="collections-rail">
-        <aside className="collections-sidebar">
+      <aside className="collections-sidebar">
         <div className="collections-sidebar-header">
           <div>
             <h2>My Collections</h2>
-            <p>All your saved dockets in one place!</p>
+            <p>Save and revisit dockets—stable reference, not live search data.</p>
           </div>
           <button
             type="button"
@@ -311,125 +281,7 @@ export default function Collections() {
             ))}
           </div>
         )}
-        </aside>
-
-        <aside className="collections-sort-sidebar" aria-label="Sort dockets">
-          <div className="collections-sort-sidebar-header">
-            <h2 className="collections-sort-sidebar-heading">Sort dockets</h2>
-            <p className="collections-sort-sidebar-lede">
-              Document/comment totals match search when you have opened those dockets on results (this browser).
-            </p>
-          </div>
-          <div className="collections-sort-sidebar-body">
-            <div className="collections-sort-section">
-              <h3 className="collections-sort-section-label">Documents</h3>
-              <p className="collections-sort-section-desc">By documentDenominator (total)</p>
-              <div
-                className="collections-sort-toggle"
-                role="group"
-                aria-label="Sort by document total"
-              >
-                <button
-                  type="button"
-                  className={`collections-sort-btn ${docketSortOrder === "documents_desc" ? "is-selected" : ""}`}
-                  onClick={() => setDocketSortOrder("documents_desc")}
-                >
-                  <span className="collections-sort-btn-label">High → low</span>
-                  <span className="collections-sort-btn-hint">Most documents first</span>
-                </button>
-                <button
-                  type="button"
-                  className={`collections-sort-btn ${docketSortOrder === "documents_asc" ? "is-selected" : ""}`}
-                  onClick={() => setDocketSortOrder("documents_asc")}
-                >
-                  <span className="collections-sort-btn-label">Low → high</span>
-                  <span className="collections-sort-btn-hint">Fewest documents first</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="collections-sort-section">
-              <h3 className="collections-sort-section-label">Comments</h3>
-              <p className="collections-sort-section-desc">By commentDenominator (total)</p>
-              <div
-                className="collections-sort-toggle"
-                role="group"
-                aria-label="Sort by comment total"
-              >
-                <button
-                  type="button"
-                  className={`collections-sort-btn ${docketSortOrder === "comments_desc" ? "is-selected" : ""}`}
-                  onClick={() => setDocketSortOrder("comments_desc")}
-                >
-                  <span className="collections-sort-btn-label">High → low</span>
-                  <span className="collections-sort-btn-hint">Most comments first</span>
-                </button>
-                <button
-                  type="button"
-                  className={`collections-sort-btn ${docketSortOrder === "comments_asc" ? "is-selected" : ""}`}
-                  onClick={() => setDocketSortOrder("comments_asc")}
-                >
-                  <span className="collections-sort-btn-label">Low → high</span>
-                  <span className="collections-sort-btn-hint">Fewest comments first</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="collections-sort-section">
-              <h3 className="collections-sort-section-label">Modified date</h3>
-              <div
-                className="collections-sort-toggle"
-                role="group"
-                aria-label="Sort dockets by modified date"
-              >
-                <button
-                  type="button"
-                  className={`collections-sort-btn ${docketSortOrder === "modified_desc" ? "is-selected" : ""}`}
-                  onClick={() => setDocketSortOrder("modified_desc")}
-                >
-                  <span className="collections-sort-btn-label">Newest first</span>
-                  <span className="collections-sort-btn-hint">Latest changes</span>
-                </button>
-                <button
-                  type="button"
-                  className={`collections-sort-btn ${docketSortOrder === "modified_asc" ? "is-selected" : ""}`}
-                  onClick={() => setDocketSortOrder("modified_asc")}
-                >
-                  <span className="collections-sort-btn-label">Oldest first</span>
-                  <span className="collections-sort-btn-hint">Earliest changes</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="collections-sort-section">
-              <h3 className="collections-sort-section-label">Docket title</h3>
-              <p className="collections-sort-section-desc">Alphabetical by docket title</p>
-              <div
-                className="collections-sort-toggle"
-                role="group"
-                aria-label="Sort dockets by title"
-              >
-                <button
-                  type="button"
-                  className={`collections-sort-btn ${docketSortOrder === "title_asc" ? "is-selected" : ""}`}
-                  onClick={() => setDocketSortOrder("title_asc")}
-                >
-                  <span className="collections-sort-btn-label">A → Z</span>
-                  <span className="collections-sort-btn-hint">Ascending</span>
-                </button>
-                <button
-                  type="button"
-                  className={`collections-sort-btn ${docketSortOrder === "title_desc" ? "is-selected" : ""}`}
-                  onClick={() => setDocketSortOrder("title_desc")}
-                >
-                  <span className="collections-sort-btn-label">Z → A</span>
-                  <span className="collections-sort-btn-hint">Descending</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </aside>
-      </div>
+      </aside>
 
       <div className="collections-content">
         {error && <p className="collections-error">{error}</p>}
@@ -441,34 +293,94 @@ export default function Collections() {
             <h1 className="collections-title">{selectedCollection.name}</h1>
             <div className="collections-toolbar">
               <p className="collections-summary">
-                Showing dockets in "{selectedCollection.name}" • {selectedDocketIds.length}{" "}
-                docket{selectedDocketIds.length === 1 ? "" : "s"} found
+                Saved dockets in &quot;{selectedCollection.name}&quot; •{" "}
+                {selectedDocketIds.length} docket
+                {selectedDocketIds.length === 1 ? "" : "s"}
               </p>
-              <div className="collections-actions">
-                <button
-                  type="button"
-                  className="collections-action-btn collections-action-btn-secondary"
-                  onClick={() => setEditMode((prev) => !prev)}
-                >
-                  {editMode ? "Done" : "Edit"}
-                </button>
-                <button
-                  type="button"
-                  className="collections-action-btn"
-                  onClick={handleDownloadAll}
-                  disabled={selectedDocketIds.length === 0}
-                >
-                  Download All
-                </button>
-                {editMode && (
+              <div className="collections-toolbar-right">
+                <div className="collections-sort-wrap" ref={sortMenuRef}>
                   <button
                     type="button"
-                    className="collection-delete"
-                    onClick={() => handleDeleteCollection(selectedCollection.collection_id)}
+                    className="collections-sort-trigger"
+                    aria-expanded={sortMenuOpen}
+                    aria-haspopup="listbox"
+                    aria-label="Sort saved dockets"
+                    onClick={() => setSortMenuOpen((o) => !o)}
                   >
-                    Delete Collection
+                    Sort
+                    <span className="collections-sort-trigger-value" aria-hidden>
+                      {sortLabel}
+                    </span>
                   </button>
-                )}
+                  {sortMenuOpen && (
+                    <ul className="collections-sort-menu" role="listbox">
+                      <li role="none">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={sortMode === SORT_MODIFIED}
+                          className={
+                            sortMode === SORT_MODIFIED
+                              ? "collections-sort-menu-item is-active"
+                              : "collections-sort-menu-item"
+                          }
+                          onClick={() => {
+                            setSortMode(SORT_MODIFIED);
+                            setSortMenuOpen(false);
+                          }}
+                        >
+                          Last modified
+                        </button>
+                      </li>
+                      <li role="none">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={sortMode === SORT_ALPHABETICAL}
+                          className={
+                            sortMode === SORT_ALPHABETICAL
+                              ? "collections-sort-menu-item is-active"
+                              : "collections-sort-menu-item"
+                          }
+                          onClick={() => {
+                            setSortMode(SORT_ALPHABETICAL);
+                            setSortMenuOpen(false);
+                          }}
+                        >
+                          Alphabetical
+                        </button>
+                      </li>
+                    </ul>
+                  )}
+                </div>
+                <div className="collections-actions">
+                  <button
+                    type="button"
+                    className="collections-action-btn collections-action-btn-secondary"
+                    onClick={() => setEditMode((prev) => !prev)}
+                  >
+                    {editMode ? "Done" : "Edit"}
+                  </button>
+                  <button
+                    type="button"
+                    className="collections-action-btn"
+                    onClick={handleDownloadAll}
+                    disabled={selectedDocketIds.length === 0}
+                  >
+                    Download All
+                  </button>
+                  {editMode && (
+                    <button
+                      type="button"
+                      className="collection-delete"
+                      onClick={() =>
+                        handleDeleteCollection(selectedCollection.collection_id)
+                      }
+                    >
+                      Delete Collection
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -478,48 +390,73 @@ export default function Collections() {
               <div className="collection-results">
                 {sortedDocketIds.map((docketId) => {
                   const item = docketDetails[docketId];
-                  if (!item) return <div key={docketId} className="result-card"><p>Loading...</p></div>;
+                  if (!item) {
+                    return (
+                      <div key={docketId} className="result-card">
+                        <p>Loading...</p>
+                      </div>
+                    );
+                  }
                   return (
-                      <article key={docketId} className="result-card">
-                          <h3 className="result-title">{item.docket_title}</h3>
-                          <div className="result-meta">
-                              <p><strong>Agency:</strong> {item.agency_id}</p>
-                              <p><strong>Docket-ID:</strong> {item.docket_id}</p>
-                              <p><strong>Docket type:</strong> {item.docket_type}</p>
-                              <p>
-                                  <strong>CFR:</strong>{" "}
-                                  {item.cfrPart && item.cfrPart.length > 0 ? (
-                                      item.cfrPart.map((p, idx) => (
-                                          <span key={idx}>
-                                              <a href={p.link} target="_blank" rel="noopener noreferrer">
-                                                  {p.title != null ? `${p.title} Part ${p.part}` : p.part}
-                                              </a>
-                                              {idx < item.cfrPart.length - 1 && ", "}
-                                          </span>
-                                      ))
-                                  ) : (
-                                      <a href={ECFR_URL} target="_blank" rel="noopener noreferrer">None</a>
-                                  )}
-                              </p>
-                              <p><strong>Last modified date:</strong> {item.modify_date}</p>
-                              <p>
-                                <strong>Documents:</strong> {item.documentNumerator ?? 0}/
-                                {item.documentDenominator ?? 0}
-                              </p>
-                              <p>
-                                <strong>Comments:</strong> {item.commentNumerator ?? 0}/
-                                {item.commentDenominator ?? 0}
-                              </p>
-                          </div>
-                          {editMode && (
-                              <button className="collection-remove-docket"
-                                  onClick={() => handleRemoveDocket(selectedCollection.collection_id, docketId)}>
-                                  Remove from Collection
-                              </button>
+                    <article key={docketId} className="result-card">
+                      <h3 className="result-title">{item.docket_title}</h3>
+                      <div className="result-meta">
+                        <p>
+                          <strong>Agency:</strong> {item.agency_id}
+                        </p>
+                        <p>
+                          <strong>Docket-ID:</strong> {item.docket_id}
+                        </p>
+                        <p>
+                          <strong>Docket type:</strong> {item.docket_type}
+                        </p>
+                        <p>
+                          <strong>CFR:</strong>{" "}
+                          {item.cfrPart && item.cfrPart.length > 0 ? (
+                            item.cfrPart.map((p, idx) => (
+                              <span key={idx}>
+                                <a
+                                  href={p.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {p.title != null
+                                    ? `${p.title} Part ${p.part}`
+                                    : p.part}
+                                </a>
+                                {idx < item.cfrPart.length - 1 && ", "}
+                              </span>
+                            ))
+                          ) : (
+                            <a
+                              href={ECFR_URL}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              None
+                            </a>
                           )}
-                      </article>
+                        </p>
+                        <p>
+                          <strong>Last modified date:</strong> {item.modify_date}
+                        </p>
+                      </div>
+                      {editMode && (
+                        <button
+                          className="collection-remove-docket"
+                          onClick={() =>
+                            handleRemoveDocket(
+                              selectedCollection.collection_id,
+                              docketId
+                            )
+                          }
+                        >
+                          Remove from Collection
+                        </button>
+                      )}
+                    </article>
                   );
-              })}
+                })}
               </div>
             )}
           </>

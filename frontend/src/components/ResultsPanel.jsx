@@ -1,30 +1,6 @@
 import {ColorRing} from 'react-loader-spinner'
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import CollectionModal from "./CollectionModal";
-
-/** Same sessionStorage key Collections reads — keeps doc/comment fields in sync with search cards, no backend. */
-const DOCKET_METRICS_SESSION_KEY = "mirrulations_docket_metrics_v1";
-
-function rememberMetricsFromResults(results) {
-  if (!results?.length) return;
-  try {
-    const raw = sessionStorage.getItem(DOCKET_METRICS_SESSION_KEY);
-    const map = raw ? JSON.parse(raw) : {};
-    for (const item of results) {
-      const id = item.docket_id;
-      if (!id) continue;
-      map[id] = {
-        documentNumerator: item.documentNumerator ?? 0,
-        documentDenominator: item.documentDenominator ?? 0,
-        commentNumerator: item.commentNumerator ?? 0,
-        commentDenominator: item.commentDenominator ?? 0,
-      };
-    }
-    sessionStorage.setItem(DOCKET_METRICS_SESSION_KEY, JSON.stringify(map));
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
 
 const ECFR_URL = "https://www.ecfr.gov";
 const MAX_VOLUME = 10000;
@@ -49,12 +25,6 @@ function scoreResult(item) {
 export default function ResultsPanel({ results, loading, hasSearched, query, unauthorized }) {
 
  const [modalDocketId, setModalDocketId] = useState(null);
-
- useEffect(() => {
-   if (hasSearched && results?.length) {
-     rememberMetricsFromResults(results);
-   }
- }, [results, hasSearched]);
 
  if (unauthorized) {
    return (
