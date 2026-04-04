@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef,useMemo } from "react";
+
 import {
   getCollections,
   createCollection,
@@ -12,6 +13,8 @@ import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 
 const ECFR_URL = "https://www.ecfr.gov";
 const MAX_DOCKETS = 10;
+const SORT_MODIFIED = "modified";
+const SORT_ALPHABETICAL = "alphabetical";
 
 export default function Collections() {
   const [collections, setCollections] = useState([]);
@@ -28,6 +31,23 @@ export default function Collections() {
   const [page, setPage] = useState(1);
   const [docketsLoading, setDocketsLoading] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [sortMode, setSortMode] = useState(SORT_MODIFIED);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef(null);
+
+  useEffect(() => {
+    function handlePointerDown(e) {
+      if (!sortMenuRef.current?.contains(e.target)) {
+        setSortMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, []);
 
   const loadCollections = async () => {
     setLoading(true);
@@ -63,10 +83,10 @@ export default function Collections() {
     }
   }, [collections, selectedCollectionId]);
 
-  const loadDockets = async (collectionId, pageNum) => {
+  const loadDockets = async (collectionId, pageNum, sort) => {
     setDocketsLoading(true);
     try {
-      const { results, pagination: p } = await getCollectionDockets(collectionId, pageNum);
+      const { results, pagination: p } = await getCollectionDockets(collectionId, pageNum, sort);
       setDockets(results);
       setPagination(p);
     } catch (err) {
@@ -80,13 +100,19 @@ export default function Collections() {
   useEffect(() => {
     if (!selectedCollectionId) return;
     setPage(1);
-    loadDockets(selectedCollectionId, 1);
+    loadDockets(selectedCollectionId, 1, sortMode);
   }, [selectedCollectionId]);
 
   useEffect(() => {
     if (!selectedCollectionId) return;
-    loadDockets(selectedCollectionId, page);
+    loadDockets(selectedCollectionId, page, sortMode);
   }, [page]);
+
+  useEffect(() => {
+    if (!selectedCollectionId) return;
+    setPage(1);
+    loadDockets(selectedCollectionId, 1, sortMode);
+  }, [sortMode]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -138,7 +164,7 @@ export default function Collections() {
     setError("");
     try {
       await removeDocketFromCollection(collectionId, docketId);
-      loadDockets(collectionId, page);
+      loadDockets(collectionId, page, sortMode);
     } catch (err) {
       if (err.message === "UNAUTHORIZED") {
         setUnauthorized(true);
@@ -162,11 +188,31 @@ export default function Collections() {
   );
   const selectedDocketIds = selectedCollection?.docket_ids || [];
   const overLimit = selectedDocketIds.length > MAX_DOCKETS;
+  const sortLabel = sortMode === SORT_ALPHABETICAL ? "Alphabetical" : "Last modified";
 
   const handleDownloadAll = () => {
     if (!selectedCollection || overLimit) return;
     setShowDownloadModal(true);
   };
+
+
+  const sortedDockets = useMemo(() => {
+    const arr = [...dockets];
+  
+    if (sortMode === SORT_ALPHABETICAL) {
+      arr.sort((a, b) =>
+        (a.docket_title || "").localeCompare(b.docket_title || "", undefined, {
+          sensitivity: "base",
+        })
+      );
+    } else {
+      arr.sort((a, b) =>
+        new Date(b.modify_date) - new Date(a.modify_date)
+      );
+    }
+  
+    return arr;
+  }, [dockets, sortMode]);
 
   return (
     <section className="collections-page collections-layout">
@@ -246,34 +292,83 @@ export default function Collections() {
                   </span>
                 )}
               </p>
-              <div className="collections-actions">
-                <button
-                  type="button"
-                  className="collections-action-btn collections-action-btn-secondary"
-                  onClick={() => setEditMode((prev) => !prev)}
-                >
-                  {editMode ? "Done" : "Edit"}
-                </button>
-                <button
-                  type="button"
-                  className="collections-action-btn"
-                  onClick={handleDownloadAll}
-                  disabled={!pagination?.totalResults || overLimit}
-                  title={overLimit ? `Collections are limited to ${MAX_DOCKETS} dockets for download` : ""}
-                >
-                  Download All
-                </button>
-                {editMode && (
+              <div className="collections-toolbar-right">
+                <div className="collections-sort-wrap" ref={sortMenuRef}>
                   <button
                     type="button"
-                    className="collection-delete"
-                    onClick={() =>
-                      handleDeleteCollection(selectedCollection.collection_id)
-                    }
+                    className="collections-sort-trigger"
+                    aria-expanded={sortMenuOpen}
+                    aria-haspopup="listbox"
+                    aria-label="Sort dockets"
+                    onClick={() => setSortMenuOpen((o) => !o)}
                   >
-                    Delete Collection
+                    Sort
+                    <span className="collections-sort-trigger-value" aria-hidden>
+                      {sortLabel}
+                    </span>
                   </button>
-                )}
+                  {sortMenuOpen && (
+                    <ul className="collections-sort-menu" role="listbox">
+                      <li role="none">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={sortMode === SORT_MODIFIED}
+                          className={`collections-sort-menu-item${sortMode === SORT_MODIFIED ? " is-active" : ""}`}
+                          onClick={() => {
+                            setSortMode(SORT_MODIFIED);
+                            setSortMenuOpen(false);
+                          }}
+                        >
+                          Last modified
+                        </button>
+                      </li>
+                      <li role="none">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={sortMode === SORT_ALPHABETICAL}
+                          className={`collections-sort-menu-item${sortMode === SORT_ALPHABETICAL ? " is-active" : ""}`}
+                          onClick={() => {
+                            setSortMode(SORT_ALPHABETICAL);
+                            setSortMenuOpen(false);
+                          }}
+                        >
+                          Alphabetical
+                        </button>
+                      </li>
+                    </ul>
+                  )}
+                </div>
+                <div className="collections-actions">
+                  <button
+                    type="button"
+                    className="collections-action-btn collections-action-btn-secondary"
+                    onClick={() => setEditMode((prev) => !prev)}
+                  >
+                    {editMode ? "Done" : "Edit"}
+                  </button>
+                  <button
+                    type="button"
+                    className="collections-action-btn"
+                    onClick={handleDownloadAll}
+                    disabled={!pagination?.totalResults || overLimit}
+                    title={overLimit ? `Collections are limited to ${MAX_DOCKETS} dockets for download` : ""}
+                  >
+                    Download All
+                  </button>
+                  {editMode && (
+                    <button
+                      type="button"
+                      className="collection-delete"
+                      onClick={() =>
+                        handleDeleteCollection(selectedCollection.collection_id)
+                      }
+                    >
+                      Delete Collection
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -284,7 +379,7 @@ export default function Collections() {
             ) : (
               <>
                 <div className="collection-results">
-                  {dockets.map((item) => (
+                  {sortedDockets.map((item) => (
                     <article key={item.docket_id} className="result-card">
                       <h3 className="result-title">{item.docket_title}</h3>
                       <div className="result-meta">
