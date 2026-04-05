@@ -2,8 +2,10 @@
 """
 Fetch docket data using mirrulations-fetch and ingest it into PostgreSQL.
 
-This script combines mirrulations-fetch (to download docket data) with the 
-ingest_docket module to load data into the database.
+This script combines mirrulations-fetch (to download docket data) with the
+ingest_docket module to load data into the database. Optionally ingests full
+Federal Register documents (API → federal_register_documents / cfrparts) using
+``frDocNum`` values from regulations.gov document JSON.
 
 Usage:
     python db/ingest.py FAA-2025-0618
@@ -15,10 +17,18 @@ import argparse
 import json
 import logging
 import re
+import ssl
 import sys
 import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
+
+try:
+    import certifi
+except ImportError:
+    certifi = None  # type: ignore[assignment]
 
 # Allow `python db/ingest.py` from repo root without PYTHONPATH.
 _ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +51,13 @@ from ingest_docket import (
     _ensure_comments_document_fk,
 )
 
+from ingest_federal_registry_document import (
+    ensure_jsonb_support,
+    upsert_federal_register_documents,
+    extract_cfrparts,
+    upsert_cfrparts,
+)
+
 import psycopg2
 
 logging.basicConfig(
@@ -48,6 +65,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 log = logging.getLogger(__name__)
+
+FR_API_URL = "https://www.federalregister.gov/api/v1/documents/{}.json"
+
+_REQUIRED_FR_TABLES = frozenset({"federal_register_documents", "cfrparts"})
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,6 +93,11 @@ def parse_args() -> argparse.Namespace:
         "--skip-comments-ingest",
         action="store_true",
         help="Skip ingesting comments",
+    )
+    parser.add_argument(
+        "--skip-federal-register",
+        action="store_true",
+        help="Skip Federal Register API fetch and federal_register_documents / cfrparts ingest",
     )
     parser.add_argument(
         "--dry-run",
@@ -110,7 +136,7 @@ def fetch_docket(docket_id: str, output_dir: str) -> Path:
     """Use mirrulations-fetch to download docket data."""
     log.info("Fetching docket data for %s using mirrulations-fetch...", docket_id)
     try:
-        result = subprocess.run(
+        subprocess.run(
             ["mirrulations-fetch", docket_id],
             cwd=output_dir,
             capture_output=True,
@@ -129,6 +155,59 @@ def fetch_docket(docket_id: str, output_dir: str) -> Path:
     except FileNotFoundError:
         log.error("mirrulations-fetch not found. Install it via: pip install mirrulations-fetch")
         sys.exit(1)
+
+
+def get_docket_ID(docket_dir: Path) -> str:
+    """Return the docket ID string from a docket root directory path (folder name)."""
+    return docket_dir.name
+
+
+def get_document_ID(path: Path) -> str:
+    """Return the document identifier used for indexing (file name)."""
+    return path.name
+
+
+def get_htm_files(docket_dir: Path) -> list[dict[str, Any]]:
+    """
+    Discover ``.htm`` / ``.html`` files under ``raw-data/documents/`` (recursive).
+    Returns dicts with ``docketId``, ``documentId`` (file name), ``documentHtm`` (body text).
+    """
+    docs_dir = docket_dir / "raw-data" / "documents"
+    if not docs_dir.is_dir():
+        return []
+    did = get_docket_ID(docket_dir)
+    out: list[dict[str, Any]] = []
+    for pattern in ("**/*.htm", "**/*.html"):
+        for path in sorted(docs_dir.glob(pattern)):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                log.warning("Could not read %s: %s", path, exc)
+                continue
+            out.append(
+                {
+                    "docketId": did,
+                    "documentId": path.name,
+                    "documentHtm": text,
+                }
+            )
+    return out
+
+
+def ingest_htm_files(docket_dir: Path, client: Any) -> None:
+    """Index each discovered HTM/HTML file into OpenSearch (``documents`` index)."""
+    for item in get_htm_files(docket_dir):
+        client.index(
+            index="documents",
+            id=item["documentId"],
+            body={
+                "docketId": item["docketId"],
+                "documentId": item["documentId"],
+                "documentText": item["documentHtm"],
+            },
+        )
 
 
 def document_content_html_paths(docket_dir: Path) -> list[tuple[str, Path]]:
@@ -272,61 +351,163 @@ def read_derived_extracted_text(docket_dir: Path) -> list[dict[str, Any]]:
     return records
 
 
-def main():
-    if load_dotenv:
-        load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# ─── Federal Register (same pipeline as ingest_fed_reg_docs_for_docket.py) ───
 
-    args = parse_args()
-    docket_id = args.docket_id.strip().upper()
 
-    # Fetch data if not skipping
-    if not args.skip_fetch:
-        docket_dir = fetch_docket(docket_id, args.output_dir)
-    else:
-        docket_dir = Path(args.output_dir) / docket_id
-        if not docket_dir.exists():
-            log.error("Docket directory not found: %s (use --skip-fetch=false to fetch)", docket_dir)
-            sys.exit(1)
+def extract_frdocnums_from_document_json(doc_path: Path) -> set[str]:
+    """Read ``frDocNum`` from a regulations.gov v4 document JSON export."""
+    try:
+        raw = json.loads(doc_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
 
-    log.info("Using docket directory: %s", docket_dir)
+    attrs = raw.get("data", {})
+    if not isinstance(attrs, dict):
+        return set()
+    attrs = attrs.get("attributes", {})
+    if not isinstance(attrs, dict):
+        return set()
 
-    html_by_doc = read_document_content_html(docket_dir)
-    if html_by_doc:
-        log.info(
-            "Read %d document HTML file(s): %s",
-            len(html_by_doc),
-            ", ".join(sorted(html_by_doc)),
+    val = attrs.get("frDocNum")
+    if isinstance(val, str) and val.strip():
+        return {val.strip()}
+    return set()
+
+
+def collect_frdocnums_from_docket(docket_dir: Path) -> set[str]:
+    """Collect unique ``frDocNum`` values from ``<docket>/raw-data/documents/*.json``."""
+    docs_dir = docket_dir / "raw-data" / "documents"
+    if not docs_dir.is_dir():
+        return set()
+    all_nums: set[str] = set()
+    for path in docs_dir.glob("*.json"):
+        all_nums.update(extract_frdocnums_from_document_json(path))
+    return all_nums
+
+
+def _ssl_context() -> ssl.SSLContext:
+    if certifi is not None:
+        return ssl.create_default_context(cafile=certifi.where())
+    return ssl.create_default_context()
+
+
+def fetch_fr_document(frdocnum: str) -> dict[str, Any]:
+    """GET Federal Register API JSON for ``frdocnum``; return ``{}`` on 404 or error."""
+    url = FR_API_URL.format(frdocnum)
+    try:
+        with urllib.request.urlopen(url, timeout=30, context=_ssl_context()) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            log.warning("Not found in Federal Register API: %s", frdocnum)
+        else:
+            log.warning("HTTP %s fetching %s: %s", e.code, frdocnum, e.reason)
+        return {}
+    except urllib.error.URLError as e:
+        log.warning("Network error fetching %s: %s", frdocnum, e.reason)
+        return {}
+
+
+def _require_fr_schema(conn: Any, args: argparse.Namespace) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT lower(table_name) FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            """
         )
+        have = {r[0] for r in cur.fetchall()}
+    missing = sorted(_REQUIRED_FR_TABLES - have)
+    if missing:
+        log.error(
+            "Database %r is missing Federal Register table(s): %s.\n"
+            "Apply schema: psql -h %s -p %s -U %s -d %s -f db/schema-postgres.sql",
+            args.dbname,
+            ", ".join(missing),
+            args.host,
+            args.port,
+            args.user,
+            args.dbname,
+        )
+        sys.exit(1)
 
-    extracted_records = read_derived_extracted_text(docket_dir)
-    if extracted_records:
-        log.info("Read %d derived extracted-text record(s)", len(extracted_records))
 
-    if args.dry_run:
-        ingest_into_postgresql_dry_run(docket_dir, args)
-    else:
-        ingest_into_postgresql(docket_dir, args)
-    ingest_htm_files(docket_dir, get_opensearch_connection())
+def ingest_federal_register_for_docket(
+    docket_dir: Path,
+    conn: Any,
+    args: argparse.Namespace,
+    *,
+    dry_run: bool,
+) -> tuple[int, int]:
+    """
+    For each unique ``frDocNum`` in ``raw-data/documents/*.json``, fetch FR API JSON and upsert
+    into ``federal_register_documents`` and ``cfrparts``.
+
+    Returns ``(ingested_count, skipped_count)`` where skipped includes 404s and fetch failures.
+    """
+    frdocnums = collect_frdocnums_from_docket(docket_dir)
+    if not frdocnums:
+        log.info("Federal Register: no frDocNum values in raw-data/documents — skipping.")
+        return 0, 0
+
+    if dry_run:
+        log.info(
+            "[DRY RUN] Federal Register: would fetch and ingest %d document(s): %s",
+            len(frdocnums),
+            ", ".join(sorted(frdocnums)),
+        )
+        return len(frdocnums), 0
+
+    _require_fr_schema(conn, args)
+    ensure_jsonb_support()
+
+    ingested = 0
+    skipped = 0
+    for frdocnum in sorted(frdocnums):
+        doc = fetch_fr_document(frdocnum)
+        if not doc:
+            skipped += 1
+            continue
+        try:
+            with conn.cursor() as cur:
+                upsert_federal_register_documents(cur, doc)
+                cfr_rows = extract_cfrparts(doc)
+                upsert_cfrparts(cur, cfr_rows)
+            conn.commit()
+            ingested += 1
+            log.info("Federal Register: ingested %s", frdocnum)
+        except Exception as exc:  # pylint: disable=broad-except
+            conn.rollback()
+            log.warning("Federal Register: failed to ingest %s: %s", frdocnum, exc)
+            skipped += 1
+
+    log.info(
+        "Federal Register: done — %d ingested, %d skipped or failed",
+        ingested,
+        skipped,
+    )
+    return ingested, skipped
+
 
 def ingest_into_postgresql_dry_run(docket_dir: Path, args: argparse.Namespace) -> None:
-    # Dry run only (no DB connection needed)
-    if args.dry_run:
-        ingest_into_postgresql_dry_run(docket_dir, args)
-    else:
-        ingest_into_postgresql(docket_dir, args)
-    ingest_htm_files(docket_dir, get_opensearch_connection())
-
-def ingest_into_postgresql_dry_run(docket_dir: Path, args: argparse.Namespace) -> None:
-    # Dry run only (no DB connection needed)
     log.info("DRY RUN — no database writes.")
     ok, n_doc, sk, fetched_docket_id = ingest_docket_and_documents(docket_dir, conn=None, dry_run=True)
     pc, cs = (0, 0)
     if ok and not args.skip_comments_ingest:
         pc, cs = ingest_comments(docket_dir, conn=None, dry_run=True)
+    fr_i, fr_sk = (0, 0)
+    if ok and not args.skip_federal_register:
+        fr_i, fr_sk = ingest_federal_register_for_docket(docket_dir, None, args, dry_run=True)
     if ok:
         log.info("Done. Documents (this run): %d upserted, %d skipped", n_doc, sk)
         if not args.skip_comments_ingest:
             log.info("Comments (this run): %d processed, %d skipped", pc, cs)
+        if not args.skip_federal_register:
+            log.info(
+                "Federal Register (dry run): %d would ingest, %d skipped",
+                fr_i,
+                fr_sk,
+            )
         _ingest_summary(
             docket_dir,
             fetched_docket_id,
@@ -336,11 +517,9 @@ def ingest_into_postgresql_dry_run(docket_dir: Path, args: argparse.Namespace) -
         )
     else:
         sys.exit(1)
-    return
-    
+
 
 def ingest_into_postgresql(docket_dir: Path, args: argparse.Namespace) -> None:
-    # Connect to database and ingest
     log.info("Connecting to PostgreSQL at %s:%d/%s…", args.host, args.port, args.dbname)
     try:
         conn = psycopg2.connect(
@@ -362,10 +541,21 @@ def ingest_into_postgresql(docket_dir: Path, args: argparse.Namespace) -> None:
         pc, cs = (0, 0)
         if ok and not args.skip_comments_ingest:
             pc, cs = ingest_comments(docket_dir, conn, dry_run=False)
+        fr_ing, fr_skip = (0, 0)
+        if ok and not args.skip_federal_register:
+            fr_ing, fr_skip = ingest_federal_register_for_docket(
+                docket_dir, conn, args, dry_run=False
+            )
         if ok:
             log.info("Done. Documents (this run): %d upserted, %d skipped", n_doc, sk)
             if not args.skip_comments_ingest:
                 log.info("Comments (this run): %d processed, %d skipped", pc, cs)
+            if not args.skip_federal_register:
+                log.info(
+                    "Federal Register (this run): %d ingested, %d skipped/failed",
+                    fr_ing,
+                    fr_skip,
+                )
             _ingest_summary(
                 docket_dir,
                 fetched_docket_id,
@@ -377,6 +567,46 @@ def ingest_into_postgresql(docket_dir: Path, args: argparse.Namespace) -> None:
             sys.exit(1)
     finally:
         conn.close()
+
+
+def main():
+    if load_dotenv:
+        load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+    args = parse_args()
+    docket_id = args.docket_id.strip().upper()
+
+    if not args.skip_fetch:
+        docket_dir = fetch_docket(docket_id, args.output_dir)
+    else:
+        docket_dir = Path(args.output_dir) / docket_id
+        if not docket_dir.exists():
+            log.error("Docket directory not found: %s (omit --skip-fetch to fetch)", docket_dir)
+            sys.exit(1)
+
+    log.info("Using docket directory: %s", docket_dir)
+
+    html_by_doc = read_document_content_html(docket_dir)
+    if html_by_doc:
+        log.info(
+            "Read %d document HTML file(s): %s",
+            len(html_by_doc),
+            ", ".join(sorted(html_by_doc)),
+        )
+
+    extracted_records = read_derived_extracted_text(docket_dir)
+    if extracted_records:
+        log.info("Read %d derived extracted-text record(s)", len(extracted_records))
+
+    if args.dry_run:
+        ingest_into_postgresql_dry_run(docket_dir, args)
+    else:
+        ingest_into_postgresql(docket_dir, args)
+
+    try:
+        ingest_htm_files(docket_dir, get_opensearch_connection())
+    except Exception as exc:
+        log.warning("OpenSearch ingest skipped or failed: %s", exc)
 
 
 if __name__ == "__main__":
