@@ -15,7 +15,8 @@ Environment variables:
     DB_HOST       database host          (default: localhost)
     DB_PORT       database port          (default: 5432)
     DB_NAME       database name          (default: mirrulations)
-    DB_USER       database user          (default: postgres)
+    DB_USER       database user          (default: postgres; local Mac/Homebrew often has no
+                                         postgres role — use export DB_USER="$(whoami)")
     DB_PASSWORD   database password      (default: empty)
     DB_SSL        enable SSL, set to 1   (default: 0 — off for local dev)
     DB_SSLCERT    path to RDS CA bundle  (default: /certs/global-bundle.pem)
@@ -58,6 +59,7 @@ DB_CONFIG = {
     "host":     os.environ.get("DB_HOST", "localhost"),
     "port":     int(os.environ.get("DB_PORT", 5432)),
     "dbname":   os.environ.get("DB_NAME", "mirrulations"),
+    # Fixes FATAL: role "postgres" does not exist on many local installs (see DB_USER in docstring).
     "user":     os.environ.get("DB_USER", "postgres"),
     "password": os.environ.get("DB_PASSWORD", ""),
 }
