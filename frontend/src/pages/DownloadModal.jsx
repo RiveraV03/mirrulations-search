@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "../styles/collections.css";
 
 const PACKAGE_OPTIONS = [
@@ -36,10 +36,34 @@ const FORMAT_OPTIONS = [
 
 export default function DownloadModal({ collectionName, docketIds, onClose }) {
   const [selected, setSelected] = useState(new Set(["metadata"]));
-  const [format, setFormat] = useState("json");
+  const [format, setFormat] = useState("raw");
+  const [status, setStatus] = useState(null); // null | "pending" | "ready"
+  const [jobId, setJobId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
-
+ 
   const isAll = !docketIds || docketIds.length === 0;
+ 
+  useEffect(() => {
+    if (status !== "pending" || !jobId) return;
+    const pollId = setInterval(async () => {
+      try {
+        const res = await fetch(`/download/status/${jobId}`);
+        if (res.status === 401) {
+          clearInterval(pollId);
+          return;
+        }
+        const data = await res.json();
+        if (data.status === "ready") {
+          setStatus("ready");
+          clearInterval(pollId);
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 5000);
+    return () => clearInterval(pollId);
+  }, [status, jobId]);
 
   const toggleSelected = (id) => {
     setSelected((prev) => {
@@ -49,35 +73,35 @@ export default function DownloadModal({ collectionName, docketIds, onClose }) {
     });
   };
 
-  const handleDownload = () => {
-    if (selected.size === 0) return;
-    setError(null);
-    try {
-      const safeName = (collectionName || "collection")
-        .replace(/\s+/g, "-")
-        .toLowerCase();
-      const lines = [
-        `Collection: ${collectionName || ""}`,
-        `Include: ${Array.from(selected).join(", ")}`,
-        `Format: ${format}`,
-        `Dockets (${isAll ? "all" : docketIds.length}):`,
-        "",
-        ...(isAll ? ["(all dockets in collection)"] : docketIds),
-      ];
-      const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${safeName}-dockets.txt`;
-      link.click();
-      URL.revokeObjectURL(url);
-      onClose();
-    } catch (err) {
-      setError("Download failed. Please try again.");
-      console.error(err);
-    }
-  };
+const handleDownload = async () => {
+  if (selected.size === 0) return;
+  setError(null);
+  setSubmitting(true);
+  try {
+    const response = await fetch("/download/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        docket_ids: docketIds,
+        format,
+        include_binaries: selected.has("attachments"),
+      }),
+    });
+    if (response.status === 401) throw new Error("UNAUTHORIZED");
+    if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+    const data = await response.json();
+    setJobId(data.job_id);
+    setStatus("pending");
+  } catch (err) {
+    setError("Failed to request download. Please try again.");
+  } finally {
+    setSubmitting(false);
+  }
+};
 
+  const handleDownloadFile = () => {
+    window.location.href = `/download/${jobId}`;
+  };
  
   const Checkbox = ({ checked, onChange }) => (
     <div
@@ -105,81 +129,103 @@ export default function DownloadModal({ collectionName, docketIds, onClose }) {
     </div>
   );
 
-  return (
+    return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-
+ 
         <h2 className="modal-title">
           {isAll
             ? "Download all dockets"
             : `Download ${docketIds.length} selected docket${docketIds.length !== 1 ? "s" : ""}`}
         </h2>
-
+ 
         {error && <p className="modal-error">{error}</p>}
-
-        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "#aaa", margin: "4px 0 10px" }}>
-          What to include
-        </p>
-        <div className="modal-collection-list">
-          {PACKAGE_OPTIONS.map((opt) => (
-            <div
-              key={opt.id}
-              className="modal-collection-row"
-              style={{ alignItems: "flex-start", gap: 12, cursor: "pointer" }}
-              onClick={() => toggleSelected(opt.id)}
-            >
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: "#1a1a1a" }}>
-                  {opt.label}
-                </div>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 2, lineHeight: 1.4 }}>
-                  {opt.description}
-                </div>
-              </div>
-              <Checkbox
-                checked={selected.has(opt.id)}
-                onChange={() => toggleSelected(opt.id)}
-              />
-            </div>
-          ))}
-        </div>
-
-        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "#aaa", margin: "16px 0 10px" }}>
-          Output format
-        </p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-          {FORMAT_OPTIONS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setFormat(f.id)}
-              style={{
-                padding: "6px 18px",
-                borderRadius: 99,
-                border: `1.5px solid ${format === f.id ? "#6b63d4" : "#ddd"}`,
-                background: format === f.id ? "#eeedf8" : "white",
-                color: format === f.id ? "#4c45a0" : "#666",
-                fontWeight: format === f.id ? 600 : 400,
-                fontSize: 13,
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-            >
-              {f.label}
+ 
+        {/* ── Pending ───────────────────────────────── */}
+        {status === "pending" && (
+          <p className="modal-loading">
+            Package is being prepared — this may take a few minutes.
+          </p>
+        )}
+ 
+        {/* ── Ready ─────────────────────────────────── */}
+        {status === "ready" && (
+          <div className="modal-actions">
+            <span className="modal-loading">Your package is ready!</span>
+            <button className="modal-btn-add" onClick={handleDownloadFile}>
+              Download
             </button>
-          ))}
-        </div>
-
-        <div className="modal-actions">
-          <button className="modal-btn-back" onClick={onClose}>Cancel</button>
-          <button
-            className="modal-btn-add"
-            disabled={selected.size === 0}
-            onClick={handleDownload}
-          >
-            Download
-          </button>
-        </div>
+          </div>
+        )}
+ 
+        {/* ── Checklist (hidden once submitted) ─────── */}
+        {status === null && (
+          <>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "#aaa", margin: "4px 0 10px" }}>
+              What to include
+            </p>
+            <div className="modal-collection-list">
+              {PACKAGE_OPTIONS.map((opt) => (
+                <div
+                  key={opt.id}
+                  className="modal-collection-row"
+                  style={{ alignItems: "flex-start", gap: 12, cursor: "pointer" }}
+                  onClick={() => toggleSelected(opt.id)}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: "#1a1a1a" }}>
+                      {opt.label}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#888", marginTop: 2, lineHeight: 1.4 }}>
+                      {opt.description}
+                    </div>
+                  </div>
+                  <Checkbox
+                    checked={selected.has(opt.id)}
+                    onChange={() => toggleSelected(opt.id)}
+                  />
+                </div>
+              ))}
+            </div>
+ 
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "#aaa", margin: "16px 0 10px" }}>
+              Output format
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              {FORMAT_OPTIONS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFormat(f.id)}
+                  style={{
+                    padding: "6px 18px",
+                    borderRadius: 99,
+                    border: `1.5px solid ${format === f.id ? "#6b63d4" : "#ddd"}`,
+                    background: format === f.id ? "#eeedf8" : "white",
+                    color: format === f.id ? "#4c45a0" : "#666",
+                    fontWeight: format === f.id ? 600 : 400,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+ 
+            <div className="modal-actions">
+              <button className="modal-btn-back" onClick={onClose}>Cancel</button>
+              <button
+                className="modal-btn-add"
+                disabled={selected.size === 0 || submitting}
+                onClick={handleDownload}
+              >
+                {submitting ? "Requesting…" : "Prepare download"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

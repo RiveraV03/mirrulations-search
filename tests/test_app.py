@@ -564,6 +564,122 @@ def test_get_opensearch_connection(mock_opensearch):
     mock_opensearch.assert_called_once()
 
 
+# --- Download ---
+
+def test_request_download_returns_job_id(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request returns job_id and started status"""
+    response = client.post('/download/request', json={
+        "docket_ids": ["CMS-2025-0240"],
+        "format": "raw",
+        "include_binaries": False
+    })
+    assert response.status_code == 202
+    data = response.get_json()
+    assert "job_id" in data
+    assert data["status"] == "started"
+
+
+def test_request_download_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """POST /download/request returns 401 without cookie"""
+    response = app.test_client().post('/download/request', json={
+        "docket_ids": ["CMS-2025-0240"],
+        "format": "raw",
+        "include_binaries": False
+    })
+    assert response.status_code == 401
+
+
+def test_request_download_requires_docket_ids(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request returns 400 when docket_ids is missing"""
+    response = client.post('/download/request', json={
+        "format": "raw",
+        "include_binaries": False
+    })
+    assert response.status_code == 400
+
+
+def test_request_download_enforces_10_docket_limit(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request returns 400 when more than 10 dockets provided"""
+    response = client.post('/download/request', json={
+        "docket_ids": [f"CMS-2025-000{i}" for i in range(11)],
+        "format": "raw",
+        "include_binaries": False
+    })
+    assert response.status_code == 400
+
+
+def test_request_download_requires_valid_format(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request returns 400 for invalid format"""
+    response = client.post('/download/request', json={
+        "docket_ids": ["CMS-2025-0240"],
+        "format": "json",
+        "include_binaries": False
+    })
+    assert response.status_code == 400
+
+
+def test_request_download_accepts_csv_format(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request accepts csv as a valid format"""
+    response = client.post('/download/request', json={
+        "docket_ids": ["CMS-2025-0240"],
+        "format": "csv",
+        "include_binaries": False
+    })
+    assert response.status_code == 202
+
+
+def test_download_status_returns_job_info(client):  # pylint: disable=redefined-outer-name
+    """GET /download/status/<job_id> returns job status"""
+    job_id = client.post('/download/request', json={
+        "docket_ids": ["CMS-2025-0240"],
+        "format": "raw",
+        "include_binaries": False
+    }).get_json()["job_id"]
+    response = client.get(f'/download/status/{job_id}')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["job_id"] == job_id
+    assert "status" in data
+    assert "format" in data
+    assert "docket_ids" in data
+    assert "created_at" in data
+
+
+def test_download_status_not_found(client):  # pylint: disable=redefined-outer-name
+    """GET /download/status/<job_id> returns 404 for nonexistent job"""
+    response = client.get('/download/status/nonexistent-job-id')
+    assert response.status_code == 404
+
+
+def test_download_status_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """GET /download/status/<job_id> returns 401 without cookie"""
+    response = app.test_client().get('/download/status/some-job-id')
+    assert response.status_code == 401
+
+
+def test_download_file_not_ready(client):  # pylint: disable=redefined-outer-name
+    """GET /download/<job_id> returns 202 when job is still pending"""
+    job_id = client.post('/download/request', json={
+        "docket_ids": ["CMS-2025-0240"],
+        "format": "raw",
+        "include_binaries": False
+    }).get_json()["job_id"]
+    response = client.get(f'/download/{job_id}')
+    assert response.status_code == 202
+
+
+def test_download_file_not_found(client):  # pylint: disable=redefined-outer-name
+    """GET /download/<job_id> returns 404 for nonexistent job"""
+    response = client.get('/download/nonexistent-job-id')
+    assert response.status_code == 404
+
+
+def test_download_file_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """GET /download/<job_id> returns 401 without cookie"""
+    response = app.test_client().get('/download/some-job-id')
+    assert response.status_code == 401
+
+
 def test_search_with_date_filters(client): # pylint: disable=redefined-outer-name
     """Test search with start_date and end_date filters"""
     response = client.get('/search/?str=renal&start_date=2024-01-01&end_date=2024-12-31')
