@@ -14,11 +14,19 @@ For **Federal Register–only** ingest (without the full flow here), see `INGEST
    pip install -r requirements.txt
    ```
 
-2. **mirrulations-fetch** — Must be on `PATH` when fetch is not skipped:
+2. **mirrulations-fetch** — Must be on `PATH` when fetch is not skipped. With your virtual environment activated, from the directory where you want the clone (often the repo root alongside `mirrulations-search`):
 
    ```bash
-   pip install -e /path/to/mirrulations-fetch
+   git clone https://github.com/mirrulations/mirrulations-fetch.git
+   pip install -e ./mirrulations-fetch
    ```
+
+- If you don't have mirrulations fecth installed run:
+
+  ```bash
+   git clone https://github.com/mirrulations/mirrulations-fetch.git 
+   ```
+
 
 3. **PostgreSQL** — Postgres must be running and you must have created the app database (for example `mirrulations`). That is often done via `./db/setup_postgres.sh` or `createdb mirrulations`, plus `psql … -f db/schema-postgres.sql` if the tables are not loaded yet.
 
