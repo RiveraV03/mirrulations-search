@@ -23,6 +23,7 @@ import argparse
 import json
 import logging
 import re
+import shutil
 import ssl
 import sys
 import subprocess
@@ -139,8 +140,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default=".",
-        help="Output directory for fetched data (default: current directory)",
+        default="./db/dockets",
+        help="Output directory for fetched data (default: ./db/dockets)",
     )
     parser.add_argument(
         "--skip-fetch",
@@ -192,10 +193,20 @@ def parse_args() -> argparse.Namespace:
 
 def fetch_docket(docket_id: str, output_dir: str) -> Path:
     """Use mirrulations-fetch to download docket data."""
+    # Create output directory if it doesn't exist
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
     log.info("Fetching docket data for %s using mirrulations-fetch...", docket_id)
+
+    # Find the mirrulations-fetch command in PATH
+    fetch_cmd = shutil.which("mirrulations-fetch")
+    if not fetch_cmd:
+        log.error("mirrulations-fetch not found. Install it via: pip install mirrulations-fetch")
+        sys.exit(1)
+
     try:
         subprocess.run(
-            ["mirrulations-fetch", docket_id],
+            [fetch_cmd, docket_id],
             cwd=output_dir,
             capture_output=True,
             text=True,
@@ -209,9 +220,6 @@ def fetch_docket(docket_id: str, output_dir: str) -> Path:
         return docket_path
     except subprocess.CalledProcessError as e:
         log.error("Fetch failed: %s", e.stderr)
-        sys.exit(1)
-    except FileNotFoundError:
-        log.error("mirrulations-fetch not found. Install it via: pip install mirrulations-fetch")
         sys.exit(1)
 
 
