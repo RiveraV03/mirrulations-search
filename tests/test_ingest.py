@@ -2,6 +2,7 @@
 Tests for ``db/ingest.py`` and ``db/ingest_docket.py`` (fetch, OpenSearch, FR helpers, mapping).
 """
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -64,9 +65,11 @@ def _docket_dir_with_derived_json_and_plain_txt(tmpdir: str) -> Path:
 class TestFetchDocket:
     """Test docket file fetching functionality."""
 
+    @patch('ingest.shutil.which')
     @patch('ingest.subprocess.run')
-    def test_fetch_docket_success(self, mock_run):
+    def test_fetch_docket_success(self, mock_run, mock_which):
         """Successfully fetch docket using mirrulations-fetch."""
+        mock_which.return_value = "/usr/bin/mirrulations-fetch"
         mock_run.return_value = MagicMock(returncode=0)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -76,16 +79,20 @@ class TestFetchDocket:
 
             result = fetch_docket("FAA-2025-0618", tmpdir)
 
-            # Verify subprocess was called correctly
+            # Verify shutil.which was called
+            mock_which.assert_called_once_with("mirrulations-fetch")
+            # Verify subprocess was called with the full path
             mock_run.assert_called_once()
             args = mock_run.call_args
-            assert "mirrulations-fetch" in args[0][0]
+            assert "/usr/bin/mirrulations-fetch" in args[0][0]
             assert "FAA-2025-0618" in args[0][0]
             assert result == docket_dir
 
+    @patch('ingest.shutil.which')
     @patch('ingest.subprocess.run')
-    def test_fetch_docket_not_found(self, mock_run):
+    def test_fetch_docket_not_found(self, mock_run, mock_which):
         """Handle missing docket directory after fetch."""
+        mock_which.return_value = "/usr/bin/mirrulations-fetch"
         mock_run.return_value = MagicMock(returncode=0)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -93,18 +100,31 @@ class TestFetchDocket:
             with pytest.raises(SystemExit):
                 fetch_docket("MISSING-2025-0001", tmpdir)
 
-    @patch('ingest.subprocess.run')
-    def test_fetch_docket_subprocess_error(self, mock_run):
-        """Handle subprocess errors during fetch."""
-        mock_run.side_effect = FileNotFoundError("mirrulations-fetch not found")
+    @patch('ingest.shutil.which')
+    def test_fetch_docket_command_not_found(self, mock_which):
+        """Handle when mirrulations-fetch is not installed."""
+        mock_which.return_value = None
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with pytest.raises(SystemExit):
                 fetch_docket("FAA-2025-0618", tmpdir)
 
+    @patch('ingest.shutil.which')
     @patch('ingest.subprocess.run')
-    def test_fetch_docket_calculates_correct_path(self, mock_run):
+    def test_fetch_docket_subprocess_error(self, mock_run, mock_which):
+        """Handle subprocess errors during fetch."""
+        mock_which.return_value = "/usr/bin/mirrulations-fetch"
+        mock_run.side_effect = subprocess.CalledProcessError(1, "mirrulations-fetch")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(SystemExit):
+                fetch_docket("FAA-2025-0618", tmpdir)
+
+    @patch('ingest.shutil.which')
+    @patch('ingest.subprocess.run')
+    def test_fetch_docket_calculates_correct_path(self, mock_run, mock_which):
         """Verify fetch_docket returns correct path."""
+        mock_which.return_value = "/usr/bin/mirrulations-fetch"
         mock_run.return_value = MagicMock(returncode=0)
 
         with tempfile.TemporaryDirectory() as tmpdir:
