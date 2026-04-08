@@ -30,6 +30,7 @@ def _get_search_params():
         'cfr_part': cfr_parts_parsed,
         'start_date': request.args.get('start_date') or None,
         'end_date': request.args.get('end_date') or None,
+        'sort_by': request.args.get('sort_by') or None,
     }
 
 
@@ -174,7 +175,8 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             params['start_date'],
             params['end_date'],
             page=page,
-            page_size=page_size
+            page_size=page_size,
+            sort_by=params['sort_by']
         )
 
         return _build_paginated_response(result['results'], result['pagination'])
