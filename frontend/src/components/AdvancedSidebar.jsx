@@ -50,6 +50,7 @@ export default function AdvancedSidebar({
 }) {
   const docTypes = ["Rulemaking", "Nonrulemaking"];
   const [value, setOnchange] = useState([new Date(), new Date()]);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   //const statuses = ["Open", "Closed", "Pending"];
   const [agencyOrder, setAgencyOrder] = useState([]);
   const [selectedTitle, setSelectedTitle] = useState("");
@@ -321,6 +322,7 @@ export default function AdvancedSidebar({
                   setYearFrom("");
                   setYearTo("");
                   setOnchange([null, null]);
+                  setCalendarOpen(false);
                 }}
               >
                 All time
@@ -337,6 +339,7 @@ export default function AdvancedSidebar({
               setYearFrom(format(start));
               setYearTo(format(end));
               setOnchange([start, end]);
+              setCalendarOpen(false);
             }}
           >
             Past Year
@@ -354,6 +357,7 @@ export default function AdvancedSidebar({
               setYearFrom(format(start));
               setYearTo(format(end));
               setOnchange([start, end]);
+              setCalendarOpen(false);
             }}
           >
             Past 6 Months
@@ -364,6 +368,8 @@ export default function AdvancedSidebar({
             <div className="row">
             <input
             value={yearFrom}
+            onFocus={() => setCalendarOpen(true)}
+            onClick={() => setCalendarOpen(true)}
             onChange={(e) => {
               const raw = e.target.value;
               setYearFrom(raw);
@@ -400,6 +406,8 @@ export default function AdvancedSidebar({
 
           <input
             value={yearTo}
+            onFocus={() => setCalendarOpen(true)}
+            onClick={() => setCalendarOpen(true)}
             onChange={(e) => {
               const raw = e.target.value;
               setYearTo(raw);
@@ -433,6 +441,7 @@ export default function AdvancedSidebar({
           />
             </div>
 
+            {calendarOpen && (
             <div className="calendar-div">
               <Calendar
                 selectRange={true}
@@ -458,10 +467,12 @@ export default function AdvancedSidebar({
                   setOnchange([start, end]);
                   setYearFrom(format(start));
                   setYearTo(format(end));
+                  setCalendarOpen(false);
                 }}
                 value={value}
               />
             </div>
+            )}
           </CollapsibleSection>
 
           {/* Agency */}
