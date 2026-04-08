@@ -348,6 +348,15 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             }
 
         all_dockets = self.db_layer.get_dockets_by_ids(docket_ids)
+
+        docket_id_list = [str(d["docket_id"]) for d in all_dockets]
+        totals_map = self.db_layer.get_docket_document_comment_totals(docket_id_list)
+        for result in all_dockets:
+            did = str(result["docket_id"])
+            totals = totals_map.get(did, {})
+            result["documentDenominator"] = totals.get("document_total_count", 0)
+            result["commentDenominator"] = totals.get("comment_total_count", 0)
+
         for result in all_dockets:
             _sanitize_search_row_for_json(result)
             _transform_cfr_refs(result)
