@@ -198,7 +198,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self._sort_results(all_results, sort_by=sort_by)
 
         # Paginate
-        return self._paginate_results( all_results, page, page_size)
+        return self._paginate_results(all_results, page, page_size)
 
     def _get_new_docket_ids(self, os_hits, title_ids):
         """Extract docket IDs from OpenSearch hits not already in title results."""
@@ -274,6 +274,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
                     r.get("correlation_score", 0.0),
                     int(r.get("document_match_count", 0)) + int(r.get("comment_match_count", 0)),
                     int(r.get("document_total_count", 0)) + int(r.get("comment_total_count", 0)),
+                    r.get("docket_id", ""),
                 ),
                 reverse=True
             )

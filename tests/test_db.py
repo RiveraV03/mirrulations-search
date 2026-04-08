@@ -656,7 +656,7 @@ def test_text_match_terms_searches_comments_and_extracted():
 
     # Should have searched all three indices
     assert len(fake_client.searches) == 3
-    assert fake_client.searches[0][0] == "documents"
+    assert fake_client.searches[0][0] == "documents_text"
     assert fake_client.searches[1][0] == "comments"
     assert fake_client.searches[2][0] == "comments_extracted_text"
 

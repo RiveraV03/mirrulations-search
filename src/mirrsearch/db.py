@@ -4,6 +4,12 @@ from typing import List, Dict, Any, Set
 import os
 import psycopg2
 from opensearchpy import OpenSearch
+try:
+    import requests
+    from requests_aws4auth import AWS4Auth
+except ImportError:
+    requests = None
+    AWS4Auth = None
 
 try:
     import boto3
@@ -383,7 +389,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         Search OpenSearch for dockets containing the given terms.
 
         Searches:
-        - documents index: title and documentText fields
+        - documents_text index: title and documentText fields
         - comments index: commentText field
         - comments_extracted_text index: extractedText field
 
@@ -443,39 +449,32 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             print(f"OpenSearch totals query failed (fallback zeros): {e}")
             return {}
 
-    def _fetch_docket_totals( # pylint: disable=too-many-locals
+    def _fetch_docket_totals(  # pylint: disable=too-many-locals
             self, opensearch_client, docket_ids: List[str]) -> Dict[str, Dict[str, int]]:
-        """Execute totals queries and assemble per-docket counts."""
-        doc_query = {
-            "size": 0,
-            "query": {"bool": {"filter": [
-                {"terms": {"docketId.keyword": docket_ids}}
-            ]}},
-            "aggs": {
-                "by_docket": {
-                    "terms": {"field": "docketId.keyword", "size": len(docket_ids)}
-                }
-            }
-        }
-        doc_response = opensearch_client.search(index="documents", body=doc_query)
-        comment_response = opensearch_client.search(
-            index="comments", body=self._comment_total_query(docket_ids)
-        )
+        """Document totals from RDS, comment totals from OpenSearch."""
         totals: Dict[str, Dict[str, int]] = {}
-        for bucket in doc_response["aggregations"]["by_docket"]["buckets"]:
-            docket_id = str(bucket["key"])
-            totals[docket_id] = {
-                "document_total_count": bucket["doc_count"],
-                "comment_total_count": 0
-            }
-        for bucket in comment_response["aggregations"]["by_docket"]["buckets"]:
-            docket_id = str(bucket["key"])
-            n_comments = len(bucket.get("by_comment", {}).get("buckets", []))
-            totals.setdefault(docket_id, {
-                "document_total_count": 0,
-                "comment_total_count": 0
-            })
-            totals[docket_id]["comment_total_count"] = n_comments
+        if self.conn is not None:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    "SELECT docket_id, COUNT(*) FROM documentsWithFRdoc "
+                    "WHERE docket_id = ANY(%s) GROUP BY docket_id",
+                    (list(docket_ids),)
+                )
+                for docket_id, count in cur.fetchall():
+                    totals[docket_id] = {"document_total_count": count, "comment_total_count": 0}
+        comment_query = {
+            "size": 0,
+            "query": {"bool": {"filter": [{"terms": {"docketId.keyword": docket_ids}}]}},
+            "aggs": {"by_docket": {"terms": {"field": "docketId.keyword", "size": len(docket_ids)}}}
+        }
+        try:
+            resp = opensearch_client.search(index="comments", body=comment_query)
+            for bucket in resp["aggregations"]["by_docket"]["buckets"]:
+                docket_id = str(bucket["key"])
+                totals.setdefault(docket_id, {"document_total_count": 0, "comment_total_count": 0})
+                totals[docket_id]["comment_total_count"] = bucket["doc_count"]
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            print(f"Comment totals query failed: {e}")
         return totals
 
     def _run_text_match_queries(  # pylint: disable=too-many-locals
@@ -493,7 +492,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
         docket_counts: Dict = {}
         doc_resp = safe_search(
-            "documents",
+            "documents_text",
             self._build_docket_agg_query(
                 "matching_docs",
                 [{"multi_match": {"query": t, "fields": ["title", "documentText"]}}
@@ -809,7 +808,41 @@ def _opensearch_client_kwargs() -> Dict[str, Any]:
     return kwargs
 
 
-def get_opensearch_connection() -> OpenSearch:
+class _AossClient:  # pylint: disable=too-few-public-methods
+    """Thin requests-based client that mimics opensearchpy .search() interface."""
+    def __init__(self, base_url, session):
+        self.base_url = base_url.rstrip('/')
+        self.session = session
+
+    def search(self, index, body):
+        url = f"{self.base_url}/{index}/_search"
+        resp = self.session.post(url, json=body, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+
+_OPENSEARCH_CLIENT_SINGLETON = None
+
+
+def get_opensearch_connection():
+    global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement
+
+    host = (os.getenv("OPENSEARCH_HOST") or "").strip()
+
+    if "aoss.amazonaws.com" in host:
+        if _OPENSEARCH_CLIENT_SINGLETON is not None:
+            return _OPENSEARCH_CLIENT_SINGLETON
+        creds = boto3.Session().get_credentials()
+        auth = AWS4Auth(
+            refreshable_credentials=creds,
+            region="us-east-1",
+            service="aoss",
+        )
+        session = requests.Session()
+        session.auth = auth
+        _OPENSEARCH_CLIENT_SINGLETON = _AossClient(host, session)
+        return _OPENSEARCH_CLIENT_SINGLETON
+
     if LOAD_DOTENV is not None:
         LOAD_DOTENV()
     return OpenSearch(**_opensearch_client_kwargs())
