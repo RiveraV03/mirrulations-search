@@ -144,10 +144,9 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self.database = database
         self.db_layer = db_layer if db_layer is not None else get_db()
 
-    def search(self, query, docket_type_param=None, agency=None,
-               cfr_part_param=None, start_date=None, end_date=None, page=1, page_size=10):
-        # pylint: disable=too-many-arguments,too-many-positional-arguments
-        # pylint: disable=too-many-branches,too-many-statements,too-many-locals
+    def search(self, query, docket_type_param=None, agency=None,  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-branches,too-many-statements,too-many-locals
+               cfr_part_param=None, start_date=None, end_date=None, page=1, page_size=10,
+               sort_by=None):
         """
         Search with pagination support.
 
@@ -196,7 +195,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self._add_totals_and_scores(all_results)
 
         # Sort results
-        self._sort_results(all_results)
+        self._sort_results(all_results, sort_by=sort_by)
 
         # Paginate
         return self._paginate_results( all_results, page, page_size)
@@ -261,16 +260,23 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             row["comment_total_count"] = totals.get("comment_total_count", 0)
             row["correlation_score"] = _correlation_score(row)
 
-    def _sort_results(self, rows):
-        """Sort results by correlation score and match counts."""
-        rows.sort(
-            key=lambda r: (
-                r.get("correlation_score", 0.0),
-                int(r.get("document_match_count", 0)) + int(r.get("comment_match_count", 0)),
-                int(r.get("document_total_count", 0)) + int(r.get("comment_total_count", 0)),
-            ),
-            reverse=True
-        )
+    def _sort_results(self, rows, sort_by=None):
+        """Sort results by the requested field, defaulting to relevance."""
+        if sort_by == "modify_date":
+            rows.sort(key=lambda r: r.get("modify_date") or "", reverse=True)
+        elif sort_by == "comment_count":
+            rows.sort(key=lambda r: int(r.get("comment_total_count", 0)), reverse=True)
+        elif sort_by == "document_count":
+            rows.sort(key=lambda r: int(r.get("document_total_count", 0)), reverse=True)
+        else:
+            rows.sort(
+                key=lambda r: (
+                    r.get("correlation_score", 0.0),
+                    int(r.get("document_match_count", 0)) + int(r.get("comment_match_count", 0)),
+                    int(r.get("document_total_count", 0)) + int(r.get("comment_total_count", 0)),
+                ),
+                reverse=True
+            )
 
     def _paginate_results(self, all_results, page, page_size): # pylint: disable=too-many-locals
         """Apply pagination and transform results for API response."""

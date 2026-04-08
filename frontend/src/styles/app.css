@@ -330,6 +330,50 @@
 	border-radius: 12px;
   }
 
+  .search-sort-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    margin: 14px 0 6px;
+  }
+
+  .search-sort-label {
+    font-size: 14px;
+    font-weight: 700;
+    color: #2f3648;
+  }
+
+  .search-sort-select {
+    min-width: 240px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 2px solid #c8cce8;
+    background: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    color: #2f3648;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .search-sort-select:hover,
+  .search-sort-select:focus {
+    border-color: #5a5fe6;
+    outline: none;
+  }
+
+  @media (max-width: 640px) {
+    .search-sort-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .search-sort-select {
+      width: 100%;
+    }
+  }
+
   .results {
     display: flex;
     flex-direction: column;
