@@ -18,11 +18,6 @@ const PACKAGE_OPTIONS = [
     description: "Public comment text submitted on dockets",
   },
   {
-    id: "attachments",
-    label: "Attachments & binary files",
-    description: "PDFs, Word docs, images uploaded with comments or documents",
-  },
-  {
     id: "extracted_text",
     label: "Extracted text",
     description: "Plain-text extraction from binary files (where available)",
