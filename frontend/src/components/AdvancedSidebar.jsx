@@ -49,8 +49,8 @@ export default function AdvancedSidebar({
   activeCount,
 }) {
   const docTypes = ["Rulemaking", "Nonrulemaking"];
-  const [calendarValue, setCalendarValue] = useState([new Date(), new Date()]);
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  /** Which date field owns the open calendar: single-date pick, no range drag. */
+  const [calendarFor, setCalendarFor] = useState(null);
   const dateRangeRef = useRef(null);
   //const statuses = ["Open", "Closed", "Pending"];
   const [agencyOrder, setAgencyOrder] = useState([]);
@@ -88,11 +88,11 @@ export default function AdvancedSidebar({
   }, []);
 
   useEffect(() => {
-    if (!calendarOpen) return undefined;
+    if (!calendarFor) return undefined;
 
     const handlePointerDown = (event) => {
       if (!dateRangeRef.current?.contains(event.target)) {
-        setCalendarOpen(false);
+        setCalendarFor(null);
       }
     };
 
@@ -103,7 +103,7 @@ export default function AdvancedSidebar({
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("touchstart", handlePointerDown);
     };
-  }, [calendarOpen]);
+  }, [calendarFor]);
 
   const selectedCfrList = useMemo(() => {
     return Object.entries(selectedCfrParts).flatMap(([title, parts]) =>
@@ -255,6 +255,20 @@ export default function AdvancedSidebar({
     return /^\d{4}-\d{2}-\d{2}$/.test(str);
   };
 
+  const calendarActiveDate = useMemo(() => {
+    if (!calendarFor) return null;
+    const raw = calendarFor === "from" ? yearFrom : yearTo;
+    const normalized =
+      calendarFor === "from"
+        ? normalizeDate(raw || "", false)
+        : normalizeDate(raw || "", true);
+    if (isFullDate(normalized)) {
+      const [y, m, d] = normalized.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return null;
+  }, [calendarFor, yearFrom, yearTo]);
+
   const filteredCfrParts = useMemo(() => {
     const rawQuery = cfrSearch.trim();
     if (!rawQuery) return cfrOrder;
@@ -339,8 +353,7 @@ export default function AdvancedSidebar({
                 onClick={() => {
                   setYearFrom("");
                   setYearTo("");
-                  setCalendarValue([null, null]);
-                  setCalendarOpen(false);
+                  setCalendarFor(null);
                 }}
               >
                 All time
@@ -356,8 +369,7 @@ export default function AdvancedSidebar({
               const format = (d) => d.toLocaleDateString("en-CA");
               setYearFrom(format(start));
               setYearTo(format(end));
-              setCalendarValue([start, end]);
-              setCalendarOpen(false);
+              setCalendarFor(null);
             }}
           >
             Past Year
@@ -374,8 +386,7 @@ export default function AdvancedSidebar({
               const format = (d) => d.toLocaleDateString("en-CA");
               setYearFrom(format(start));
               setYearTo(format(end));
-              setCalendarValue([start, end]);
-              setCalendarOpen(false);
+              setCalendarFor(null);
             }}
           >
             Past 6 Months
@@ -387,111 +398,38 @@ export default function AdvancedSidebar({
             <div className="row">
             <input
             value={yearFrom}
-            onFocus={() => setCalendarOpen(true)}
-            onClick={() => setCalendarOpen(true)}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setYearFrom(raw);
-
-              // Only normalize + sync calendar once it looks complete
-              const normalized = normalizeDate(raw, false);
-              const isYearOnly = /^\d{4}$/.test(raw.trim());
-
-              if (isYearOnly) {
-                const endNorm = `${raw.trim()}-12-31`;
-
-                if (!isFullDate(normalized) || !isFullDate(endNorm)) return;
-
-                const [y, m, d] = normalized.split("-").map(Number);
-                const [ey, em, ed] = endNorm.split("-").map(Number);
-
-                setYearTo(endNorm);
-                
-                const localStart = new Date(y, m - 1, d);
-                const localEnd = new Date(ey, em - 1, ed);
-                setCalendarValue([localStart, localEnd]);
-              } 
-              else if (
-                isFullDate(normalized) &&
-                isFullDate(yearTo)
-              ) 
-              {
-                const [y, m, d] = normalized.split("-").map(Number);
-                const [ey, em, ed] = yearTo.split("-").map(Number);
-                const localStart = new Date(y, m - 1, d);
-                const localEnd = new Date(ey, em - 1, ed);
-                setCalendarValue([localStart, localEnd]);
-              }
-            }}
+            aria-label="Start date"
+            onFocus={() => setCalendarFor("from")}
+            onClick={() => setCalendarFor("from")}
+            onChange={(e) => setYearFrom(e.target.value)}
             placeholder="YYYY or YYYY-MM-DD"
           />
 
           <input
             value={yearTo}
-            onFocus={() => setCalendarOpen(true)}
-            onClick={() => setCalendarOpen(true)}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setYearTo(raw);
-
-              const normalized = normalizeDate(raw, true);
-              const isYearOnly = /^\d{4}$/.test(raw.trim());
-
-              if (isYearOnly) {
-                const startNorm = yearFrom || `${raw.trim()}-01-01`;
-                const [sy, sm, sd] = startNorm.split("-").map(Number);
-                const [ey, em, ed] = normalized.split("-").map(Number);
-                const localStart = new Date(sy, sm - 1, sd);
-                const localEnd = new Date(ey, em - 1, ed);
-                setCalendarValue([localStart, localEnd]);
-              } 
-              else if (
-                yearFrom &&
-                normalized &&
-                isFullDate(yearFrom) &&
-                isFullDate(normalized)
-              ) 
-              {
-                const [sy, sm, sd] = yearFrom.split("-").map(Number);
-                const [ey, em, ed] = normalized.split("-").map(Number);
-                const localStart = new Date(sy, sm - 1, sd);
-                const localEnd = new Date(ey, em - 1, ed);
-                setCalendarValue([localStart, localEnd]);
-              }
-            }}
+            aria-label="End date"
+            onFocus={() => setCalendarFor("to")}
+            onClick={() => setCalendarFor("to")}
+            onChange={(e) => setYearTo(e.target.value)}
             placeholder="YYYY or YYYY-MM-DD"
           />
             </div>
 
-            {calendarOpen && (
+            {calendarFor && (
             <div className="calendar-div">
               <Calendar
-                selectRange={true}
-                onChange={(range) => {
-                  if (!Array.isArray(range)) return;
-
-                  let [start, end] = range;
-
-                  // Handle first click (no end yet)
-                  if (!end) {
-                    setCalendarValue([start, null]);
-                    setYearFrom(start.toISOString().split("T")[0]);
-                    return;
+                selectRange={false}
+                value={calendarActiveDate}
+                onChange={(picked) => {
+                  if (!(picked instanceof Date)) return;
+                  const ymd = picked.toLocaleDateString("en-CA");
+                  if (calendarFor === "from") {
+                    setYearFrom(ymd);
+                  } else {
+                    setYearTo(ymd);
                   }
-
-                  // Auto-swap if user selects backwards
-                  if (start > end) {
-                    [start, end] = [end, start];
-                  }
-
-                  const format = (d) => d.toLocaleDateString("en-CA");
-
-                  setCalendarValue([start, end]);
-                  setYearFrom(format(start));
-                  setYearTo(format(end));
-                  setCalendarOpen(false);
+                  setCalendarFor(null);
                 }}
-                value={calendarValue}
               />
             </div>
             )}
@@ -627,10 +565,24 @@ export default function AdvancedSidebar({
           </section>
 
           <div className="actions">
-            <button className="btn btn-ghost" onClick={clearAdvanced}>
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => {
+                setCalendarFor(null);
+                clearAdvanced();
+              }}
+            >
               Clear
             </button>
-            <button className="btn btn-primary" onClick={applyAdvanced}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => {
+                setCalendarFor(null);
+                applyAdvanced();
+              }}
+            >
               Apply
             </button>
           </div>
