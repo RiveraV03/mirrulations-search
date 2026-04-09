@@ -88,7 +88,7 @@ const handleDownload = async () => {
     setJobId(data.job_id);
     setStatus("pending");
   } catch (err) {
-    setError("Failed to request download. Please try again.");
+    setError("Failed to request download.");
   } finally {
     setSubmitting(false);
   }
