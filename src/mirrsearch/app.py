@@ -339,12 +339,29 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             _transform_cfr_refs(result)
         return jsonify(results)
 
+    @flask_app.route("/download/request/<docket_id>", methods=["POST"])
+    def request_single_download(docket_id):  # pylint: disable=too-many-return-statements
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        body = request.get_json(silent=True) or {}
+        data_format = (body.get("format") or "").strip().lower()
+        include_binaries = bool(body.get("include_binaries", False))
+
+        if data_format not in ("raw", "csv"):
+            return jsonify({"error": "format must be 'raw' or 'csv'"}), 400
+
+        job_id = db_layer.create_download_job(
+            user["email"], [docket_id], data_format, include_binaries
+        )
+        return jsonify({"job_id": job_id, "status": "started"}), 202
+
     @flask_app.route("/collections")
     def collections_page():
         return send_from_directory(dist_dir, "index.html")
 
     return flask_app
-
 
 app = create_app(db_layer=get_db())
 

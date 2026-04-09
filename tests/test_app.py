@@ -760,3 +760,56 @@ def test_internal_logic_error_handling(client): # pylint: disable=redefined-oute
         mock_get_db.side_effect = Exception("DB Error")
         response = client.get('/search/?str=test')
         assert response.status_code in [200, 500]
+
+# --- Single docket download ---
+
+def test_request_single_download_returns_job_id(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request/<docket_id> returns job_id and started status"""
+    response = client.post('/download/request/CMS-2025-0240', json={
+        "format": "raw",
+        "include_binaries": False
+    })
+    assert response.status_code == 202
+    data = response.get_json()
+    assert "job_id" in data
+    assert data["status"] == "started"
+
+
+def test_request_single_download_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """POST /download/request/<docket_id> returns 401 without cookie"""
+    response = app.test_client().post('/download/request/CMS-2025-0240', json={
+        "format": "raw",
+        "include_binaries": False
+    })
+    assert response.status_code == 401
+
+
+def test_request_single_download_requires_valid_format(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request/<docket_id> returns 400 for invalid format"""
+    response = client.post('/download/request/CMS-2025-0240', json={
+        "format": "json",
+        "include_binaries": False
+    })
+    assert response.status_code == 400
+
+
+def test_request_single_download_accepts_csv_format(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request/<docket_id> accepts csv as a valid format"""
+    response = client.post('/download/request/CMS-2025-0240', json={
+        "format": "csv",
+        "include_binaries": False
+    })
+    assert response.status_code == 202
+
+
+def test_request_single_download_status_checkable(client):  # pylint: disable=redefined-outer-name
+    """Job created via single docket endpoint is retrievable via status endpoint"""
+    job_id = client.post('/download/request/CMS-2025-0240', json={
+        "format": "raw",
+        "include_binaries": False
+    }).get_json()["job_id"]
+    response = client.get(f'/download/status/{job_id}')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["job_id"] == job_id
+    assert data["docket_ids"] == ["CMS-2025-0240"]
