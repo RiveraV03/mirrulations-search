@@ -336,21 +336,21 @@ def test_home_route_with_index_html():
 # --- Collections ---
 
 def test_get_collections_returns_empty_list(client):  # pylint: disable=redefined-outer-name
-    """GET /collections returns empty list when user has no collections"""
-    response = client.get('/collections')
+    """GET /api/collections returns empty list when user has no collections"""
+    response = client.get('/api/collections')
     assert response.status_code == 200
     assert response.get_json() == []
 
 
 def test_get_collections_requires_auth(app):  # pylint: disable=redefined-outer-name
-    """GET /collections returns 401 without cookie"""
-    response = app.test_client().get('/collections')
+    """GET /api/collections returns 401 without cookie"""
+    response = app.test_client().get('/api/collections')
     assert response.status_code == 401
 
 
 def test_create_collection_returns_id(client):  # pylint: disable=redefined-outer-name
-    """POST /collections creates a collection and returns its id"""
-    response = client.post('/collections', json={"name": "My Collection"})
+    """POST /api/collections creates a collection and returns its id"""
+    response = client.post('/api/collections', json={"name": "My Collection"})
     assert response.status_code == 201
     data = response.get_json()
     assert "collection_id" in data
@@ -358,123 +358,123 @@ def test_create_collection_returns_id(client):  # pylint: disable=redefined-oute
 
 
 def test_create_collection_requires_name(client):  # pylint: disable=redefined-outer-name
-    """POST /collections returns 400 when name is missing"""
-    response = client.post('/collections', json={})
+    """POST /api/collections returns 400 when name is missing"""
+    response = client.post('/api/collections', json={})
     assert response.status_code == 400
 
 
 def test_create_collection_requires_auth(app):  # pylint: disable=redefined-outer-name
-    """POST /collections returns 401 without cookie"""
-    response = app.test_client().post('/collections', json={"name": "Test"})
+    """POST /api/collections returns 401 without cookie"""
+    response = app.test_client().post('/api/collections', json={"name": "Test"})
     assert response.status_code == 401
 
 
 def test_delete_collection(client):  # pylint: disable=redefined-outer-name
-    """DELETE /collections/<id> deletes an existing collection"""
+    """DELETE /api/collections/<id> deletes an existing collection"""
     collection_id = client.post(
-        '/collections', json={"name": "To Delete"}
+        '/api/collections', json={"name": "To Delete"}
     ).get_json()["collection_id"]
-    response = client.delete(f'/collections/{collection_id}')
+    response = client.delete(f'/api/collections/{collection_id}')
     assert response.status_code == 204
 
 
 def test_delete_collection_not_found(client):  # pylint: disable=redefined-outer-name
-    """DELETE /collections/<id> returns 404 for nonexistent collection"""
-    response = client.delete('/collections/9999')
+    """DELETE /api/collections/<id> returns 404 for nonexistent collection"""
+    response = client.delete('/api/collections/9999')
     assert response.status_code == 404
 
 
 def test_delete_collection_requires_auth(app):  # pylint: disable=redefined-outer-name
-    """DELETE /collections/<id> returns 401 without cookie"""
-    response = app.test_client().delete('/collections/1')
+    """DELETE /api/collections/<id> returns 401 without cookie"""
+    response = app.test_client().delete('/api/collections/1')
     assert response.status_code == 401
 
 
 def test_add_docket_to_collection(client):  # pylint: disable=redefined-outer-name
-    """POST /collections/<id>/dockets adds a docket to a collection"""
+    """POST /api/collections/<id>/dockets adds a docket to a collection"""
     collection_id = client.post(
-        '/collections', json={"name": "My List"}
+        '/api/collections', json={"name": "My List"}
     ).get_json()["collection_id"]
     response = client.post(
-        f'/collections/{collection_id}/dockets', json={"docket_id": "CMS-2025-0240"}
+        f'/api/collections/{collection_id}/dockets', json={"docket_id": "CMS-2025-0240"}
     )
     assert response.status_code == 204
 
 
 def test_add_docket_requires_docket_id(client):  # pylint: disable=redefined-outer-name
-    """POST /collections/<id>/dockets returns 400 when docket_id is missing"""
+    """POST /api/collections/<id>/dockets returns 400 when docket_id is missing"""
     collection_id = client.post(
-        '/collections', json={"name": "My List"}
+        '/api/collections', json={"name": "My List"}
     ).get_json()["collection_id"]
-    response = client.post(f'/collections/{collection_id}/dockets', json={})
+    response = client.post(f'/api/collections/{collection_id}/dockets', json={})
     assert response.status_code == 400
 
 
 def test_add_docket_collection_not_found(client):  # pylint: disable=redefined-outer-name
-    """POST /collections/<id>/dockets returns 404 for nonexistent collection"""
-    response = client.post('/collections/9999/dockets', json={"docket_id": "CMS-2025-0240"})
+    """POST /api/collections/<id>/dockets returns 404 for nonexistent collection"""
+    response = client.post('/api/collections/9999/dockets', json={"docket_id": "CMS-2025-0240"})
     assert response.status_code == 404
 
 
 def test_add_docket_requires_auth(app):  # pylint: disable=redefined-outer-name
-    """POST /collections/<id>/dockets returns 401 without cookie"""
+    """POST /api/collections/<id>/dockets returns 401 without cookie"""
     response = app.test_client().post(
-        '/collections/1/dockets', json={"docket_id": "CMS-2025-0240"}
+        '/api/collections/1/dockets', json={"docket_id": "CMS-2025-0240"}
     )
     assert response.status_code == 401
 
 
 def test_remove_docket_from_collection(client):  # pylint: disable=redefined-outer-name
-    """DELETE /collections/<id>/dockets/<docket_id> removes a docket"""
+    """DELETE /api/collections/<id>/dockets/<docket_id> removes a docket"""
     collection_id = client.post(
-        '/collections', json={"name": "My List"}
+        '/api/collections', json={"name": "My List"}
     ).get_json()["collection_id"]
-    client.post(f'/collections/{collection_id}/dockets', json={"docket_id": "CMS-2025-0240"})
-    response = client.delete(f'/collections/{collection_id}/dockets/CMS-2025-0240')
+    client.post(f'/api/collections/{collection_id}/dockets', json={"docket_id": "CMS-2025-0240"})
+    response = client.delete(f'/api/collections/{collection_id}/dockets/CMS-2025-0240')
     assert response.status_code == 204
 
 
 def test_remove_docket_collection_not_found(client):  # pylint: disable=redefined-outer-name
-    """DELETE /collections/<id>/dockets/<docket_id> returns 404 for nonexistent collection"""
-    response = client.delete('/collections/9999/dockets/CMS-2025-0240')
+    """DELETE /api/collections/<id>/dockets/<docket_id> returns 404 for nonexistent collection"""
+    response = client.delete('/api/collections/9999/dockets/CMS-2025-0240')
     assert response.status_code == 404
 
 
 def test_remove_docket_requires_auth(app):  # pylint: disable=redefined-outer-name
-    """DELETE /collections/<id>/dockets/<docket_id> returns 401 without cookie"""
-    response = app.test_client().delete('/collections/1/dockets/CMS-2025-0240')
+    """DELETE /api/collections/<id>/dockets/<docket_id> returns 401 without cookie"""
+    response = app.test_client().delete('/api/collections/1/dockets/CMS-2025-0240')
     assert response.status_code == 401
 
 
 def test_get_collections_shows_added_dockets(client):  # pylint: disable=redefined-outer-name
-    """GET /collections reflects dockets added to a collection"""
+    """GET /api/collections reflects dockets added to a collection"""
     collection_id = client.post(
-        '/collections', json={"name": "My List"}
+        '/api/collections', json={"name": "My List"}
     ).get_json()["collection_id"]
-    client.post(f'/collections/{collection_id}/dockets', json={"docket_id": "CMS-2025-0240"})
-    data = client.get('/collections').get_json()
+    client.post(f'/api/collections/{collection_id}/dockets', json={"docket_id": "CMS-2025-0240"})
+    data = client.get('/api/collections').get_json()
     match = next(c for c in data if c["collection_id"] == collection_id)
     assert "CMS-2025-0240" in match["docket_ids"]
 
 
-# --- GET /collections/<id>/dockets (paginated) ---
+# --- GET /api/collections/<id>/dockets (paginated) ---
 
 def test_get_collection_dockets_returns_empty_for_empty_collection(client):  # pylint: disable=redefined-outer-name
-    """GET /collections/<id>/dockets returns empty list for a collection with no dockets"""
+    """GET /api/collections/<id>/dockets returns empty list for a collection with no dockets"""
     collection_id = client.post(
-        '/collections', json={"name": "Empty"}
+        '/api/collections', json={"name": "Empty"}
     ).get_json()["collection_id"]
-    response = client.get(f'/collections/{collection_id}/dockets')
+    response = client.get(f'/api/collections/{collection_id}/dockets')
     assert response.status_code == 200
     assert response.get_json() == []
 
 
 def test_get_collection_dockets_has_pagination_headers(client):  # pylint: disable=redefined-outer-name
-    """GET /collections/<id>/dockets returns all required pagination headers"""
+    """GET /api/collections/<id>/dockets returns all required pagination headers"""
     collection_id = client.post(
-        '/collections', json={"name": "Headers Check"}
+        '/api/collections', json={"name": "Headers Check"}
     ).get_json()["collection_id"]
-    response = client.get(f'/collections/{collection_id}/dockets')
+    response = client.get(f'/api/collections/{collection_id}/dockets')
     assert response.status_code == 200
     assert 'X-Page' in response.headers
     assert 'X-Page-Size' in response.headers
@@ -485,34 +485,34 @@ def test_get_collection_dockets_has_pagination_headers(client):  # pylint: disab
 
 
 def test_get_collection_dockets_returns_404_for_nonexistent_collection(client):  # pylint: disable=redefined-outer-name
-    """GET /collections/<id>/dockets returns 404 for a collection that does not exist"""
-    response = client.get('/collections/9999/dockets')
+    """GET /api/collections/<id>/dockets returns 404 for a collection that does not exist"""
+    response = client.get('/api/collections/9999/dockets')
     assert response.status_code == 404
 
 
 def test_get_collection_dockets_requires_auth(app):  # pylint: disable=redefined-outer-name
-    """GET /collections/<id>/dockets returns 401 without cookie"""
-    response = app.test_client().get('/collections/1/dockets')
+    """GET /api/collections/<id>/dockets returns 401 without cookie"""
+    response = app.test_client().get('/api/collections/1/dockets')
     assert response.status_code == 401
 
 
 def test_get_collection_dockets_respects_page_size(client):  # pylint: disable=redefined-outer-name
-    """GET /collections/<id>/dockets respects page_size query param"""
+    """GET /api/collections/<id>/dockets respects page_size query param"""
     collection_id = client.post(
-        '/collections', json={"name": "Paged"}
+        '/api/collections', json={"name": "Paged"}
     ).get_json()["collection_id"]
-    response = client.get(f'/collections/{collection_id}/dockets?page=1&page_size=5')
+    response = client.get(f'/api/collections/{collection_id}/dockets?page=1&page_size=5')
     assert response.status_code == 200
     assert response.headers['X-Page'] == '1'
     assert response.headers['X-Page-Size'] == '5'
 
 
 def test_get_collection_dockets_returns_json_list(client):  # pylint: disable=redefined-outer-name
-    """GET /collections/<id>/dockets returns a JSON list"""
+    """GET /api/collections/<id>/dockets returns a JSON list"""
     collection_id = client.post(
-        '/collections', json={"name": "List Check"}
+        '/api/collections', json={"name": "List Check"}
     ).get_json()["collection_id"]
-    response = client.get(f'/collections/{collection_id}/dockets')
+    response = client.get(f'/api/collections/{collection_id}/dockets')
     assert response.is_json
     assert isinstance(response.get_json(), list)
 
@@ -520,9 +520,9 @@ def test_get_collection_dockets_returns_json_list(client):  # pylint: disable=re
 def test_get_collection_dockets_total_results_zero_for_empty(client):  # pylint: disable=redefined-outer-name
     """X-Total-Results is 0 for a collection with no dockets"""
     collection_id = client.post(
-        '/collections', json={"name": "Zero"}
+        '/api/collections', json={"name": "Zero"}
     ).get_json()["collection_id"]
-    response = client.get(f'/collections/{collection_id}/dockets')
+    response = client.get(f'/api/collections/{collection_id}/dockets')
     assert response.headers['X-Total-Results'] == '0'
     assert response.headers['X-Has-Next'] == 'false'
     assert response.headers['X-Has-Prev'] == 'false'
