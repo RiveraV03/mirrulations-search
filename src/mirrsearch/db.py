@@ -524,7 +524,8 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         )
         all_dockets = set(comment_ids_by_docket) | set(extracted_ids_by_docket)
         for did in all_dockets:
-            merged = set(comment_ids_by_docket.get(did, set())) | set(extracted_ids_by_docket.get(did, set()))
+            merged = (set(comment_ids_by_docket.get(did, set()))
+                      | set(extracted_ids_by_docket.get(did, set())))
             docket_counts.setdefault(
                 did, {"document_match_count": 0, "comment_match_count": 0}
             )
