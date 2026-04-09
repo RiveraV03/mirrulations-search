@@ -144,10 +144,9 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self.database = database
         self.db_layer = db_layer if db_layer is not None else get_db()
 
-    def search(self, query, docket_type_param=None, agency=None,
-               cfr_part_param=None, start_date=None, end_date=None, page=1, page_size=10):
-        # pylint: disable=too-many-arguments,too-many-positional-arguments
-        # pylint: disable=too-many-branches,too-many-statements,too-many-locals
+    def search(self, query, docket_type_param=None, agency=None,  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-branches,too-many-statements,too-many-locals
+               cfr_part_param=None, start_date=None, end_date=None, page=1, page_size=10,
+               sort_by=None):
         """
         Search with pagination support.
 
@@ -196,10 +195,10 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self._add_totals_and_scores(all_results)
 
         # Sort results
-        self._sort_results(all_results)
+        self._sort_results(all_results, sort_by=sort_by)
 
         # Paginate
-        return self._paginate_results( all_results, page, page_size)
+        return self._paginate_results(all_results, page, page_size)
 
     def _get_new_docket_ids(self, os_hits, title_ids):
         """Extract docket IDs from OpenSearch hits not already in title results."""
@@ -261,16 +260,24 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             row["comment_total_count"] = totals.get("comment_total_count", 0)
             row["correlation_score"] = _correlation_score(row)
 
-    def _sort_results(self, rows):
-        """Sort results by correlation score and match counts."""
-        rows.sort(
-            key=lambda r: (
-                r.get("correlation_score", 0.0),
-                int(r.get("document_match_count", 0)) + int(r.get("comment_match_count", 0)),
-                int(r.get("document_total_count", 0)) + int(r.get("comment_total_count", 0)),
-            ),
-            reverse=True
-        )
+    def _sort_results(self, rows, sort_by=None):
+        """Sort results by the requested field, defaulting to relevance."""
+        if sort_by == "modify_date":
+            rows.sort(key=lambda r: r.get("modify_date") or "", reverse=True)
+        elif sort_by == "comment_count":
+            rows.sort(key=lambda r: int(r.get("comment_total_count", 0)), reverse=True)
+        elif sort_by == "document_count":
+            rows.sort(key=lambda r: int(r.get("document_total_count", 0)), reverse=True)
+        else:
+            rows.sort(
+                key=lambda r: (
+                    r.get("correlation_score", 0.0),
+                    int(r.get("document_match_count", 0)) + int(r.get("comment_match_count", 0)),
+                    int(r.get("document_total_count", 0)) + int(r.get("comment_total_count", 0)),
+                    r.get("docket_id", ""),
+                ),
+                reverse=True
+            )
 
     def _paginate_results(self, all_results, page, page_size): # pylint: disable=too-many-locals
         """Apply pagination and transform results for API response."""
@@ -348,6 +355,15 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             }
 
         all_dockets = self.db_layer.get_dockets_by_ids(docket_ids)
+
+        docket_id_list = [str(d["docket_id"]) for d in all_dockets]
+        totals_map = self.db_layer.get_docket_document_comment_totals(docket_id_list)
+        for result in all_dockets:
+            did = str(result["docket_id"])
+            totals = totals_map.get(did, {})
+            result["documentDenominator"] = totals.get("document_total_count", 0)
+            result["commentDenominator"] = totals.get("comment_total_count", 0)
+
         for result in all_dockets:
             _sanitize_search_row_for_json(result)
             _transform_cfr_refs(result)
