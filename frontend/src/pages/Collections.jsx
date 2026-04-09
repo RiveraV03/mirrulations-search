@@ -470,6 +470,8 @@ export default function Collections() {
                             )}
                           </p>
                           <p><strong>Last modified date:</strong> {item.modify_date}</p>
+                          <p><strong>Documents:</strong> {item.documentDenominator ?? 0}</p>
+                          <p><strong>Comments:</strong> {item.commentDenominator ?? 0}</p>
                         </div>
                         {editMode && (
                           <button

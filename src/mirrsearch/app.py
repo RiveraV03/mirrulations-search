@@ -30,6 +30,7 @@ def _get_search_params():
         'cfr_part': cfr_parts_parsed,
         'start_date': request.args.get('start_date') or None,
         'end_date': request.args.get('end_date') or None,
+        'sort_by': request.args.get('sort_by') or None,
     }
 
 
@@ -174,7 +175,8 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             params['start_date'],
             params['end_date'],
             page=page,
-            page_size=page_size
+            page_size=page_size,
+            sort_by=params['sort_by']
         )
 
         return _build_paginated_response(result['results'], result['pagination'])
@@ -184,7 +186,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         result = InternalLogic("sample_database", db_layer=db_layer).get_agencies()
         return jsonify(result)
 
-    @flask_app.route("/collections", methods=["GET"])
+    @flask_app.route("/api/collections", methods=["GET"])
     def get_collections():
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
@@ -193,7 +195,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         result = db_layer.get_collections(user["email"])
         return jsonify(result)
 
-    @flask_app.route("/collections", methods=["POST"])
+    @flask_app.route("/api/collections", methods=["POST"])
     def create_collection():
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
@@ -206,7 +208,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         collection_id = db_layer.create_collection(user["email"], name)
         return jsonify({"collection_id": collection_id}), 201
 
-    @flask_app.route("/collections/<int:collection_id>", methods=["DELETE"])
+    @flask_app.route("/api/collections/<int:collection_id>", methods=["DELETE"])
     def delete_collection(collection_id):
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
@@ -217,7 +219,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             return jsonify({"error": "Collection not found"}), 404
         return "", 204
 
-    @flask_app.route("/collections/<int:collection_id>/dockets", methods=["GET"])
+    @flask_app.route("/api/collections/<int:collection_id>/dockets", methods=["GET"])
     def get_collection_dockets(collection_id):
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
@@ -232,7 +234,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             return jsonify({"error": "Collection not found"}), 404
         return _build_paginated_response(result['results'], result['pagination'])
 
-    @flask_app.route("/collections/<int:collection_id>/dockets", methods=["POST"])
+    @flask_app.route("/api/collections/<int:collection_id>/dockets", methods=["POST"])
     def add_docket_to_collection(collection_id):
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
@@ -247,7 +249,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             return jsonify({"error": "Collection not found"}), 404
         return "", 204
 
-    @flask_app.route("/collections/<int:collection_id>/dockets/<docket_id>", methods=["DELETE"])
+    @flask_app.route("/api/collections/<int:collection_id>/dockets/<docket_id>", methods=["DELETE"])
     def remove_docket_from_collection(collection_id, docket_id):
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
@@ -337,8 +339,29 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             _transform_cfr_refs(result)
         return jsonify(results)
 
-    return flask_app
+    @flask_app.route("/download/request/<docket_id>", methods=["POST"])
+    def request_single_download(docket_id):  # pylint: disable=too-many-return-statements
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        body = request.get_json(silent=True) or {}
+        data_format = (body.get("format") or "").strip().lower()
+        include_binaries = bool(body.get("include_binaries", False))
 
+        if data_format not in ("raw", "csv"):
+            return jsonify({"error": "format must be 'raw' or 'csv'"}), 400
+
+        job_id = db_layer.create_download_job(
+            user["email"], [docket_id], data_format, include_binaries
+        )
+        return jsonify({"job_id": job_id, "status": "started"}), 202
+
+    @flask_app.route("/collections")
+    def collections_page():
+        return send_from_directory(dist_dir, "index.html")
+
+    return flask_app
 
 app = create_app(db_layer=get_db())
 

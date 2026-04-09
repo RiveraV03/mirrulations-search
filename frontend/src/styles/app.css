@@ -302,6 +302,17 @@
 	flex-direction:column;
 	gap:6px;
   }
+
+  .agencyListLabel{
+	margin-top: 10px;
+	padding-top: 10px;
+	border-top: 1px solid #e7e9f2;
+	font-size: 12px;
+	font-weight: 800;
+	letter-spacing: 0.02em;
+	color: #6b7280;
+	text-transform: uppercase;
+  }
   
   .hintText{
 	margin-top: 8px;
@@ -317,6 +328,50 @@
 	background: rgba(255,255,255,.6);
 	padding: 8px 10px;
 	border-radius: 12px;
+  }
+
+  .search-sort-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    margin: 14px 0 6px;
+  }
+
+  .search-sort-label {
+    font-size: 14px;
+    font-weight: 700;
+    color: #2f3648;
+  }
+
+  .search-sort-select {
+    min-width: 240px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 2px solid #c8cce8;
+    background: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    color: #2f3648;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .search-sort-select:hover,
+  .search-sort-select:focus {
+    border-color: #5a5fe6;
+    outline: none;
+  }
+
+  @media (max-width: 640px) {
+    .search-sort-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .search-sort-select {
+      width: 100%;
+    }
   }
 
   .results {

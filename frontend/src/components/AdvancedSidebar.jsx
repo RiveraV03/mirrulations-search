@@ -197,6 +197,15 @@ export default function AdvancedSidebar({
     return orderedAgencies.slice(0, minVisible);
   }, [agencySearch, orderedAgencies, selectedAgencies.size]);
 
+  const selectedAgenciesBelowSearch = useMemo(() => {
+    if (!agencySearch.trim()) return [];
+
+    const visibleCodes = new Set(visibleAgencies.map((agency) => agency.code));
+    return orderedAgencies.filter(
+      (agency) => selectedAgencies.has(agency.code) && !visibleCodes.has(agency.code)
+    );
+  }, [agencySearch, orderedAgencies, selectedAgencies, visibleAgencies]);
+
   const toggleAgency = (code) => {
     setSelectedAgencies((prev) => {
       const next = new Set(prev);
@@ -487,6 +496,24 @@ export default function AdvancedSidebar({
                     </span>
                   </label>
                 ))}
+
+                {selectedAgenciesBelowSearch.length > 0 && (
+                  <>
+                    <div className="agencyListLabel">Selected agencies</div>
+                    {selectedAgenciesBelowSearch.map((a) => (
+                      <label key={`selected-${a.code}`} className="check">
+                        <input
+                          type="checkbox"
+                          checked={selectedAgencies.has(a.code)}
+                          onChange={() => toggleAgency(a.code)}
+                        />
+                        <span>
+                          {a.code} — {a.name}
+                        </span>
+                      </label>
+                    ))}
+                  </>
+                )}
               </div>
             )}
 
