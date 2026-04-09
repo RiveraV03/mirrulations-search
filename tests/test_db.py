@@ -662,12 +662,12 @@ def test_text_match_terms_searches_comments_and_extracted():
 
     assert len(results) == 1
     assert results[0]["docket_id"] == "CMS-2025-0240"
-    assert results[0]["comment_match_count"] == 2
-    assert results[0]["document_match_count"] == 4
+    assert results[0]["comment_match_count"] == 6
+    assert results[0]["document_match_count"] == 0
 
 
 def test_text_match_terms_combines_comment_sources():
-    """Comment body counts toward comNum; extracted counts toward docNum."""
+    """Comment body and extracted text both count toward comNum."""
     doc_buckets = []
     comment_buckets = [
         _fake_os_comment_agg_bucket("DEA-2024-0059", "matching_comments", "DEA-2024-0059-c1")
@@ -683,12 +683,12 @@ def test_text_match_terms_combines_comment_sources():
 
     assert len(results) == 1
     assert results[0]["docket_id"] == "DEA-2024-0059"
-    assert results[0]["comment_match_count"] == 1
-    assert results[0]["document_match_count"] == 1
+    assert results[0]["comment_match_count"] == 2
+    assert results[0]["document_match_count"] == 0
 
 
 def test_text_match_terms_same_comment_id_body_and_extracted_counts_once():
-    """Same commentId in commentText and extractedText: com 1, doc 1 (distinct ids per index)."""
+    """Same commentId in commentText and extractedText: counted once in comNum."""
     doc_buckets = []
     comment_buckets = [
         _fake_os_comment_agg_bucket("D1", "matching_comments", "SHARED-COMMENT-ID"),
@@ -702,7 +702,7 @@ def test_text_match_terms_same_comment_id_body_and_extracted_counts_once():
     assert len(results) == 1
     assert results[0]["docket_id"] == "D1"
     assert results[0]["comment_match_count"] == 1
-    assert results[0]["document_match_count"] == 1
+    assert results[0]["document_match_count"] == 0
 
 
 def test_text_match_terms_multiple_dockets_comments():
@@ -732,8 +732,8 @@ def test_text_match_terms_multiple_dockets_comments():
     assert len(results) == 2
 
     cms = next(r for r in results if r["docket_id"] == "CMS-2025-0240")
-    assert cms["comment_match_count"] == 2
-    assert cms["document_match_count"] == 4
+    assert cms["comment_match_count"] == 6
+    assert cms["document_match_count"] == 0
 
     dea = next(r for r in results if r["docket_id"] == "DEA-2024-0059")
     assert dea["comment_match_count"] == 1

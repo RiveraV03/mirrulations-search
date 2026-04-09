@@ -519,19 +519,17 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         comment_ids_by_docket = self._comment_ids_per_docket_from_agg(
             comment_resp, "matching_comments"
         )
-        for did, ids in comment_ids_by_docket.items():
-            docket_counts.setdefault(
-                did, {"document_match_count": 0, "comment_match_count": 0}
-            )
-            docket_counts[did]["comment_match_count"] = len(ids)
         extracted_ids_by_docket = self._comment_ids_per_docket_from_agg(
             extracted_resp, "matching_extracted"
         )
-        for did, ids in extracted_ids_by_docket.items():
+        all_dockets = set(comment_ids_by_docket) | set(extracted_ids_by_docket)
+        for did in all_dockets:
+            merged = (set(comment_ids_by_docket.get(did, set()))
+                      | set(extracted_ids_by_docket.get(did, set())))
             docket_counts.setdefault(
                 did, {"document_match_count": 0, "comment_match_count": 0}
             )
-            docket_counts[did]["document_match_count"] += len(ids)
+            docket_counts[did]["comment_match_count"] = len(merged)
         return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
 
     def get_collections(self, user_email: str) -> List[Dict[str, Any]]:
