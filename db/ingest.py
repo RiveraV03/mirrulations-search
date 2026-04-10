@@ -26,10 +26,14 @@ import re
 import ssl
 import sys
 import subprocess
+import time
+import itertools
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+from tqdm import tqdm
 
 try:
     import certifi
@@ -73,6 +77,17 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 log = logging.getLogger(__name__)
+
+
+def _configure_logging(verbose: bool) -> None:
+    """Configure logging verbosity.
+    
+    If verbose=False (default), suppress verbose HTTP request logs from opensearch and urllib3.
+    If verbose=True, show all logs including detailed HTTP requests.
+    """
+    if not verbose:
+        logging.getLogger("opensearch").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 FR_API_URL = "https://www.federalregister.gov/api/v1/documents/{}.json"
 
@@ -208,32 +223,56 @@ def parse_args() -> argparse.Namespace:
         "--password",
         help="PostgreSQL password",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging (includes HTTP request details)",
+    )
     return parser.parse_args()
 
 
 def fetch_docket(docket_id: str, output_dir: str) -> Path:
     """Use mirrulations-fetch to download docket data."""
-    log.info("Fetching docket data for %s using mirrulations-fetch...", docket_id)
+    log.info(
+        "Fetching docket data for %s using mirrulations-fetch...", docket_id
+    )
     try:
-        subprocess.run(
+        # Run fetch with a spinner animation
+        spinner = itertools.cycle(
+            ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        )
+        with subprocess.Popen(  # pylint: disable=consider-using-with
             ["mirrulations-fetch", docket_id],
             cwd=output_dir,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=True,
-        )
-        log.info("Fetch completed successfully")
+        ) as proc:
+            while proc.poll() is None:
+                sys.stdout.write(f'\r{next(spinner)}')
+                sys.stdout.flush()
+                time.sleep(0.1)
+            sys.stdout.write('\r \r')  # Clear spinner
+            sys.stdout.flush()
+
+            if proc.returncode != 0:
+                _, stderr = proc.communicate()
+                log.error("Fetch failed: %s", stderr)
+                sys.exit(1)
+
         docket_path = Path(output_dir) / docket_id
         if not docket_path.exists():
-            log.error("Expected docket directory not found: %s", docket_path)
+            log.error(
+                "Expected docket directory not found: %s", docket_path
+            )
             sys.exit(1)
         return docket_path
-    except subprocess.CalledProcessError as e:
-        log.error("Fetch failed: %s", e.stderr)
-        sys.exit(1)
-    except FileNotFoundError:
-        log.error("mirrulations-fetch not found. Install it via: pip install mirrulations-fetch")
-        sys.exit(1)
+    except FileNotFoundError as exc:
+        log.error(
+            "mirrulations-fetch not found. "
+            "Install it via: pip install mirrulations-fetch"
+        )
+        raise SystemExit(1) from exc
 
 
 def get_docket_ID(docket_dir: Path) -> str:
@@ -326,7 +365,10 @@ def ensure_documents_index(client: Any) -> None:
 
 
 def ingest_htm_files(docket_dir: Path, client: Any) -> int:
-    """Index each discovered HTM/HTML file into OpenSearch (``documents`` index). Returns count ingested."""
+    """
+    Index each discovered HTM/HTML file into OpenSearch (``documents`` index).
+    Returns count ingested.
+    """
     items = get_htm_files(docket_dir)
     if not items:
         log.info("No HTM/HTML files found in %s/raw-data/documents/", docket_dir.name)
@@ -334,7 +376,7 @@ def ingest_htm_files(docket_dir: Path, client: Any) -> int:
     
     ensure_documents_index(client)
     indexed = 0
-    for item in items:
+    for item in tqdm(items, desc="Indexing documents to OpenSearch", unit="doc"):
         client.index(
             index=OPENSEARCH_DOCUMENTS_INDEX,
             id=item["documentId"],
@@ -345,13 +387,6 @@ def ingest_htm_files(docket_dir: Path, client: Any) -> int:
             },
         )
         indexed += 1
-    
-    if indexed:
-        log.info(
-            "OpenSearch: indexed %d document(s) into %s",
-            indexed,
-            OPENSEARCH_DOCUMENTS_INDEX,
-        )
     return indexed
 
 
@@ -400,7 +435,7 @@ def ingest_comment_json_to_opensearch(docket_dir: Path, client: Any) -> int:
         return 0
     ensure_comments_index(client)
     indexed = 0
-    for path in paths:
+    for path in tqdm(paths, desc="Processing comments to OpenSearch", unit="comment"):
         payload = load_raw_json(path)
         if not isinstance(payload, dict):
             log.warning("Skipping %s — expected JSON object", path.name)
@@ -423,12 +458,6 @@ def ingest_comment_json_to_opensearch(docket_dir: Path, client: Any) -> int:
             body=body,
         )
         indexed += 1
-    if indexed:
-        log.info(
-            "OpenSearch: indexed %d comment(s) into %s",
-            indexed,
-            OPENSEARCH_COMMENTS_INDEX,
-        )
     return indexed
 
 
@@ -469,7 +498,7 @@ def ingest_extracted_text_to_comments_extracted_text(
 ) -> int:
     """Index derived extracted-text records into OpenSearch ``comments_extracted_text``."""
     indexed = 0
-    for rec in records:
+    for rec in tqdm(records, desc="Indexing extracted text to OpenSearch", unit="text"):
         body = _normalized_comments_extracted_text_body(rec)
         if not body:
             continue
@@ -479,12 +508,6 @@ def ingest_extracted_text_to_comments_extracted_text(
             body=body,
         )
         indexed += 1
-    if indexed:
-        log.info(
-            "OpenSearch: indexed %d extracted-text document(s) into %s",
-            indexed,
-            OPENSEARCH_COMMENTS_EXTRACTED_TEXT_INDEX,
-        )
     return indexed
 
 
@@ -574,12 +597,18 @@ def iter_extracted_plain_txt_files(docket_dir: Path) -> list[Path]:
 def read_derived_extracted_plain_text(docket_dir: Path) -> list[dict[str, Any]]:
     """
     Load plain-text extractions (PDF attachment text). Filenames must look like
-    ``<commentId>_attachment_<n>_extracted.txt``. ``extractedMethod`` is taken from the parent
-    directory name (e.g. ``pypdf``).
+    ``<commentId>_attachment_<n>_extracted.txt``. ``extractedMethod`` is taken from the
+    parent directory name (e.g. ``pypdf``).
     """
     docket_id = docket_dir.name
     out: list[dict[str, Any]] = []
-    for path in iter_extracted_plain_txt_files(docket_dir):
+    files = iter_extracted_plain_txt_files(docket_dir)
+    for path in tqdm(
+        files,
+        desc="Reading extracted plain text files",
+        unit="file",
+        disable=len(files) < 50,
+    ):
         m = _EXTRACTED_PLAIN_NAME.match(path.name)
         if not m:
             log.warning(
@@ -615,7 +644,13 @@ def read_derived_extracted_text(docket_dir: Path) -> list[dict[str, Any]]:
     - ``*_extracted.txt`` — plain text (e.g. under ``comments_extracted_text/pypdf/``)
     """
     records: list[dict[str, Any]] = []
-    for path in iter_extracted_txt_json_files(docket_dir):
+    json_files = iter_extracted_txt_json_files(docket_dir)
+    for path in tqdm(
+        json_files,
+        desc="Reading extracted JSON files",
+        unit="file",
+        disable=len(json_files) < 50,
+    ):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -658,7 +693,13 @@ def collect_frdocnums_from_docket(docket_dir: Path) -> set[str]:
     if not docs_dir.is_dir():
         return set()
     all_nums: set[str] = set()
-    for path in docs_dir.glob("*.json"):
+    json_files = list(docs_dir.glob("*.json"))
+    for path in tqdm(
+        json_files,
+        desc="Extracting frDocNum values",
+        unit="doc",
+        disable=len(json_files) < 20,
+    ):
         all_nums.update(extract_frdocnums_from_document_json(path))
     return all_nums
 
@@ -741,7 +782,12 @@ def ingest_federal_register_for_docket(
 
     ingested = 0
     skipped = 0
-    for frdocnum in sorted(frdocnums):
+    for frdocnum in tqdm(
+        sorted(frdocnums),
+        desc="Fetching Federal Register documents",
+        unit="doc",
+        disable=len(frdocnums) < 5,
+    ):
         doc = fetch_fr_document(frdocnum)
         if not doc:
             skipped += 1
@@ -753,33 +799,36 @@ def ingest_federal_register_for_docket(
                 upsert_cfrparts(cur, cfr_rows)
             conn.commit()
             ingested += 1
-            log.info("Federal Register: ingested %s", frdocnum)
+            if args.verbose:
+                log.info("Federal Register: ingested %s", frdocnum)
         except Exception as exc:  # pylint: disable=broad-except
             conn.rollback()
             log.warning("Federal Register: failed to ingest %s: %s", frdocnum, exc)
             skipped += 1
 
-    log.info(
-        "Federal Register: done — %d ingested, %d skipped or failed",
-        ingested,
-        skipped,
-    )
     return ingested, skipped
 
 
 def ingest_into_postgresql_dry_run(docket_dir: Path, args: argparse.Namespace) -> None:
     log.info("DRY RUN — no database writes.")
-    ok, n_doc, sk, fetched_docket_id = ingest_docket_and_documents(docket_dir, conn=None, dry_run=True)
+    ok, n_doc, sk, fetched_docket_id = ingest_docket_and_documents(
+        docket_dir, conn=None, dry_run=True, verbose=args.verbose
+    )
     pc, cs = (0, 0)
     if ok and not args.skip_comments_ingest:
-        pc, cs = ingest_comments(docket_dir, conn=None, dry_run=True)
+        pc, cs = ingest_comments(
+            docket_dir, conn=None, dry_run=True, verbose=args.verbose
+        )
     fr_i, fr_sk = (0, 0)
     if ok and not args.skip_federal_register:
-        fr_i, fr_sk = ingest_federal_register_for_docket(docket_dir, None, args, dry_run=True)
+        fr_i, fr_sk = ingest_federal_register_for_docket(
+            docket_dir, None, args, dry_run=True
+        )
     if ok:
-        log.info("Done. Documents (this run): %d upserted, %d skipped", n_doc, sk)
-        if not args.skip_comments_ingest:
-            log.info("Comments (this run): %d processed, %d skipped", pc, cs)
+        if args.skip_comments_ingest:
+            log.info("Documents: %d upserted", n_doc)
+        else:
+            log.info("Documents: %d upserted; Comments: %d processed", n_doc, pc)
         if not args.skip_federal_register:
             log.info(
                 "Federal Register (dry run): %d would ingest, %d skipped",
@@ -792,6 +841,7 @@ def ingest_into_postgresql_dry_run(docket_dir: Path, args: argparse.Namespace) -
             None,
             dry_run=True,
             skip_comments_ingest=args.skip_comments_ingest,
+            verbose=args.verbose,
         )
     else:
         sys.exit(1)
@@ -815,31 +865,35 @@ def ingest_into_postgresql(docket_dir: Path, args: argparse.Namespace) -> None:
     _ensure_comments_document_fk(conn)
 
     try:
-        ok, n_doc, sk, fetched_docket_id = ingest_docket_and_documents(docket_dir, conn, dry_run=False)
+        ok, n_doc, sk, docket_id = ingest_docket_and_documents(
+            docket_dir, conn, dry_run=False, verbose=args.verbose
+        )
         pc, cs = (0, 0)
         if ok and not args.skip_comments_ingest:
-            pc, cs = ingest_comments(docket_dir, conn, dry_run=False)
+            pc, cs = ingest_comments(docket_dir, conn, dry_run=False, verbose=args.verbose)
         fr_ing, fr_skip = (0, 0)
         if ok and not args.skip_federal_register:
             fr_ing, fr_skip = ingest_federal_register_for_docket(
                 docket_dir, conn, args, dry_run=False
             )
         if ok:
-            log.info("Done. Documents (this run): %d upserted, %d skipped", n_doc, sk)
-            if not args.skip_comments_ingest:
-                log.info("Comments (this run): %d processed, %d skipped", pc, cs)
+            if args.skip_comments_ingest:
+                log.info("Documents: %d upserted", n_doc)
+            else:
+                log.info("Documents: %d upserted; Comments: %d processed", n_doc, pc)
             if not args.skip_federal_register:
                 log.info(
-                    "Federal Register (this run): %d ingested, %d skipped/failed",
+                    "Federal Register: %d ingested, %d skipped/failed",
                     fr_ing,
                     fr_skip,
                 )
             _ingest_summary(
                 docket_dir,
-                fetched_docket_id,
+                docket_id,
                 conn,
                 dry_run=False,
                 skip_comments_ingest=args.skip_comments_ingest,
+                verbose=args.verbose,
             )
         else:
             sys.exit(1)
@@ -852,6 +906,7 @@ def main():
         load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
     args = parse_args()
+    _configure_logging(args.verbose)
     docket_id = args.docket_id.strip().upper()
 
     if not args.skip_fetch:
@@ -861,11 +916,14 @@ def main():
         if not docket_dir.exists():
             log.error("Docket directory not found: %s (omit --skip-fetch to fetch)", docket_dir)
             sys.exit(1)
-
-    log.info("Using docket directory: %s", docket_dir)
+    # if not verbose, suppress noisy logs from HTTP requests in opensearch and urllib3
+    if args.verbose:
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("opensearch").setLevel(logging.WARNING)
+        log.info("Using docket directory: %s", docket_dir)
 
     html_by_doc = read_document_content_html(docket_dir)
-    if html_by_doc:
+    if html_by_doc and args.verbose:
         log.info(
             "Read %d document HTML file(s): %s",
             len(html_by_doc),
@@ -873,7 +931,7 @@ def main():
         )
 
     extracted_records = read_derived_extracted_text(docket_dir)
-    if extracted_records:
+    if extracted_records and args.verbose:
         log.info("Read %d derived extracted-text record(s)", len(extracted_records))
 
     if args.dry_run:
