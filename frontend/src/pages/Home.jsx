@@ -268,8 +268,8 @@ export default function Home() {
               <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">
                 Google API Services User Data Policy
               </a>{" "}
-              (including Limited Use). Full detail:{" "}
-              <Link to="/privacy">Privacy Policy</Link> — use the same <code>/privacy</code> URL on your Google Cloud OAuth consent screen.
+              (including Limited Use). Read our{" "}
+              <Link to="/privacy">Privacy Policy</Link> for how we collect, use, and store your information.
             </p>
           </motion.div>
         </section>
