@@ -21,7 +21,7 @@ export default function PrivacyPolicy() {
 
       <main className="legal-main">
         <h1>Privacy Policy — Mirrulations Explorer</h1>
-        <p className="legal-updated">Effective date: April 9, 2026</p>
+        <p className="legal-updated">Effective date: April 11, 2026</p>
 
         <div className="legal-note">
           This policy describes how Mirrulations Explorer handles information when you use our web application. It is
