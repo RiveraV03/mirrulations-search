@@ -220,7 +220,7 @@ export default function Home() {
                 <p>You are signed in. Open search to look up dockets and documents.</p>
                 <div className="home-cta-row">
                   <MotionLink to="/explorer" className="home-cta-primary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                    Open search
+                    Search Tool
                   </MotionLink>
                   <MotionLink to="/privacy" className="home-cta-secondary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                     Privacy Policy
