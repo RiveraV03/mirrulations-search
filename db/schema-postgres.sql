@@ -212,3 +212,48 @@ CREATE TABLE IF NOT EXISTS collection_dockets (
     PRIMARY KEY (collection_id, docket_id)
 );
 
+-- =========================================
+-- DOWNLOAD JOBS TABLE
+-- =========================================
+-- Tracks async download requests submitted by users.
+-- status: 'pending' | 'processing' | 'complete' | 'failed'
+-- s3_path: set once the archive is uploaded to S3 (NULL until complete)
+-- expires_at: used by prune_expired_download_jobs to clean up old records
+
+CREATE TABLE IF NOT EXISTS download_jobs (
+    job_id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_email VARCHAR(320) NOT NULL REFERENCES users(email),
+    docket_ids TEXT[] NOT NULL,
+    format VARCHAR(20) NOT NULL DEFAULT 'zip',
+    include_binaries BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    s3_path VARCHAR(2000),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW() + INTERVAL '7 days'
+);
+
+-- =========================================
+-- ADMINS TABLE
+-- =========================================
+-- Stores admin users who can manage authorized users
+-- Hardcoded to professor only
+-- Must exist in users table first due to foreign key reference
+
+CREATE TABLE IF NOT EXISTS admins (
+    email VARCHAR(320) NOT NULL PRIMARY KEY REFERENCES users(email),
+    name VARCHAR(200) NOT NULL
+);
+
+-- =========================================
+-- AUTHORIZED USERS TABLE
+-- =========================================
+-- Stores users authorized to access dev.mirrulations.org
+-- Managed by admin to grant access without going through Google OAuth
+-- Users can be removed by deleting their row from this table
+
+CREATE TABLE IF NOT EXISTS authorized_users (
+    email VARCHAR(320) NOT NULL PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    authorized_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);

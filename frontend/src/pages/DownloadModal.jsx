@@ -18,11 +18,6 @@ const PACKAGE_OPTIONS = [
     description: "Public comment text submitted on dockets",
   },
   {
-    id: "attachments",
-    label: "Attachments & binary files",
-    description: "PDFs, Word docs, images uploaded with comments or documents",
-  },
-  {
     id: "extracted_text",
     label: "Extracted text",
     description: "Plain-text extraction from binary files (where available)",
@@ -41,6 +36,7 @@ export default function DownloadModal({ collectionName, docketIds, onClose }) {
   const [jobId, setJobId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [message, setMessage] = useState(null);
  
   const isAll = !docketIds || docketIds.length === 0;
  
@@ -75,9 +71,16 @@ export default function DownloadModal({ collectionName, docketIds, onClose }) {
 
 const handleDownload = async () => {
   if (selected.size === 0) return;
-  setError(null);
+  // setError(null);
   setSubmitting(true);
-  try {
+  setMessage(null)
+
+  // Just show a message instead of making a request or setting an error
+  setMessage("Download is not ready yet.");
+
+  setSubmitting(false);
+
+  /*try {
     const response = await fetch("/download/request", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -93,10 +96,10 @@ const handleDownload = async () => {
     setJobId(data.job_id);
     setStatus("pending");
   } catch (err) {
-    setError("Failed to request download. Please try again.");
+    setError("Failed to request download.");
   } finally {
     setSubmitting(false);
-  }
+  }*/
 };
 
   const handleDownloadFile = () => {
@@ -139,7 +142,7 @@ const handleDownload = async () => {
             : `Download ${docketIds.length} selected docket${docketIds.length !== 1 ? "s" : ""}`}
         </h2>
  
-        {error && <p className="modal-error">{error}</p>}
+        {message && <p className="modal-message">{message}</p>}
  
         {/* ── Pending ───────────────────────────────── */}
         {status === "pending" && (

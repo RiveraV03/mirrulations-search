@@ -4,6 +4,12 @@ from typing import List, Dict, Any, Set
 import os
 import psycopg2
 from opensearchpy import OpenSearch
+try:
+    import requests
+    from requests_aws4auth import AWS4Auth
+except ImportError:
+    requests = None
+    AWS4Auth = None
 
 try:
     import boto3
@@ -94,7 +100,7 @@ def _opensearch_comment_id_terms_size() -> int:
 
 
 @dataclass(frozen=True)
-class DBLayer:
+class DBLayer:  # pylint: disable=too-many-public-methods
     conn: Any = None
 
     def search( # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-branches,too-many-statements
@@ -383,7 +389,7 @@ class DBLayer:
         Search OpenSearch for dockets containing the given terms.
 
         Searches:
-        - documents index: title and documentText fields
+        - documents_text index: title and documentText fields
         - comments index: commentText field
         - comments_extracted_text index: extractedText field
 
@@ -443,39 +449,32 @@ class DBLayer:
             print(f"OpenSearch totals query failed (fallback zeros): {e}")
             return {}
 
-    def _fetch_docket_totals( # pylint: disable=too-many-locals
+    def _fetch_docket_totals(  # pylint: disable=too-many-locals
             self, opensearch_client, docket_ids: List[str]) -> Dict[str, Dict[str, int]]:
-        """Execute totals queries and assemble per-docket counts."""
-        doc_query = {
-            "size": 0,
-            "query": {"bool": {"filter": [
-                {"terms": {"docketId.keyword": docket_ids}}
-            ]}},
-            "aggs": {
-                "by_docket": {
-                    "terms": {"field": "docketId.keyword", "size": len(docket_ids)}
-                }
-            }
-        }
-        doc_response = opensearch_client.search(index="documents", body=doc_query)
-        comment_response = opensearch_client.search(
-            index="comments", body=self._comment_total_query(docket_ids)
-        )
+        """Document totals from RDS, comment totals from OpenSearch."""
         totals: Dict[str, Dict[str, int]] = {}
-        for bucket in doc_response["aggregations"]["by_docket"]["buckets"]:
-            docket_id = str(bucket["key"])
-            totals[docket_id] = {
-                "document_total_count": bucket["doc_count"],
-                "comment_total_count": 0
-            }
-        for bucket in comment_response["aggregations"]["by_docket"]["buckets"]:
-            docket_id = str(bucket["key"])
-            n_comments = len(bucket.get("by_comment", {}).get("buckets", []))
-            totals.setdefault(docket_id, {
-                "document_total_count": 0,
-                "comment_total_count": 0
-            })
-            totals[docket_id]["comment_total_count"] = n_comments
+        if self.conn is not None:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    "SELECT docket_id, COUNT(*) FROM documentsWithFRdoc "
+                    "WHERE docket_id = ANY(%s) GROUP BY docket_id",
+                    (list(docket_ids),)
+                )
+                for docket_id, count in cur.fetchall():
+                    totals[docket_id] = {"document_total_count": count, "comment_total_count": 0}
+        comment_query = {
+            "size": 0,
+            "query": {"bool": {"filter": [{"terms": {"docketId.keyword": docket_ids}}]}},
+            "aggs": {"by_docket": {"terms": {"field": "docketId.keyword", "size": len(docket_ids)}}}
+        }
+        try:
+            resp = opensearch_client.search(index="comments", body=comment_query)
+            for bucket in resp["aggregations"]["by_docket"]["buckets"]:
+                docket_id = str(bucket["key"])
+                totals.setdefault(docket_id, {"document_total_count": 0, "comment_total_count": 0})
+                totals[docket_id]["comment_total_count"] = bucket["doc_count"]
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            print(f"Comment totals query failed: {e}")
         return totals
 
     def _run_text_match_queries(  # pylint: disable=too-many-locals
@@ -493,7 +492,7 @@ class DBLayer:
 
         docket_counts: Dict = {}
         doc_resp = safe_search(
-            "documents",
+            "documents_text",
             self._build_docket_agg_query(
                 "matching_docs",
                 [{"multi_match": {"query": t, "fields": ["title", "documentText"]}}
@@ -520,19 +519,17 @@ class DBLayer:
         comment_ids_by_docket = self._comment_ids_per_docket_from_agg(
             comment_resp, "matching_comments"
         )
-        for did, ids in comment_ids_by_docket.items():
-            docket_counts.setdefault(
-                did, {"document_match_count": 0, "comment_match_count": 0}
-            )
-            docket_counts[did]["comment_match_count"] = len(ids)
         extracted_ids_by_docket = self._comment_ids_per_docket_from_agg(
             extracted_resp, "matching_extracted"
         )
-        for did, ids in extracted_ids_by_docket.items():
+        all_dockets = set(comment_ids_by_docket) | set(extracted_ids_by_docket)
+        for did in all_dockets:
+            merged = (set(comment_ids_by_docket.get(did, set()))
+                      | set(extracted_ids_by_docket.get(did, set())))
             docket_counts.setdefault(
                 did, {"document_match_count": 0, "comment_match_count": 0}
             )
-            docket_counts[did]["document_match_count"] += len(ids)
+            docket_counts[did]["comment_match_count"] = len(merged)
         return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
 
     def get_collections(self, user_email: str) -> List[Dict[str, Any]]:
@@ -643,6 +640,92 @@ class DBLayer:
         self.conn.commit()
         return True
 
+    def create_download_job(  # pylint: disable=too-many-locals
+            self,
+            user_email: str,
+            docket_ids: List[str],
+            format: str = "zip",  # pylint: disable=redefined-builtin
+            include_binaries: bool = False,
+    ) -> str:
+        """Create a download job and return the new job_id (UUID string)."""
+        if self.conn is None:
+            return ""
+        upsert_user_sql = """
+            INSERT INTO users (email, name) VALUES (%s, %s)
+            ON CONFLICT (email) DO NOTHING
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(upsert_user_sql, (user_email, user_email))
+        insert_sql = """
+            INSERT INTO download_jobs
+                (user_email, docket_ids, format, include_binaries)
+            VALUES (%s, %s, %s, %s)
+            RETURNING job_id
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(insert_sql, (user_email, docket_ids, format, include_binaries))
+            job_id = str(cur.fetchone()[0])
+        self.conn.commit()
+        return job_id
+
+    def get_download_job(self, job_id: str, user_email: str) -> Dict[str, Any]:
+        """Return job details for the given job_id owned by user_email, or {}."""
+        if self.conn is None:
+            return {}
+        sql = """
+            SELECT job_id, user_email, docket_ids, format, include_binaries,
+                   status, s3_path, created_at, updated_at, expires_at
+            FROM download_jobs
+            WHERE job_id = %s AND user_email = %s
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (job_id, user_email))
+            row = cur.fetchone()
+        if row is None:
+            return {}
+        return {
+            "job_id": str(row[0]),
+            "user_email": row[1],
+            "docket_ids": row[2],
+            "format": row[3],
+            "include_binaries": row[4],
+            "status": row[5],
+            "s3_path": row[6],
+            "created_at": row[7],
+            "updated_at": row[8],
+            "expires_at": row[9],
+        }
+
+    def update_download_job_status(
+            self, job_id: str, status: str, s3_path: str = None) -> bool:
+        """Update the status (and optionally s3_path) of a download job.
+
+        Returns True if a row was updated.
+        """
+        if self.conn is None:
+            return False
+        sql = """
+            UPDATE download_jobs
+            SET status = %s, s3_path = %s, updated_at = NOW()
+            WHERE job_id = %s
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (status, s3_path, job_id))
+            updated = cur.rowcount > 0
+        self.conn.commit()
+        return updated
+
+    def prune_expired_download_jobs(self) -> int:
+        """Delete download_jobs past their expires_at. Returns the number of rows deleted."""
+        if self.conn is None:
+            return 0
+        sql = "DELETE FROM download_jobs WHERE expires_at < NOW()"
+        with self.conn.cursor() as cur:
+            cur.execute(sql)
+            deleted = cur.rowcount
+        self.conn.commit()
+        return deleted
+
 
 def _get_secrets_from_aws() -> Dict[str, str]:
     if boto3 is None:
@@ -723,7 +806,55 @@ def _opensearch_client_kwargs() -> Dict[str, Any]:
     return kwargs
 
 
-def get_opensearch_connection() -> OpenSearch:
+class _AossClient:  # pylint: disable=too-few-public-methods
+    """Thin requests-based client that mimics opensearchpy .search() interface."""
+    def __init__(self, base_url, session):
+        self.base_url = base_url.rstrip('/')
+        self.session = session
+
+    def search(self, index, body):
+        url = f"{self.base_url}/{index}/_search"
+        resp = self.session.post(url, json=body, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+
+_OPENSEARCH_CLIENT_SINGLETON = None
+
+
+def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-statements
+    global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement
+
+    host = (os.getenv("OPENSEARCH_HOST") or "").strip()
+
+    use_aws = os.getenv("USE_AWS_SECRETS", "").lower() in {"1", "true", "yes", "on"}
+    if not host and use_aws and boto3 is not None:
+        try:
+            sm = boto3.client("secretsmanager", region_name="us-east-1")
+            secret = json.loads(
+                sm.get_secret_value(SecretId="mirrulations/opensearch")["SecretString"]
+            )
+            raw_host = secret.get("host", "").strip()
+            if raw_host and not raw_host.startswith("http"):
+                raw_host = "https://" + raw_host
+            host = raw_host
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
+    if "aoss.amazonaws.com" in host:
+        if _OPENSEARCH_CLIENT_SINGLETON is not None:
+            return _OPENSEARCH_CLIENT_SINGLETON
+        creds = boto3.Session().get_credentials()
+        auth = AWS4Auth(
+            refreshable_credentials=creds,
+            region="us-east-1",
+            service="aoss",
+        )
+        session = requests.Session()
+        session.auth = auth
+        _OPENSEARCH_CLIENT_SINGLETON = _AossClient(host, session)
+        return _OPENSEARCH_CLIENT_SINGLETON
+
     if LOAD_DOTENV is not None:
         LOAD_DOTENV()
     return OpenSearch(**_opensearch_client_kwargs())
