@@ -102,7 +102,7 @@ def _get_user_from_cookie(oauth_handler):
         return None
 
 
-def _handle_oauth_callback(handler, db_layer_ref=None):
+def _handle_oauth_callback(handler, db_layer_ref=None): # pylint: disable=too-many-locals,too-many-statements
     """Exchange OAuth code for JWT cookie response. Returns response or None."""
     code = request.args.get("code")
     if not code:
