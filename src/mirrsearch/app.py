@@ -112,7 +112,11 @@ def _handle_oauth_callback(handler, db_layer_ref=None): # pylint: disable=too-ma
         intent = request.cookies.get("login_intent")
 
         if intent == "admin" and db_layer_ref is not None:
-            if not db_layer_ref.is_admin(user_info["email"]):
+            try:
+                is_admin = db_layer_ref.is_admin(user_info["email"])
+            except Exception:  # pylint: disable=broad-exception-caught
+                is_admin = False
+            if not is_admin:
                 response = make_response(redirect("/admin?error=unauthorized"))
                 response.delete_cookie("login_intent")
                 return response
@@ -181,6 +185,8 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         user = _get_user_from_cookie(handler)
         if not user:
             return jsonify({"is_admin": False})
+        if db_layer is None:
+            return jsonify({"is_admin": False})
         is_admin = db_layer.is_admin(user["email"])
         return jsonify({"is_admin": is_admin, "name": user["name"], "email": user["email"]})
 
@@ -188,7 +194,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
     def get_authorized_users():
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
-        if not user or not db_layer.is_admin(user["email"]):
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
             return jsonify({"error": "Forbidden"}), 403
         return jsonify(db_layer.get_authorized_users())
 
@@ -196,7 +202,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
     def add_authorized_user():
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
-        if not user or not db_layer.is_admin(user["email"]):
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
             return jsonify({"error": "Forbidden"}), 403
         body = request.get_json(silent=True) or {}
         email = (body.get("email") or "").strip().lower()
@@ -210,7 +216,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
     def remove_authorized_user(email):
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
-        if not user or not db_layer.is_admin(user["email"]):
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
             return jsonify({"error": "Forbidden"}), 403
         removed = db_layer.remove_authorized_user(email)
         if not removed:
