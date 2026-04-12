@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, Link } from "react-router-dom";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
@@ -15,8 +15,6 @@ import DownloadStatusModal from "./components/DownloadStatusModal";
 
 
 export default function App() {
-  const location = useLocation();
-  const onCollectionsPage = location.pathname === "/collections";
   const [query, setQuery] = useState("");
   const [docType, setDocType] = useState("");
   const [results, setResults] = useState([]);
@@ -155,12 +153,8 @@ export default function App() {
                   {user ? (
                     <div className="auth-section">
                       <span className="auth-name">{user.name}</span>
-                      <Link
-                        to={onCollectionsPage ? "/explorer" : "/collections"}
-                        className="btn btn-primary collections-nav-btn"
-                      >
-                        <BooksIcon size={24} weight="duotone" />
-                        {onCollectionsPage ? "Back to Search" : "My Collections"}
+                      <Link to="/explorer" className="btn btn-primary">
+                        Search
                       </Link>
                       <a href="/logout" className="btn btn-primary">
                         Log Out
@@ -204,12 +198,9 @@ export default function App() {
                   {user ? (
                     <div className="auth-section">
                       <span className="auth-name">{user.name}</span>
-                      <Link
-                        to={onCollectionsPage ? "/explorer" : "/collections"}
-                        className="btn btn-primary collections-nav-btn"
-                      >
+                      <Link to="/collections" className="btn btn-primary collections-nav-btn">
                         <BooksIcon size={24} weight="duotone" />
-                        {onCollectionsPage ? "Back to Search" : "My Collections"}
+                        My Collections
                       </Link>
                       <a href="/logout" className="btn btn-primary">
                         Log Out

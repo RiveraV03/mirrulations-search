@@ -58,8 +58,6 @@ const cardReveal = {
   }),
 };
 
-const GITHUB_URL = "https://github.com/Mirrulations/mirrulations-search";
-
 export default function Home() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -93,16 +91,6 @@ export default function Home() {
           <motion.a href="#features" className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
             Features
           </motion.a>
-          <motion.a
-            href={GITHUB_URL}
-            className="home-nav-link"
-            target="_blank"
-            rel="noopener noreferrer"
-            whileHover={{ y: -1 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            GitHub
-          </motion.a>
           <MotionLink to="/explorer" className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
             Search
           </MotionLink>
@@ -114,12 +102,6 @@ export default function Home() {
               <span className="home-nav-user" title={user.email}>
                 {user.name}
               </span>
-              <MotionLink to="/explorer" className="home-nav-cta" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                Explorer
-              </MotionLink>
-              <MotionLink to="/collections" className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
-                Collections
-              </MotionLink>
               <motion.a href="/logout" className="home-nav-link home-nav-link--ghost" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
                 Sign out
               </motion.a>
@@ -153,12 +135,13 @@ export default function Home() {
           animate="visible"
         >
           <motion.h1 className="hero-title" variants={heroItemVariants}>
-            Open Regulatory Data,
+            Search U.S. federal
             <br />
-            <span className="hero-title-accent">Ready for Analysis</span>
+            <span className="hero-title-accent">regulatory dockets</span>
           </motion.h1>
           <motion.p className="hero-lead" variants={heroItemVariants}>
-            Mirrulations mirrors millions of U.S. federal regulatory documents and delivers them in formats built for research, transparency, and scale.
+            Mirrulations Explorer helps you find rulemakings and related documents from public U.S. federal sources. Sign
+            in to search, save dockets you care about, and use downloads when your administrator enables them.
           </motion.p>
           <motion.div className="hero-buttons" variants={heroItemVariants}>
             <MotionLink
@@ -169,7 +152,7 @@ export default function Home() {
               whileHover="hover"
               whileTap="tap"
             >
-              Explore Dockets
+              Get started
             </MotionLink>
             <MotionLink
               to="/privacy"
@@ -194,44 +177,31 @@ export default function Home() {
       >
         <section id="about" className="home-section home-section--narrow">
           <motion.h2 className="home-section-heading" initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4 }}>
-            Mirrulations
+            What this is
           </motion.h2>
           <motion.p className="home-section-lead" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ delay: 0.05, duration: 0.45 }}>
-            This site is the Mirrulations Explorer: search federal dockets, organize what you follow in collections, and (when enabled) export data for offline analysis. The corpus is mirrored from regulations.gov-style sources and structured for serious use.
+            A straightforward way to explore federal docket data: search by keywords and filters, open dockets and
+            documents, and keep a personal list when you are signed in.
           </motion.p>
         </section>
 
         <section id="features" className="home-section home-section--wide">
-          <div className="home-metrics">
-            {[
-              { kicker: "Scale", stat: "30M+", label: "Documents" },
-              { kicker: "Platform", stat: "AWS", label: "Open Data" },
-              { kicker: "Format", stat: "CSV", label: "Export Ready" },
-            ].map((item, i) => (
-              <motion.article key={item.label} className="home-metric-card" custom={i} initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-40px" }} variants={cardReveal}>
-                <span className="home-metric-kicker">{item.kicker}</span>
-                <p className="home-metric-stat">{item.stat}</p>
-                <p className="home-metric-label">{item.label}</p>
-              </motion.article>
-            ))}
-          </div>
-
           <motion.h2 className="home-section-heading home-section-heading--center" initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4 }}>
-            Why Mirrulations?
+            What you can do
           </motion.h2>
           <div className="home-feature-grid">
             {[
               {
-                title: "Massive Scale",
-                body: "Nearly 30 million regulatory files mirrored directly from regulations.gov.",
+                title: "Search and filter",
+                body: "Find dockets and documents with text search and options such as agency, date range, and status.",
               },
               {
-                title: "Research Ready",
-                body: "Data is structured to support text analysis without extra munging.",
+                title: "Save what you follow",
+                body: "When you are signed in, you can keep dockets in your account so you can return to them later.",
               },
               {
-                title: "Open & Accessible",
-                body: "Hosted through AWS Open Data and available to the public.",
+                title: "Stay in control",
+                body: "We only use your Google account to sign you in and run the features you use. See the Privacy Policy for details.",
               },
             ].map((card, i) => (
               <motion.article key={card.title} className="home-feature-card" custom={i} initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-30px" }} variants={cardReveal}>
@@ -242,35 +212,34 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="build" className="home-section home-section--wide">
+        <section className="home-section home-section--wide">
           <motion.div className="home-cta-card" initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
-            <h2>Build Research on Top of Regulation Data</h2>
-            <p>Search dockets, fetch raw data, or export CSVs for your own analysis.</p>
-            <div className="home-cta-row">
-              <MotionLink to="/explorer" className="home-cta-primary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                Explore Dockets
-              </MotionLink>
-              <motion.a href={GITHUB_URL} className="home-cta-secondary" target="_blank" rel="noopener noreferrer" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                View the Code
-              </motion.a>
-            </div>
-            <p className="home-cta-footnote">
-              Mirrulations is an open-source project focused on transparency, accessibility, and large-scale regulatory research.
-            </p>
-          </motion.div>
-        </section>
-
-        <section className="home-section home-section--wide" aria-labelledby="home-google-heading">
-          <motion.div className="home-google-card" initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45 }}>
-            <h2 id="home-google-heading">Sign-in &amp; data practices</h2>
-            <p>
-              Google sign-in uses OpenID Connect, email, and basic profile scopes so we can show your name and tie collections or downloads to your account. Use matches the{" "}
-              <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">
-                Google API Services User Data Policy
-              </a>{" "}
-              (including Limited Use). Read our{" "}
-              <Link to="/privacy">Privacy Policy</Link> for how we collect, use, and store your information.
-            </p>
+            <h2>Ready to search?</h2>
+            {!authLoading && user ? (
+              <>
+                <p>You are signed in. Open search to look up dockets and documents.</p>
+                <div className="home-cta-row">
+                  <MotionLink to="/explorer" className="home-cta-primary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                    Open search
+                  </MotionLink>
+                  <MotionLink to="/privacy" className="home-cta-secondary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                    Privacy Policy
+                  </MotionLink>
+                </div>
+              </>
+            ) : (
+              <>
+                <p>Sign in with Google to open the search experience.</p>
+                <div className="home-cta-row">
+                  <MotionLink to="/login" className="home-cta-primary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                    Sign in
+                  </MotionLink>
+                  <MotionLink to="/privacy" className="home-cta-secondary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                    Privacy Policy
+                  </MotionLink>
+                </div>
+              </>
+            )}
           </motion.div>
         </section>
 
@@ -280,12 +249,6 @@ export default function Home() {
             ·
           </span>
           <Link to="/privacy">Privacy Policy</Link>
-          <span className="home-page-footer-dot" aria-hidden>
-            ·
-          </span>
-          <motion.a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
-            GitHub
-          </motion.a>
         </motion.footer>
       </motion.main>
     </div>
