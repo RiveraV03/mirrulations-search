@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import Home from "./pages/Home";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import Collections from "./pages/Collections";
+import Admin from "./pages/Admin";
 import "./styles/app.css";
 import { searchDockets, getAuthStatus } from "./api/searchApi";
 import AdvancedSidebar from "./components/AdvancedSidebar";
@@ -136,6 +137,8 @@ export default function App() {
       <Route path="/privacy" element={<PrivacyPolicy />} />
 
       <Route path="/login" element={<Login />} />
+      <Route path="/admin" element={<Admin />} />
+      <Route path="/admin/*" element={<Admin />} />
       <Route
         path="/collections"
         element={

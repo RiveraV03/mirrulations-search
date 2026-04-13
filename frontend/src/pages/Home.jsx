@@ -191,10 +191,10 @@ export default function Home() {
 
         <motion.footer className="home-page-footer" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.45 }}>
           <span>Mirrulations Explorer</span>
-          <span className="home-page-footer-dot" aria-hidden>
-            ·
-          </span>
+          <span className="home-page-footer-dot" aria-hidden>·</span>
           <Link to="/privacy">Privacy Policy</Link>
+          <span className="home-page-footer-dot" aria-hidden>·</span>
+          <a href="/admin" className="home-footer-admin-link">Admin</a>
         </motion.footer>
       </motion.main>
     </div>

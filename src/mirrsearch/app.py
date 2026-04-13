@@ -102,17 +102,31 @@ def _get_user_from_cookie(oauth_handler):
         return None
 
 
-def _handle_oauth_callback(handler):
+def _handle_oauth_callback(handler, db_layer_ref=None): # pylint: disable=too-many-locals,too-many-statements
     """Exchange OAuth code for JWT cookie response. Returns response or None."""
     code = request.args.get("code")
     if not code:
         return None
     try:
         user_info = handler.exchange_code_for_user_info(code)
+        intent = request.cookies.get("login_intent")
+
+        if intent == "admin" and db_layer_ref is not None:
+            try:
+                is_admin = db_layer_ref.is_admin(user_info["email"])
+            except Exception:  # pylint: disable=broad-exception-caught
+                is_admin = False
+            if not is_admin:
+                response = make_response(redirect("/admin?error=unauthorized"))
+                response.delete_cookie("login_intent")
+                return response
+
         user_id = f"{user_info['name']}|{user_info['email']}"
         token = handler.create_jwt_token(user_id)
-        response = make_response(redirect("/"))
+        redirect_to = "/admin" if intent == "admin" else "/"
+        response = make_response(redirect(redirect_to))
         response.set_cookie("jwt_token", token, httponly=True, samesite="Lax", path="/")
+        response.delete_cookie("login_intent")
         return response
     except (OAuthCodeError, OAuthVerificationError):
         return redirect("/")
@@ -132,7 +146,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
     @flask_app.route("/")
     def home():
         handler = oauth_handler or _make_oauth_handler()
-        callback_response = _handle_oauth_callback(handler)
+        callback_response = _handle_oauth_callback(handler, db_layer_ref=db_layer)
         if callback_response:
             return callback_response
         return send_from_directory(dist_dir, "index.html")
@@ -156,6 +170,63 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         if user:
             return jsonify({"logged_in": True, "name": user["name"], "email": user["email"]})
         return jsonify({"logged_in": False})
+
+    @flask_app.route("/admin/login")
+    def admin_login():
+        handler = oauth_handler or _make_oauth_handler()
+        authorization_url, _ = handler.get_authorization_url()
+        response = make_response(redirect(authorization_url))
+        response.set_cookie("login_intent", "admin", httponly=True, samesite="Lax", max_age=300)
+        return response
+
+    @flask_app.route("/admin/status")
+    def admin_status():
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"is_admin": False})
+        if db_layer is None:
+            return jsonify({"is_admin": False})
+        is_admin = db_layer.is_admin(user["email"])
+        return jsonify({"is_admin": is_admin, "name": user["name"], "email": user["email"]})
+
+    @flask_app.route("/api/authorized", methods=["GET"])
+    def get_authorized_users():
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
+            return jsonify({"error": "Forbidden"}), 403
+        return jsonify(db_layer.get_authorized_users())
+
+    @flask_app.route("/api/authorized", methods=["POST"])
+    def add_authorized_user():
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
+            return jsonify({"error": "Forbidden"}), 403
+        body = request.get_json(silent=True) or {}
+        email = (body.get("email") or "").strip().lower()
+        name = (body.get("name") or "").strip()
+        if not email or not name:
+            return jsonify({"error": "email and name are required"}), 400
+        db_layer.add_authorized_user(email, name)
+        return jsonify({"email": email, "name": name}), 201
+
+    @flask_app.route("/api/authorized/<email>", methods=["DELETE"])
+    def remove_authorized_user(email):
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
+            return jsonify({"error": "Forbidden"}), 403
+        removed = db_layer.remove_authorized_user(email)
+        if not removed:
+            return jsonify({"error": "User not found"}), 404
+        return "", 204
+
+    @flask_app.route("/admin")
+    @flask_app.route("/admin/")
+    def admin_page():
+        return send_from_directory(dist_dir, "index.html")
 
     @flask_app.route("/search/")
     def search():
@@ -261,7 +332,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return "", 204
 
     @flask_app.route("/download/request", methods=["POST"])
-    def request_download(): # pylint: disable=too-many-return-statements
+    def request_download():  # pylint: disable=too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if not user:
@@ -285,7 +356,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return jsonify({"job_id": job_id, "status": "started"}), 202
 
     @flask_app.route("/download/status/<job_id>", methods=["GET"])
-    def download_status(job_id): # pylint: disable=too-many-return-statements
+    def download_status(job_id):  # pylint: disable=too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if not user:
@@ -306,7 +377,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         })
 
     @flask_app.route("/download/<job_id>", methods=["GET"])
-    def download_file(job_id): # pylint: disable=too-many-return-statements
+    def download_file(job_id):  # pylint: disable=too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if not user:
@@ -362,6 +433,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return send_from_directory(dist_dir, "index.html")
 
     return flask_app
+
 
 app = create_app(db_layer=get_db())
 

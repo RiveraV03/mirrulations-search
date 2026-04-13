@@ -738,3 +738,11 @@
 .home-footer-sep {
   margin: 0 8px;
 }
+
+.home-footer-admin-link {
+  font-size: 0.75rem;
+  color: #334155;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.home-footer-admin-link:hover { color: #64748b; }
