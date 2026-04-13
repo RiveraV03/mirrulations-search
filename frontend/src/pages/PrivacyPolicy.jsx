@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getAuthStatus } from "../api/searchApi";
+import SiteNavbar from "../components/SiteNavbar";
 import "../styles/Home.css";
 
 export default function PrivacyPolicy() {
@@ -14,32 +15,8 @@ export default function PrivacyPolicy() {
   }, []);
 
   return (
-    <div className="legal-page">
-      <header className="legal-topbar">
-        <div className="legal-brand">
-          <Link to="/">Mirrulations</Link>
-        </div>
-        <nav className="legal-nav" aria-label="Policy navigation">
-          <Link className="home-btn home-btn-secondary" to="/">
-            Home
-          </Link>
-          {loggedIn === false ? (
-            <a className="home-btn home-btn-primary" href="/login">
-              Sign in with Google
-            </a>
-          ) : null}
-          {loggedIn === true ? (
-            <>
-              <Link className="home-btn home-btn-secondary" to="/explorer">
-                Search
-              </Link>
-              <a className="home-btn home-btn-secondary" href="/logout">
-                Sign out
-              </a>
-            </>
-          ) : null}
-        </nav>
-      </header>
+    <div className="legal-page legal-page--with-site-nav">
+      <SiteNavbar theme="light" />
 
       <main className="legal-main">
         <h1>Privacy Policy — Mirrulations Explorer</h1>

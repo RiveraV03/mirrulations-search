@@ -1,6 +1,6 @@
 import React from "react";
-import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
+import SiteNavbar from "../components/SiteNavbar";
 import "../styles/Login.css";
 
 const Login = () => {
@@ -12,18 +12,15 @@ const Login = () => {
   };
 
   return (
-    <div className="login-wrapper">
+    <div className="login-page-wrap">
+      <SiteNavbar theme="light" />
+      <div className="login-wrapper">
       <motion.div
         className="login-box"
         initial={{ opacity: 0, y: -70 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 2.4, ease: "easeInOut" }}
       >
-        <p className="login-home-link">
-          <Link to="/">Home</Link>
-          {" · "}
-          <Link to="/privacy">Privacy Policy</Link>
-        </p>
         <h2>
           Welcome to Mirrulations Explorer. Sign in with your Google account to
           continue.
@@ -60,6 +57,7 @@ const Login = () => {
           </span>
         </motion.button>
       </motion.div>
+      </div>
     </div>
   );
 };

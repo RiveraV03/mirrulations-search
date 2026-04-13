@@ -1,13 +1,22 @@
 @import url('https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap');
 
+.login-page-wrap {
+  min-height: 100vh;
+  background: #f9f9f9;
+  font-family: "Lato", sans-serif;
+  padding-top: 56px;
+  box-sizing: border-box;
+}
 
 .login-wrapper {
-    height: 100vh;
+    min-height: calc(100vh - 56px);
     display: flex;
     justify-content: center;
     align-items: center;
     background: #f9f9f9;
 	font-family: "Lato", sans-serif;
+    box-sizing: border-box;
+    padding: 24px 16px 32px;
   }
   
   .login-box {
