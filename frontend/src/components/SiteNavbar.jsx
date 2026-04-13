@@ -80,9 +80,6 @@ export default function SiteNavbar({ theme = "dark", layout = "full", onCheckDow
         )}
         {!authLoading && user ? (
           <>
-            <span className="home-nav-user" title={user.email}>
-              {user.name}
-            </span>
             {showCollectionsLink ? (
               <MotionLink
                 to="/collections"
@@ -105,9 +102,14 @@ export default function SiteNavbar({ theme = "dark", layout = "full", onCheckDow
                 Check Downloads
               </motion.button>
             ) : null}
-            <motion.a href="/logout" className="home-nav-link home-nav-link--ghost" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
-              Sign out
-            </motion.a>
+            <span className="home-nav-signout-group">
+              <span className="home-nav-user" title={user.email}>
+                {(user.name || user.email || "").trim() || "Account"}
+              </span>
+              <motion.a href="/logout" className="home-nav-link home-nav-link--ghost" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
+                Sign out
+              </motion.a>
+            </span>
           </>
         ) : !authLoading ? (
           <motion.a href="/login" className="home-nav-google" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
