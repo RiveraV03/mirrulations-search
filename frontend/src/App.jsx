@@ -143,7 +143,7 @@ export default function App() {
             <Navigate to="/login" replace />
           ) : (
             <div className="page page--with-site-nav">
-              <SiteNavbar theme="light" onCheckDownloads={() => setOpenDownloadStatus(true)} />
+              <SiteNavbar theme="light" layout="app" onCheckDownloads={() => setOpenDownloadStatus(true)} />
               <div className="layout layout-single">
                 <main className="main">
                   <Collections />
@@ -163,7 +163,7 @@ export default function App() {
             <Navigate to="/login" replace />
           ) : (
             <div className="page page--with-site-nav">
-              <SiteNavbar theme="light" showCollectionsLink />
+              <SiteNavbar theme="light" layout="app" showCollectionsLink />
               <div className="layout">
                 <AdvancedSidebar
                   advOpen={advOpen}

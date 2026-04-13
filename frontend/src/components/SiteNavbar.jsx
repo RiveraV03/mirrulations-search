@@ -18,10 +18,11 @@ const navVariants = {
 
 /**
  * @param {"dark" | "light"} theme — dark on home hero; white bar on app / legal / login
+ * @param {"full" | "app"} [layout] — full: marketing + Search + Privacy; app: Home (+ Search on collections only)
  * @param {() => void} [onCheckDownloads] — when set and user is signed in, shows Check Downloads (collections flow)
  * @param {boolean} [showCollectionsLink] — My Collections link (search / explorer page)
  */
-export default function SiteNavbar({ theme = "dark", onCheckDownloads, showCollectionsLink = false }) {
+export default function SiteNavbar({ theme = "dark", layout = "full", onCheckDownloads, showCollectionsLink = false }) {
   const { pathname } = useLocation();
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -50,18 +51,33 @@ export default function SiteNavbar({ theme = "dark", onCheckDownloads, showColle
         Mirrulations
       </MotionLink>
       <nav className="home-nav-links" aria-label="Main navigation">
-        <motion.a href={aboutHref} className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
-          About
-        </motion.a>
-        <motion.a href={featuresHref} className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
-          Features
-        </motion.a>
-        <MotionLink to="/explorer" className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
-          Search
-        </MotionLink>
-        <MotionLink to="/privacy" className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
-          Privacy Policy
-        </MotionLink>
+        {layout === "app" ? (
+          <>
+            <MotionLink to="/" className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
+              Home
+            </MotionLink>
+            {pathname === "/collections" ? (
+              <MotionLink to="/explorer" className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
+                Search
+              </MotionLink>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <motion.a href={aboutHref} className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
+              About
+            </motion.a>
+            <motion.a href={featuresHref} className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
+              Features
+            </motion.a>
+            <MotionLink to="/explorer" className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
+              Search
+            </MotionLink>
+            <MotionLink to="/privacy" className="home-nav-link" whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
+              Privacy Policy
+            </MotionLink>
+          </>
+        )}
         {!authLoading && user ? (
           <>
             <span className="home-nav-user" title={user.email}>

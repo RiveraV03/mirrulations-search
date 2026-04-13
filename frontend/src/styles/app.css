@@ -19,7 +19,7 @@ body {
   }
 
   .page--with-site-nav {
-    padding-top: calc(56px + 18px);
+    padding-top: 85px;
   }
 
   .page--with-site-nav .layout {
@@ -27,8 +27,8 @@ body {
   }
 
   .page--with-site-nav .sidebar {
-    top: calc(16px + 56px);
-    max-height: calc(100vh - 96px);
+    top: 72px;
+    max-height: calc(100vh - 92px);
   }
   
   .topbar{
