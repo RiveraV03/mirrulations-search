@@ -157,6 +157,11 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             return jsonify({"logged_in": True, "name": user["name"], "email": user["email"]})
         return jsonify({"logged_in": False})
 
+    @flask_app.route("/explorer")
+    @flask_app.route("/explorer/")
+    def explorer_page():
+        return send_from_directory(dist_dir, "index.html")
+
     @flask_app.route("/search/")
     def search():
         handler = oauth_handler or _make_oauth_handler()
@@ -261,7 +266,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return "", 204
 
     @flask_app.route("/download/request", methods=["POST"])
-    def request_download(): # pylint: disable=too-many-return-statements
+    def request_download():  # pylint: disable=too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if not user:
@@ -285,7 +290,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return jsonify({"job_id": job_id, "status": "started"}), 202
 
     @flask_app.route("/download/status/<job_id>", methods=["GET"])
-    def download_status(job_id): # pylint: disable=too-many-return-statements
+    def download_status(job_id):  # pylint: disable=too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if not user:
@@ -306,7 +311,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         })
 
     @flask_app.route("/download/<job_id>", methods=["GET"])
-    def download_file(job_id): # pylint: disable=too-many-return-statements
+    def download_file(job_id):  # pylint: disable=too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if not user:
