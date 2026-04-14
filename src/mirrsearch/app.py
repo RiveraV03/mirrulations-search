@@ -194,7 +194,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return send_from_directory(dist_dir, "index.html")
 
     @flask_app.route("/admin/login")
-    
+
     def admin_login():
         handler = oauth_handler or _make_oauth_handler()
         authorization_url, _ = handler.get_authorization_url()
@@ -462,4 +462,3 @@ app = create_app(db_layer=get_db())
 
 if __name__ == '__main__':
     app.run(port=80, debug=True)
-
