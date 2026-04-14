@@ -54,6 +54,7 @@ python3 db/ingest.py FAA-2025-0618 --user "$(whoami)"
 | `--skip-comments-ingest` | Skip loading comments into Postgres and skip indexing `raw-data/comments/*.json` into OpenSearch. |
 | `--skip-federal-register` | Skip FR API fetch and `federal_register_documents` / `cfrparts` upserts. |
 | `--dry-run` | Validate and log what would be written; no Postgres writes. OpenSearch indexing still runs afterward (same as a normal run), unless the client fails. |
+| `-v` / `--verbose` | Enable verbose logging and show progress bars/spinners for data processing operations (document indexing, comment ingestion, file reading). |
 
 ### PostgreSQL connection
 

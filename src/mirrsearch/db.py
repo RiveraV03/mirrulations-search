@@ -519,19 +519,17 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         comment_ids_by_docket = self._comment_ids_per_docket_from_agg(
             comment_resp, "matching_comments"
         )
-        for did, ids in comment_ids_by_docket.items():
-            docket_counts.setdefault(
-                did, {"document_match_count": 0, "comment_match_count": 0}
-            )
-            docket_counts[did]["comment_match_count"] = len(ids)
         extracted_ids_by_docket = self._comment_ids_per_docket_from_agg(
             extracted_resp, "matching_extracted"
         )
-        for did, ids in extracted_ids_by_docket.items():
+        all_dockets = set(comment_ids_by_docket) | set(extracted_ids_by_docket)
+        for did in all_dockets:
+            merged = (set(comment_ids_by_docket.get(did, set()))
+                      | set(extracted_ids_by_docket.get(did, set())))
             docket_counts.setdefault(
                 did, {"document_match_count": 0, "comment_match_count": 0}
             )
-            docket_counts[did]["document_match_count"] += len(ids)
+            docket_counts[did]["comment_match_count"] = len(merged)
         return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
 
     def get_collections(self, user_email: str) -> List[Dict[str, Any]]:
@@ -728,6 +726,68 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         self.conn.commit()
         return deleted
 
+    def is_admin(self, email: str) -> bool:
+        """Return True if the given email belongs to an admin."""
+        if self.conn is None:
+            return False
+        sql = "SELECT 1 FROM admins WHERE email = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email,))
+            return cur.fetchone() is not None
+
+    def is_authorized_user(self, email: str) -> bool:
+        """Return True if the given email is in the authorized users list."""
+        if self.conn is None:
+            return False
+        sql = "SELECT 1 FROM authorized_users WHERE email = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email,))
+            return cur.fetchone() is not None
+
+    def add_authorized_user(self, email: str, name: str) -> bool:
+        """Add a user to the authorized users list. Returns True if successful."""
+        if self.conn is None:
+            return False
+        sql = """
+            INSERT INTO authorized_users (email, name)
+            VALUES (%s, %s)
+            ON CONFLICT DO NOTHING
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email, name))
+        self.conn.commit()
+        return True
+
+    def remove_authorized_user(self, email: str) -> bool:
+        """Remove a user from the authorized users list. Returns True if deleted."""
+        if self.conn is None:
+            return False
+        sql = "DELETE FROM authorized_users WHERE email = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email,))
+            deleted = cur.rowcount > 0
+        self.conn.commit()
+        return deleted
+
+    def get_authorized_users(self) -> List[Dict[str, Any]]:
+        """Return all authorized users."""
+        if self.conn is None:
+            return []
+        sql = """
+            SELECT email, name, authorized_at
+            FROM authorized_users
+            ORDER BY authorized_at DESC
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql)
+            return [
+                {
+                    "email": row[0],
+                    "name": row[1],
+                    "authorized_at": row[2]
+                }
+                for row in cur.fetchall()
+            ]
 
 def _get_secrets_from_aws() -> Dict[str, str]:
     if boto3 is None:
@@ -824,10 +884,24 @@ class _AossClient:  # pylint: disable=too-few-public-methods
 _OPENSEARCH_CLIENT_SINGLETON = None
 
 
-def get_opensearch_connection():
+def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-statements
     global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement
 
     host = (os.getenv("OPENSEARCH_HOST") or "").strip()
+
+    use_aws = os.getenv("USE_AWS_SECRETS", "").lower() in {"1", "true", "yes", "on"}
+    if not host and use_aws and boto3 is not None:
+        try:
+            sm = boto3.client("secretsmanager", region_name="us-east-1")
+            secret = json.loads(
+                sm.get_secret_value(SecretId="mirrulations/opensearch")["SecretString"]
+            )
+            raw_host = secret.get("host", "").strip()
+            if raw_host and not raw_host.startswith("http"):
+                raw_host = "https://" + raw_host
+            host = raw_host
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
 
     if "aoss.amazonaws.com" in host:
         if _OPENSEARCH_CLIENT_SINGLETON is not None:

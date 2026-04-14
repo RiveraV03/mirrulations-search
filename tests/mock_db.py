@@ -12,6 +12,8 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         self._collections = {}
         self._next_collection_id = 1
         self._jobs = {}
+        self._authorized_users = {}
+        self._admins = {"admin@example.com"}
 
     def _items(self) -> List[Dict[str, Any]]:
         return [
@@ -45,7 +47,7 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         """Return all dummy records without filtering."""
         return self._items()
 
-    def search( # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,unused-argument
+    def search(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,unused-argument
             self,
             query: str,
             document_type_param: str = None,
@@ -86,12 +88,41 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
     def get_agencies(self) -> List[str]:
         return sorted({item["agency_id"] for item in self._items()})
 
+    def is_authorized_user(self, email: str) -> bool:
+        """Return True if the email is in the authorized users list."""
+        return email.lower() in self._authorized_users
+
+    # --- Admin methods ---
+
+    def is_admin(self, email: str) -> bool:
+        """Return True if the email belongs to an admin."""
+        return email.lower() in self._admins
+
+    def get_authorized_users(self) -> List[Dict[str, Any]]:
+        """Return all authorized users."""
+        return list(self._authorized_users.values())
+
+    def add_authorized_user(self, email: str, name: str) -> None:
+        """Add or update an authorized user."""
+        self._authorized_users[email.lower()] = {
+            "email": email.lower(),
+            "name": name,
+            "authorized_at": "2026-01-01T00:00:00",
+        }
+
+    def remove_authorized_user(self, email: str) -> bool:
+        """Remove an authorized user. Returns True if found and removed."""
+        key = email.lower()
+        if key not in self._authorized_users:
+            return False
+        del self._authorized_users[key]
+        return True
+
     # pylint: disable=line-too-long
     def _opensearch_items(self) -> Dict[str, List[Dict[str, Any]]]:
         """Dummy OpenSearch data matching real production structure"""
         return {
             "documents": [
-                # CMS-2025-0001 - 1 document with Federal Register text
                 {
                     "docketId": "CMS-2025-0001",
                     "documentId": "CMS-2025-0001-0001",
@@ -99,121 +130,26 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
                 },
             ],
             "comments": [
-                # DEA-2024-0059 - 1 comment about marijuana
-                {
-                    "commentId": "DEA-2024-0059-16885",
-                    "commentText": "I am writing to express my support for the proposal to reclassify marijuana from a Schedule I to a Schedule III substance",
-                    "docketId": "DEA-2024-0059"
-                },
-                # CMS-2025-0240 - 2 comments about Medicare/phosphate
-                {
-                    "commentId": "CMS-2025-0240-0014",
-                    "commentText": "On behalf of kidney disease patients throughout the Midwest, I ask you to please reconsider the decision to move phosphate lowering treatments (PLT) out of Medicare Part D",
-                    "docketId": "CMS-2025-0240"
-                },
-                {
-                    "commentId": "CMS-2025-0240-0030",
-                    "commentText": "What if you were told the medication your patient depends on to stay alive is now harder to get. That's the reality for thousands of kidney patients since Medicare shifted Phosphate Lowering Therapies (PLTs)",
-                    "docketId": "CMS-2025-0240"
-                },
-                # CMS-2019-0100 - 7 comments about Home Health
-                {
-                    "commentId": "CMS-2019-0100-0402",
-                    "commentText": "Please see the attached document. Thank you",
-                    "docketId": "CMS-2019-0100"
-                },
-                {
-                    "commentId": "CMS-2019-0100-0415",
-                    "commentText": "Attached please find comments from BayCare HomeCare in Largo, Florida.",
-                    "docketId": "CMS-2019-0100"
-                },
-                {
-                    "commentId": "CMS-2019-0100-0420",
-                    "commentText": "The home health agency that I work for is located in Florida and serves approximately 250 unique Medicare beneficiaries each month",
-                    "docketId": "CMS-2019-0100"
-                },
-                {
-                    "commentId": "CMS-2019-0100-0423",
-                    "commentText": "Another behavioral assumption related to diagnostic coding is also very concerning to me",
-                    "docketId": "CMS-2019-0100"
-                },
-                {
-                    "commentId": "CMS-2019-0100-0438",
-                    "commentText": "On behalf of the Academy of Geriatric Physical Therapy I am writing to submit comments on the Medicare Home Health Prospective Payment System",
-                    "docketId": "CMS-2019-0100"
-                },
-                {
-                    "commentId": "CMS-2019-0100-0424",
-                    "commentText": "I am writing in response to the request for comments on the Centers for Medicare and Medicaid Services Home Health Prospective Payment System",
-                    "docketId": "CMS-2019-0100"
-                },
-                {
-                    "commentId": "CMS-2019-0100-0431",
-                    "commentText": "Seema Verma, Administrator Centers for Medicare and Medicaid Services",
-                    "docketId": "CMS-2019-0100"
-                },
+                {"commentId": "DEA-2024-0059-16885", "commentText": "I am writing to express my support for the proposal to reclassify marijuana from a Schedule I to a Schedule III substance", "docketId": "DEA-2024-0059"},
+                {"commentId": "CMS-2025-0240-0014", "commentText": "On behalf of kidney disease patients throughout the Midwest, I ask you to please reconsider the decision to move phosphate lowering treatments (PLT) out of Medicare Part D", "docketId": "CMS-2025-0240"},
+                {"commentId": "CMS-2025-0240-0030", "commentText": "What if you were told the medication your patient depends on to stay alive is now harder to get. That's the reality for thousands of kidney patients since Medicare shifted Phosphate Lowering Therapies (PLTs)", "docketId": "CMS-2025-0240"},
+                {"commentId": "CMS-2019-0100-0402", "commentText": "Please see the attached document. Thank you", "docketId": "CMS-2019-0100"},
+                {"commentId": "CMS-2019-0100-0415", "commentText": "Attached please find comments from BayCare HomeCare in Largo, Florida.", "docketId": "CMS-2019-0100"},
+                {"commentId": "CMS-2019-0100-0420", "commentText": "The home health agency that I work for is located in Florida and serves approximately 250 unique Medicare beneficiaries each month", "docketId": "CMS-2019-0100"},
+                {"commentId": "CMS-2019-0100-0423", "commentText": "Another behavioral assumption related to diagnostic coding is also very concerning to me", "docketId": "CMS-2019-0100"},
+                {"commentId": "CMS-2019-0100-0438", "commentText": "On behalf of the Academy of Geriatric Physical Therapy I am writing to submit comments on the Medicare Home Health Prospective Payment System", "docketId": "CMS-2019-0100"},
+                {"commentId": "CMS-2019-0100-0424", "commentText": "I am writing in response to the request for comments on the Centers for Medicare and Medicaid Services Home Health Prospective Payment System", "docketId": "CMS-2019-0100"},
+                {"commentId": "CMS-2019-0100-0431", "commentText": "Seema Verma, Administrator Centers for Medicare and Medicaid Services", "docketId": "CMS-2019-0100"},
             ],
             "comments_extracted_text": [
-                # DEA-2024-0059 - 1 extracted text about cannabis
-                {
-                    "attachmentId": "DEA-2024-0059-24062-1",
-                    "commentId": "DEA-2024-0059-24062",
-                    "docketId": "DEA-2024-0059",
-                    "extractedMethod": "pdfminer",
-                    "extractedText": "I am providing comments in "
-                    "support of the rescheduling of botanical cannabis. The Department of Health and Human Services appropriately concluded that cannabis has a currently accepted medical use"
-                },
-                # CMS-2025-0240 - 4 extracted texts about Medicare/ESRD
-                {
-                    "attachmentId": "CMS-2025-0240-0203-1",
-                    "commentId": "CMS-2025-0240-0203",
-                    "docketId": "CMS-2025-0240",
-                    "extractedMethod": "pypdf",
-                    "extractedText": "RE: Medicare End-Stage Renal Disease Prospective Payment System for CY 2026"
-                },
-                {
-                    "attachmentId": "CMS-2025-0240-0156-1",
-                    "commentId": "CMS-2025-0240-0156",
-                    "docketId": "CMS-2025-0240",
-                    "extractedMethod": "pypdf",
-                    "extractedText": "Dialysis Patient Citizens August 27, 2025 Medicare ESRD Prospective Payment System"
-                },
-                {
-                    "attachmentId": "CMS-2025-0240-0168-1",
-                    "commentId": "CMS-2025-0240-0168",
-                    "docketId": "CMS-2025-0240",
-                    "extractedMethod": "pypdf",
-                    "extractedText": "RE: Medicare Program End-Stage Renal Disease Prospective Payment System"
-                },
-                {
-                    "attachmentId": "CMS-2025-0240-0165-1",
-                    "commentId": "CMS-2025-0240-0165",
-                    "docketId": "CMS-2025-0240",
-                    "extractedMethod": "pypdf",
-                    "extractedText": "The Honorable Mehmet Oz Administrator Centers for Medicare and Medicaid Services"
-                },
-                # CMS-2019-0100 - 3 extracted texts about Home Health/Medicare
-                {
-                    "attachmentId": "CMS-2019-0100-0177-1",
-                    "commentId": "CMS-2019-0100-0177",
-                    "docketId": "CMS-2019-0100",
-                    "extractedMethod": "pdfminer",
-                    "extractedText": "RE: Medicare and Medicaid Programs CY 2020 Home Health Prospective Payment System"
-                },
-                {
-                    "attachmentId": "CMS-2019-0100-0519-1",
-                    "commentId": "CMS-2019-0100-0519",
-                    "docketId": "CMS-2019-0100",
-                    "extractedMethod": "pdfminer",
-                    "extractedText": "Seema Verma, Administrator Centers for Medicare & Medicaid Services"
-                },
-                {
-                    "attachmentId": "CMS-2019-0100-0205-1",
-                    "commentId": "CMS-2019-0100-0205",
-                    "docketId": "CMS-2019-0100",
-                    "extractedMethod": "pdfminer",
-                    "extractedText": "CMS-1711-P proposes several significant changes for Home Health Provider community"
-                },
+                {"attachmentId": "DEA-2024-0059-24062-1", "commentId": "DEA-2024-0059-24062", "docketId": "DEA-2024-0059", "extractedMethod": "pdfminer", "extractedText": "I am providing comments in support of the rescheduling of botanical cannabis. The Department of Health and Human Services appropriately concluded that cannabis has a currently accepted medical use"},
+                {"attachmentId": "CMS-2025-0240-0203-1", "commentId": "CMS-2025-0240-0203", "docketId": "CMS-2025-0240", "extractedMethod": "pypdf", "extractedText": "RE: Medicare End-Stage Renal Disease Prospective Payment System for CY 2026"},
+                {"attachmentId": "CMS-2025-0240-0156-1", "commentId": "CMS-2025-0240-0156", "docketId": "CMS-2025-0240", "extractedMethod": "pypdf", "extractedText": "Dialysis Patient Citizens August 27, 2025 Medicare ESRD Prospective Payment System"},
+                {"attachmentId": "CMS-2025-0240-0168-1", "commentId": "CMS-2025-0240-0168", "docketId": "CMS-2025-0240", "extractedMethod": "pypdf", "extractedText": "RE: Medicare Program End-Stage Renal Disease Prospective Payment System"},
+                {"attachmentId": "CMS-2025-0240-0165-1", "commentId": "CMS-2025-0240-0165", "docketId": "CMS-2025-0240", "extractedMethod": "pypdf", "extractedText": "The Honorable Mehmet Oz Administrator Centers for Medicare and Medicaid Services"},
+                {"attachmentId": "CMS-2019-0100-0177-1", "commentId": "CMS-2019-0100-0177", "docketId": "CMS-2019-0100", "extractedMethod": "pdfminer", "extractedText": "RE: Medicare and Medicaid Programs CY 2020 Home Health Prospective Payment System"},
+                {"attachmentId": "CMS-2019-0100-0519-1", "commentId": "CMS-2019-0100-0519", "docketId": "CMS-2019-0100", "extractedMethod": "pdfminer", "extractedText": "Seema Verma, Administrator Centers for Medicare & Medicaid Services"},
+                {"attachmentId": "CMS-2019-0100-0205-1", "commentId": "CMS-2019-0100-0205", "docketId": "CMS-2019-0100", "extractedMethod": "pdfminer", "extractedText": "CMS-1711-P proposes several significant changes for Home Health Provider community"},
             ]
         }
 
@@ -221,26 +157,16 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
             self,
             terms: List[str],
             opensearch_client=None) -> List[Dict[str, Any]]:
-        """
-        Mock version that mirrors OpenSearch behavior:
-        - documents: documentText (and aligns with documents index)
-        - comments: commentText → comment_match_count
-        - comments_extracted_text: extractedText → document_match_count (distinct commentId)
-        """
         data = self._opensearch_items()
 
         def matches_phrase(text: str, term: str) -> bool:
-            """Simple phrase matching - term appears in text"""
             if text is None:
                 return False
             return term.lower() in text.lower()
 
         matching_docs = [
             doc for doc in data["documents"]
-            if any(
-                matches_phrase(doc.get("documentText", ""), term)
-                for term in terms
-            )
+            if any(matches_phrase(doc.get("documentText", ""), term) for term in terms)
         ]
 
         comment_ids_by_docket: Dict[str, Set[str]] = {}
@@ -259,36 +185,23 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
 
         for doc in matching_docs:
             docket_id = doc["docketId"]
-            docket_counts.setdefault(docket_id, {
-                "document_match_count": 0,
-                "comment_match_count": 0
-            })
+            docket_counts.setdefault(docket_id, {"document_match_count": 0, "comment_match_count": 0})
             docket_counts[docket_id]["document_match_count"] += 1
 
         for did, ids in extracted_ids_by_docket.items():
             if not ids:
                 continue
-            docket_counts.setdefault(did, {
-                "document_match_count": 0,
-                "comment_match_count": 0
-            })
+            docket_counts.setdefault(did, {"document_match_count": 0, "comment_match_count": 0})
             docket_counts[did]["document_match_count"] += len(ids)
 
         for did, ids in comment_ids_by_docket.items():
             if not ids:
                 continue
-            docket_counts.setdefault(did, {
-                "document_match_count": 0,
-                "comment_match_count": 0
-            })
+            docket_counts.setdefault(did, {"document_match_count": 0, "comment_match_count": 0})
             docket_counts[did]["comment_match_count"] = len(ids)
 
         return [
-            {
-                "docket_id": docket_id,
-                "document_match_count": counts["document_match_count"],
-                "comment_match_count": counts["comment_match_count"]
-            }
+            {"docket_id": docket_id, "document_match_count": counts["document_match_count"], "comment_match_count": counts["comment_match_count"]}
             for docket_id, counts in docket_counts.items()
         ]
 
@@ -317,8 +230,7 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         del self._collections[collection_id]
         return True
 
-    def add_docket_to_collection(
-            self, collection_id: int, docket_id: str, user_email: str) -> bool:
+    def add_docket_to_collection(self, collection_id: int, docket_id: str, user_email: str) -> bool:
         c = self._collections.get(collection_id)
         if c is None or c["user_email"] != user_email:
             return False
@@ -326,8 +238,7 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
             c["docket_ids"].append(docket_id)
         return True
 
-    def remove_docket_from_collection(
-            self, collection_id: int, docket_id: str, user_email: str) -> bool:
+    def remove_docket_from_collection(self, collection_id: int, docket_id: str, user_email: str) -> bool:
         c = self._collections.get(collection_id)
         if c is None or c["user_email"] != user_email:
             return False
@@ -335,14 +246,9 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         return True
 
     def get_docket_document_comment_totals(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-            self,
-            docket_ids: List[str],
-            opensearch_client=None) -> Dict[str, Dict[str, int]]:
-        # Denominators derived from the same dummy OpenSearch data used by
-        # text_match_terms(), so numerator/denominator are consistent.
+            self, docket_ids: List[str], opensearch_client=None) -> Dict[str, Dict[str, int]]:
         _ = opensearch_client
         data = self._opensearch_items()
-
         totals: Dict[str, Dict[str, int]] = {}
         docket_ids_str = {str(d) for d in docket_ids}
 
@@ -350,13 +256,9 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
             did = str(doc["docketId"])
             if did not in docket_ids_str:
                 continue
-            totals.setdefault(did, {
-                "document_total_count": 0,
-                "comment_total_count": 0,
-            })
+            totals.setdefault(did, {"document_total_count": 0, "comment_total_count": 0})
             totals[did]["document_total_count"] += 1
 
-        # Distinct commentId from comments index only (matches OpenSearch denominator).
         comment_ids_by_docket: Dict[str, Set[str]] = {}
         for comment in data["comments"]:
             did = str(comment["docketId"])
@@ -364,17 +266,13 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
                 continue
             comment_ids_by_docket.setdefault(did, set()).add(comment["commentId"])
         for did, cids in comment_ids_by_docket.items():
-            totals.setdefault(did, {
-                "document_total_count": 0,
-                "comment_total_count": 0,
-            })
+            totals.setdefault(did, {"document_total_count": 0, "comment_total_count": 0})
             totals[did]["comment_total_count"] = len(cids)
 
         return totals
 
     def create_download_job(  # pylint: disable=too-many-arguments,too-many-positional-arguments
             self, user_email, docket_ids, data_format, include_binaries):  # pylint: disable=unused-argument
-        """Mock create download job - returns a fake job id"""
         job_id = f"mock-job-{len(self._jobs) + 1}"
         self._jobs[job_id] = {
             "job_id": job_id,
@@ -388,9 +286,7 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         return job_id
 
     def get_download_job(self, job_id, user_email):  # pylint: disable=unused-argument
-        """Mock get download job - returns job or None"""
         return self._jobs.get(job_id)
 
     def get_download_s3_url(self, job_id, user_email):  # pylint: disable=unused-argument
-        """Mock get download s3 url - returns None since jobs are pending in mock"""
         return None
