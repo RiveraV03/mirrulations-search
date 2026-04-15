@@ -853,12 +853,36 @@ def test_request_single_download_pushes_to_redis(client):  # pylint: disable=red
         assert call_args[2] == ["CMS-2025-0240"]
 
 
-def test_request_download_redis_failure_still_returns_job_id(client):  # pylint: disable=redefined-outer-name
-    """POST /download/request returns 202 even if Redis push fails"""
+def test_request_download_redis_failure_marks_job_failed(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request returns 503 and marks the job failed if Redis push fails"""
     with patch('mirrsearch.app._push_job_to_redis', side_effect=Exception("Redis down")):
         response = client.post('/download/request', json={
             "docket_ids": ["CMS-2025-0240"],
             "format": "raw",
             "include_binaries": False
         })
-        assert response.status_code == 202
+        assert response.status_code == 503
+        data = response.get_json()
+        assert data["error"] == "Unable to queue download job"
+
+        status_response = client.get('/download/status/mock-job-1')
+        assert status_response.status_code == 200
+        status_data = status_response.get_json()
+        assert status_data["status"] == "failed"
+
+
+def test_request_single_download_redis_failure_marks_job_failed(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request/<docket_id> returns 503 and marks the job failed if Redis push fails"""
+    with patch('mirrsearch.app._push_job_to_redis', side_effect=Exception("Redis down")):
+        response = client.post('/download/request/CMS-2025-0240', json={
+            "format": "raw",
+            "include_binaries": False
+        })
+        assert response.status_code == 503
+        data = response.get_json()
+        assert data["error"] == "Unable to queue download job"
+
+        status_response = client.get('/download/status/mock-job-1')
+        assert status_response.status_code == 200
+        status_data = status_response.get_json()
+        assert status_data["status"] == "failed"

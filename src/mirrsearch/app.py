@@ -112,6 +112,12 @@ def _push_job_to_redis(job_id, user_email, docket_ids, data_format, include_bina
     _get_redis_client().rpush("download_queue", job_payload)
 
 
+def _handle_redis_enqueue_failure(db_layer, job_id):
+    """Mark the job failed after enqueue errors and return an API error response."""
+    db_layer.update_download_job_status(job_id, "failed")
+    return jsonify({"error": "Unable to queue download job"}), 503
+
+
 def _get_user_from_cookie(oauth_handler):
     """Extract and validate user info from JWT cookie. Returns dict or None."""
     token = request.cookies.get("jwt_token")
@@ -308,7 +314,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         try:
             _push_job_to_redis(job_id, user["email"], docket_ids, data_format, include_binaries)
         except Exception:  # pylint: disable=broad-except
-            pass  # Job saved in Postgres, Redis push failure is non-fatal
+            return _handle_redis_enqueue_failure(db_layer, job_id)
         return jsonify({"job_id": job_id, "status": "started"}), 202
 
 
@@ -386,7 +392,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         try:
             _push_job_to_redis(job_id, user["email"], [docket_id], data_format, include_binaries)
         except Exception:  # pylint: disable=broad-except
-            pass  # Job saved in Postgres, Redis push failure is non-fatal
+            return _handle_redis_enqueue_failure(db_layer, job_id)
         return jsonify({"job_id": job_id, "status": "started"}), 202
 
     @flask_app.route("/collections")
