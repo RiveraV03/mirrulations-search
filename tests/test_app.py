@@ -871,8 +871,9 @@ def test_request_download_redis_failure_marks_job_failed(client):  # pylint: dis
         assert status_data["status"] == "failed"
 
 
-def test_request_single_download_redis_failure_marks_job_failed(client):  # pylint: disable=redefined-outer-name
-    """POST /download/request/<docket_id> returns 503 and marks the job failed if Redis push fails"""
+def test_single_download_redis_failure_marks_job_failed(  # pylint: disable=redefined-outer-name
+        client):
+    """Single-docket download returns 503 and marks the job failed on Redis errors."""
     with patch('mirrsearch.app._push_job_to_redis', side_effect=Exception("Redis down")):
         response = client.post('/download/request/CMS-2025-0240', json={
             "format": "raw",
