@@ -28,13 +28,19 @@ class MockOAuthHandler:
 
 
 @pytest.fixture
-def app(tmp_path):
+def mock_db():
+    """Shared MockDBLayer instance for tests that need to inspect it."""
+    return MockDBLayer()
+
+
+@pytest.fixture
+def app(tmp_path, mock_db):  # pylint: disable=redefined-outer-name
     """Create and configure a test app instance"""
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "index.html").write_text("<html></html>")
     test_app = create_app(
-        dist_dir=str(dist), db_layer=MockDBLayer(), oauth_handler=MockOAuthHandler()
+        dist_dir=str(dist), db_layer=mock_db, oauth_handler=MockOAuthHandler()
     )
     test_app.config['TESTING'] = True
     return test_app
@@ -694,6 +700,33 @@ def test_download_file_requires_auth(app):  # pylint: disable=redefined-outer-na
     """GET /download/<job_id> returns 401 without cookie"""
     response = app.test_client().get('/download/some-job-id')
     assert response.status_code == 401
+
+
+def test_download_file_redirects_to_s3_url(client, mock_db):  # pylint: disable=redefined-outer-name
+    """GET /download/<job_id> redirects to S3 URL when job is ready"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
+    mock_db.set_job_ready(job_id, "https://s3.example.com/test.zip")
+    response = client.get(f'/download/{job_id}')
+    assert response.status_code == 302
+    assert "s3.example.com" in response.headers["Location"]
+
+
+def test_download_file_no_s3_url_returns_404(client, mock_db):  # pylint: disable=redefined-outer-name
+    """GET /download/<job_id> returns 404 when job is ready but s3_url is missing"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
+    mock_db.update_download_job_status(job_id, "ready")
+    response = client.get(f'/download/{job_id}')
+    assert response.status_code == 404
 
 
 def test_search_with_date_filters(client): # pylint: disable=redefined-outer-name
