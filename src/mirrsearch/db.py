@@ -377,7 +377,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             docket_counts: Dict, buckets: List, agg_name: str, count_key: str) -> None:
         """Add match counts from OpenSearch buckets into docket_counts in place."""
         for bucket in buckets:
-            match_count = bucket[agg_name]["doc_count"]
+            match_count = bucket.get(agg_name, {}).get("doc_count", 0)
             if match_count > 0:
                 docket_id = bucket["key"]
                 docket_counts.setdefault(
@@ -483,7 +483,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
         """Execute all OpenSearch queries in parallel and merge their results."""
         def buckets(resp):
-            return resp["aggregations"]["by_docket"]["buckets"]
+            return resp.get("aggregations", {}).get("by_docket", {}).get("buckets", [])
 
         def safe_search(index: str, body: Dict) -> Dict:
             try:
@@ -491,6 +491,21 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             except Exception as e:  # pylint: disable=broad-exception-caught
                 print(f"OpenSearch index query failed for '{index}': {e}")
                 return {"aggregations": {"by_docket": {"buckets": []}}}
+
+        def fetch_doc_totals_from_sql() -> Dict[str, int]:
+            """Fetch per-docket document counts from Postgres (documentsWithFRdoc table)."""
+            if self.conn is None:
+                return {}
+            try:
+                with self.conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT docket_id, COUNT(*) FROM documentsWithFRdoc "
+                        "GROUP BY docket_id"
+                    )
+                    return {row[0]: row[1] for row in cur.fetchall()}
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(f"SQL document totals query failed: {e}")
+                return {}
 
         doc_query = self._build_docket_agg_query(
             "matching_docs",
@@ -505,8 +520,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             "matching_extracted",
             [{"match": {"extractedText": t}} for t in terms],
         )
-        # Total-comment query: all comments per docket regardless of search term,
-        # used to populate comment_total_count without a separate round-trip later.
+        # Total-comment query: all comments per docket regardless of search term.
         total_comment_query = {
             "size": 0,
             "aggs": {
@@ -518,41 +532,25 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 }
             }
         }
-        # Total-document query: all documents per docket from documents_text index.
-        total_doc_query = {
-            "size": 0,
-            "aggs": {
-                "by_docket": {
-                    "terms": {
-                        "field": "docketId.keyword",
-                        "size": _opensearch_match_docket_bucket_size(),
-                    }
-                }
-            }
-        }
 
-        # Fire all five queries in parallel instead of sequentially
+        # Fire 4 OpenSearch queries + 1 SQL query in parallel
         with ThreadPoolExecutor(max_workers=5) as executor:
             f_doc = executor.submit(safe_search, "documents_text", doc_query)
             f_comment = executor.submit(safe_search, "comments", comment_query)
             f_extracted = executor.submit(safe_search, "comments_extracted_text", extracted_query)
             f_total_comments = executor.submit(safe_search, "comments", total_comment_query)
-            f_total_docs = executor.submit(safe_search, "documents_text", total_doc_query)
+            f_total_docs_sql = executor.submit(fetch_doc_totals_from_sql)
 
             doc_resp = f_doc.result()
             comment_resp = f_comment.result()
             extracted_resp = f_extracted.result()
             total_comment_resp = f_total_comments.result()
-            total_doc_resp = f_total_docs.result()
+            total_doc_map: Dict[str, int] = f_total_docs_sql.result()
 
-        # Build totals maps from the parallel responses
+        # Build total-comment map from the parallel response
         total_comment_map: Dict[str, int] = {}
         for bucket in buckets(total_comment_resp):
-            total_comment_map[str(bucket["key"])] = bucket["doc_count"]
-
-        total_doc_map: Dict[str, int] = {}
-        for bucket in buckets(total_doc_resp):
-            total_doc_map[str(bucket["key"])] = bucket["doc_count"]
+            total_comment_map[str(bucket["key"])] = bucket.get("doc_count", 0)
 
         # Accumulate match counts
         docket_counts: Dict = {}
@@ -574,8 +572,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             )
             docket_counts[did]["comment_match_count"] = len(merged)
 
-        # Embed totals directly into each result so internal_logic doesn't need
-        # to make a separate get_docket_document_comment_totals() call
+        # Embed totals directly into each result
         return [
             {
                 "docket_id": did,

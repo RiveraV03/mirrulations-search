@@ -253,19 +253,38 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             })
         return full_text_rows
 
-    def _add_totals_and_scores(self, rows, os_counts_by_id):
+    def _add_totals_and_scores(self, rows, os_counts_by_id): # pylint: disable=too-many-locals
         """
         Add document/comment totals and correlation scores to rows.
 
-        Totals are read directly from os_counts_by_id (already in memory from
-        text_match_terms), eliminating the previous separate round-trip to OpenSearch.
-        Falls back to zeros if a docket has no OpenSearch data.
+        For dockets present in os_counts_by_id (i.e. they had a full-text match),
+        totals are read directly from that dict.
+        
+        For dockets absent from os_counts_by_id (title-only SQL matches with no
+        OpenSearch hit), we fall back to a single batched call to
+        get_docket_document_comment_totals so their denominators are still correct.
         """
+        missing_ids = [
+            _row_docket_key(row)
+            for row in rows
+            if _row_docket_key(row) not in os_counts_by_id
+        ]
+        fallback_totals = (
+            self.db_layer.get_docket_document_comment_totals(missing_ids)
+            if missing_ids
+            else {}
+        )
+
         for row in rows:
             did = _row_docket_key(row)
-            hit = os_counts_by_id.get(did, {})
-            row["document_total_count"] = hit.get("document_total_count", 0)
-            row["comment_total_count"] = hit.get("comment_total_count", 0)
+            if did in os_counts_by_id:
+                hit = os_counts_by_id[did]
+                row["document_total_count"] = hit.get("document_total_count", 0)
+                row["comment_total_count"] = hit.get("comment_total_count", 0)
+            else:
+                totals = fallback_totals.get(did, {})
+                row["document_total_count"] = totals.get("document_total_count", 0)
+                row["comment_total_count"] = totals.get("comment_total_count", 0)
             row["correlation_score"] = _correlation_score(row)
 
     def _sort_results(self, rows, sort_by=None):
