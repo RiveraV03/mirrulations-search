@@ -8,9 +8,20 @@ from mirrsearch.internal_logic import InternalLogic
 class _FakeDbMerge:
     def __init__(self, sql_rows, os_hits, by_id_rows):
         self._sql_rows = sql_rows
-        self._os_hits = os_hits
         self._by_id_rows = by_id_rows
         self.get_dockets_by_ids_calls = []
+        # Embed totals into os_hits so internal_logic._add_totals_and_scores
+        # can read document_total_count / comment_total_count directly from
+        # os_counts_by_id for dockets that have an OpenSearch match.
+        _totals = {
+            "A": {"document_total_count": 10, "comment_total_count": 2},
+            "B": {"document_total_count": 4, "comment_total_count": 5},
+            "C": {"document_total_count": 7, "comment_total_count": 3},
+        }
+        self._os_hits = [
+            {**hit, **_totals.get(str(hit["docket_id"]), {})}
+            for hit in os_hits
+        ]
 
     def search(self, query, *args, **kwargs):  # pylint: disable=unused-argument
         return list(self._sql_rows)
@@ -23,7 +34,7 @@ class _FakeDbMerge:
         return list(self._by_id_rows)
 
     def get_docket_document_comment_totals(self, docket_ids, opensearch_client=None):  # pylint: disable=unused-argument
-        # Provide deterministic denominators for assertions.
+        # Fallback for title-only dockets not covered by os_counts_by_id.
         dids = [str(d) for d in docket_ids]
         totals = {
             "A": {"document_total_count": 10, "comment_total_count": 2},

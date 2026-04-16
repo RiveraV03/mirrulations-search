@@ -201,9 +201,32 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
             docket_counts[did]["comment_match_count"] = len(ids)
 
         return [
-            {"docket_id": docket_id, "document_match_count": counts["document_match_count"], "comment_match_count": counts["comment_match_count"]}
+            {
+                "docket_id": docket_id,
+                "document_match_count": counts["document_match_count"],
+                "comment_match_count": counts["comment_match_count"],
+                "document_total_count": self._total_documents(docket_id, data),
+                "comment_total_count": self._total_comments(docket_id, data),
+            }
             for docket_id, counts in docket_counts.items()
         ]
+
+    @staticmethod
+    def _total_documents(docket_id: str, data: dict) -> int:
+        """Count all documents for a docket across all indices."""
+        return sum(1 for doc in data["documents"] if doc["docketId"] == docket_id)
+
+    @staticmethod
+    def _total_comments(docket_id: str, data: dict) -> int:
+        """Count distinct commentIds for a docket across comments and extracted text."""
+        ids: set = set()
+        for comment in data["comments"]:
+            if comment["docketId"] == docket_id:
+                ids.add(comment["commentId"])
+        for extracted in data["comments_extracted_text"]:
+            if extracted["docketId"] == docket_id:
+                ids.add(extracted["commentId"])
+        return len(ids)
 
     def get_dockets_by_ids(self, docket_ids: List[str]) -> List[Dict[str, Any]]:  # pylint: disable=unused-argument
         return []
