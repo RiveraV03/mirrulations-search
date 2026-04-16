@@ -1,9 +1,11 @@
 import json
 from dataclasses import dataclass
 from typing import List, Dict, Any, Set
+from concurrent.futures import ThreadPoolExecutor
 import os
 import psycopg2
 from opensearchpy import OpenSearch
+
 try:
     import requests
     from requests_aws4auth import AWS4Auth
@@ -477,9 +479,9 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             print(f"Comment totals query failed: {e}")
         return totals
 
-    def _run_text_match_queries(  # pylint: disable=too-many-locals
+    def _run_text_match_queries(  # pylint: disable=too-many-locals,too-many-statements
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
-        """Execute all three OpenSearch queries and merge their results."""
+        """Execute all OpenSearch queries in parallel and merge their results."""
         def buckets(resp):
             return resp["aggregations"]["by_docket"]["buckets"]
 
@@ -490,29 +492,70 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 print(f"OpenSearch index query failed for '{index}': {e}")
                 return {"aggregations": {"by_docket": {"buckets": []}}}
 
+        doc_query = self._build_docket_agg_query(
+            "matching_docs",
+            [{"multi_match": {"query": t, "fields": ["title", "documentText"]}}
+             for t in terms],
+        )
+        comment_query = self._build_docket_agg_query_unique_comments(
+            "matching_comments",
+            [{"match": {"commentText": t}} for t in terms],
+        )
+        extracted_query = self._build_docket_agg_query_unique_comments(
+            "matching_extracted",
+            [{"match": {"extractedText": t}} for t in terms],
+        )
+        # Total-comment query: all comments per docket regardless of search term,
+        # used to populate comment_total_count without a separate round-trip later.
+        total_comment_query = {
+            "size": 0,
+            "aggs": {
+                "by_docket": {
+                    "terms": {
+                        "field": "docketId.keyword",
+                        "size": _opensearch_match_docket_bucket_size(),
+                    }
+                }
+            }
+        }
+        # Total-document query: all documents per docket from documents_text index.
+        total_doc_query = {
+            "size": 0,
+            "aggs": {
+                "by_docket": {
+                    "terms": {
+                        "field": "docketId.keyword",
+                        "size": _opensearch_match_docket_bucket_size(),
+                    }
+                }
+            }
+        }
+
+        # Fire all five queries in parallel instead of sequentially
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            f_doc = executor.submit(safe_search, "documents_text", doc_query)
+            f_comment = executor.submit(safe_search, "comments", comment_query)
+            f_extracted = executor.submit(safe_search, "comments_extracted_text", extracted_query)
+            f_total_comments = executor.submit(safe_search, "comments", total_comment_query)
+            f_total_docs = executor.submit(safe_search, "documents_text", total_doc_query)
+
+            doc_resp = f_doc.result()
+            comment_resp = f_comment.result()
+            extracted_resp = f_extracted.result()
+            total_comment_resp = f_total_comments.result()
+            total_doc_resp = f_total_docs.result()
+
+        # Build totals maps from the parallel responses
+        total_comment_map: Dict[str, int] = {}
+        for bucket in buckets(total_comment_resp):
+            total_comment_map[str(bucket["key"])] = bucket["doc_count"]
+
+        total_doc_map: Dict[str, int] = {}
+        for bucket in buckets(total_doc_resp):
+            total_doc_map[str(bucket["key"])] = bucket["doc_count"]
+
+        # Accumulate match counts
         docket_counts: Dict = {}
-        doc_resp = safe_search(
-            "documents_text",
-            self._build_docket_agg_query(
-                "matching_docs",
-                [{"multi_match": {"query": t, "fields": ["title", "documentText"]}}
-                 for t in terms],
-            ),
-        )
-        comment_resp = safe_search(
-            "comments",
-            self._build_docket_agg_query_unique_comments(
-                "matching_comments",
-                [{"match": {"commentText": t}} for t in terms],
-            ),
-        )
-        extracted_resp = safe_search(
-            "comments_extracted_text",
-            self._build_docket_agg_query_unique_comments(
-                "matching_extracted",
-                [{"match": {"extractedText": t}} for t in terms],
-            ),
-        )
         self._accumulate_counts(
             docket_counts, buckets(doc_resp), "matching_docs", "document_match_count"
         )
@@ -530,7 +573,18 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 did, {"document_match_count": 0, "comment_match_count": 0}
             )
             docket_counts[did]["comment_match_count"] = len(merged)
-        return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
+
+        # Embed totals directly into each result so internal_logic doesn't need
+        # to make a separate get_docket_document_comment_totals() call
+        return [
+            {
+                "docket_id": did,
+                **counts,
+                "document_total_count": total_doc_map.get(did, 0),
+                "comment_total_count": total_comment_map.get(did, 0),
+            }
+            for did, counts in docket_counts.items()
+        ]
 
     def get_collections(self, user_email: str) -> List[Dict[str, Any]]:
         """Return all collections belonging to the given user."""
