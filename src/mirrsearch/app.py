@@ -450,6 +450,12 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         if not s3_url:
             return jsonify({"error": "Download file not found"}), 404
 
+        if s3_url.startswith("/"):
+            return send_from_directory(
+                os.path.dirname(s3_url),
+                os.path.basename(s3_url),
+                as_attachment=True
+            )
         return redirect(s3_url)
 
     @flask_app.route("/dockets", methods=["GET"])
