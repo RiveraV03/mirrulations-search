@@ -71,16 +71,10 @@ export default function DownloadModal({ collectionName, docketIds, onClose }) {
 
 const handleDownload = async () => {
   if (selected.size === 0) return;
-  // setError(null);
   setSubmitting(true);
-  setMessage(null)
+  setMessage(null);
 
-  // Just show a message instead of making a request or setting an error
-  setMessage("Download is not ready yet.");
-
-  setSubmitting(false);
-
-  /*try {
+  try {
     const response = await fetch("/download/request", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -99,7 +93,7 @@ const handleDownload = async () => {
     setError("Failed to request download.");
   } finally {
     setSubmitting(false);
-  }*/
+  }
 };
 
   const handleDownloadFile = () => {
