@@ -216,8 +216,8 @@ CREATE TABLE IF NOT EXISTS collection_dockets (
 -- DOWNLOAD JOBS TABLE
 -- =========================================
 -- Tracks async download requests submitted by users.
--- status: 'pending' | 'processing' | 'complete' | 'failed'
--- s3_path: set once the archive is uploaded to S3 (NULL until complete)
+-- status: 'pending' | 'processing' | 'ready' | 'failed'
+-- s3_path: set once the archive is uploaded to S3 (NULL until ready)
 -- expires_at: used by prune_expired_download_jobs to clean up old records
 
 CREATE TABLE IF NOT EXISTS download_jobs (

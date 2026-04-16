@@ -577,11 +577,12 @@ def test_get_opensearch_connection(mock_opensearch):
 
 def test_request_download_returns_job_id(client):  # pylint: disable=redefined-outer-name
     """POST /download/request returns job_id and started status"""
-    response = client.post('/download/request', json={
-        "docket_ids": ["CMS-2025-0240"],
-        "format": "raw",
-        "include_binaries": False
-    })
+    with patch('mirrsearch.app._push_job_to_redis'):
+        response = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        })
     assert response.status_code == 202
     data = response.get_json()
     assert "job_id" in data
@@ -629,21 +630,24 @@ def test_request_download_requires_valid_format(client):  # pylint: disable=rede
 
 def test_request_download_accepts_csv_format(client):  # pylint: disable=redefined-outer-name
     """POST /download/request accepts csv as a valid format"""
-    response = client.post('/download/request', json={
-        "docket_ids": ["CMS-2025-0240"],
-        "format": "csv",
-        "include_binaries": False
-    })
+    with patch('mirrsearch.app._push_job_to_redis'):
+        response = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "csv",
+            "include_binaries": False
+        })
     assert response.status_code == 202
+
 
 
 def test_download_status_returns_job_info(client):  # pylint: disable=redefined-outer-name
     """GET /download/status/<job_id> returns job status"""
-    job_id = client.post('/download/request', json={
-        "docket_ids": ["CMS-2025-0240"],
-        "format": "raw",
-        "include_binaries": False
-    }).get_json()["job_id"]
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
     response = client.get(f'/download/status/{job_id}')
     assert response.status_code == 200
     data = response.get_json()
@@ -652,6 +656,7 @@ def test_download_status_returns_job_info(client):  # pylint: disable=redefined-
     assert "format" in data
     assert "docket_ids" in data
     assert "created_at" in data
+
 
 
 def test_download_status_not_found(client):  # pylint: disable=redefined-outer-name
@@ -668,13 +673,15 @@ def test_download_status_requires_auth(app):  # pylint: disable=redefined-outer-
 
 def test_download_file_not_ready(client):  # pylint: disable=redefined-outer-name
     """GET /download/<job_id> returns 202 when job is still pending"""
-    job_id = client.post('/download/request', json={
-        "docket_ids": ["CMS-2025-0240"],
-        "format": "raw",
-        "include_binaries": False
-    }).get_json()["job_id"]
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
     response = client.get(f'/download/{job_id}')
     assert response.status_code == 202
+
 
 
 def test_download_file_not_found(client):  # pylint: disable=redefined-outer-name
@@ -774,10 +781,11 @@ def test_internal_logic_error_handling(client): # pylint: disable=redefined-oute
 
 def test_request_single_download_returns_job_id(client):  # pylint: disable=redefined-outer-name
     """POST /download/request/<docket_id> returns job_id and started status"""
-    response = client.post('/download/request/CMS-2025-0240', json={
-        "format": "raw",
-        "include_binaries": False
-    })
+    with patch('mirrsearch.app._push_job_to_redis'):
+        response = client.post('/download/request/CMS-2025-0240', json={
+            "format": "raw",
+            "include_binaries": False
+        })
     assert response.status_code == 202
     data = response.get_json()
     assert "job_id" in data
@@ -804,21 +812,87 @@ def test_request_single_download_requires_valid_format(client):  # pylint: disab
 
 def test_request_single_download_accepts_csv_format(client):  # pylint: disable=redefined-outer-name
     """POST /download/request/<docket_id> accepts csv as a valid format"""
-    response = client.post('/download/request/CMS-2025-0240', json={
-        "format": "csv",
-        "include_binaries": False
-    })
+    with patch('mirrsearch.app._push_job_to_redis'):
+        response = client.post('/download/request/CMS-2025-0240', json={
+            "format": "csv",
+            "include_binaries": False
+        })
     assert response.status_code == 202
 
 
 def test_request_single_download_status_checkable(client):  # pylint: disable=redefined-outer-name
     """Job created via single docket endpoint is retrievable via status endpoint"""
-    job_id = client.post('/download/request/CMS-2025-0240', json={
-        "format": "raw",
-        "include_binaries": False
-    }).get_json()["job_id"]
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = client.post('/download/request/CMS-2025-0240', json={
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
     response = client.get(f'/download/status/{job_id}')
     assert response.status_code == 200
     data = response.get_json()
     assert data["job_id"] == job_id
     assert data["docket_ids"] == ["CMS-2025-0240"]
+
+def test_request_download_pushes_to_redis(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request pushes job to Redis queue"""
+    with patch('mirrsearch.app._push_job_to_redis') as mock_push:
+        response = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        })
+        assert response.status_code == 202
+        assert mock_push.called
+        call_args = mock_push.call_args[0]
+        assert call_args[2] == ["CMS-2025-0240"]
+        assert call_args[3] == "raw"
+        assert call_args[4] is False
+
+
+def test_request_single_download_pushes_to_redis(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request/<docket_id> pushes job to Redis queue"""
+    with patch('mirrsearch.app._push_job_to_redis') as mock_push:
+        response = client.post('/download/request/CMS-2025-0240', json={
+            "format": "raw",
+            "include_binaries": False
+        })
+        assert response.status_code == 202
+        assert mock_push.called
+        call_args = mock_push.call_args[0]
+        assert call_args[2] == ["CMS-2025-0240"]
+
+
+def test_request_download_redis_failure_marks_job_failed(client):  # pylint: disable=redefined-outer-name
+    """POST /download/request returns 503 and marks the job failed if Redis push fails"""
+    with patch('mirrsearch.app._push_job_to_redis', side_effect=Exception("Redis down")):
+        response = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        })
+        assert response.status_code == 503
+        data = response.get_json()
+        assert data["error"] == "Unable to queue download job"
+
+        status_response = client.get('/download/status/mock-job-1')
+        assert status_response.status_code == 200
+        status_data = status_response.get_json()
+        assert status_data["status"] == "failed"
+
+
+def test_single_download_redis_failure_marks_job_failed(  # pylint: disable=redefined-outer-name
+        client):
+    """Single-docket download returns 503 and marks the job failed on Redis errors."""
+    with patch('mirrsearch.app._push_job_to_redis', side_effect=Exception("Redis down")):
+        response = client.post('/download/request/CMS-2025-0240', json={
+            "format": "raw",
+            "include_binaries": False
+        })
+        assert response.status_code == 503
+        data = response.get_json()
+        assert data["error"] == "Unable to queue download job"
+
+        status_response = client.get('/download/status/mock-job-1')
+        assert status_response.status_code == 200
+        status_data = status_response.get_json()
+        assert status_data["status"] == "failed"

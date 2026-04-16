@@ -491,7 +491,7 @@ def test_get_download_job_enforces_user_ownership():
 
 
 def test_update_download_job_status_no_conn_returns_false():
-    assert DBLayer().update_download_job_status("some-uuid", "complete") is False
+    assert DBLayer().update_download_job_status("some-uuid", "ready") is False
 
 
 def test_update_download_job_status_returns_true_when_updated():
@@ -513,7 +513,7 @@ def test_update_download_job_status_returns_true_when_updated():
 
     conn = RowcountConn()
     db = DBLayer(conn=conn)
-    result = db.update_download_job_status("some-uuid", "complete", s3_path="s3://bucket/file.zip")
+    result = db.update_download_job_status("some-uuid", "ready", s3_path="s3://bucket/file.zip")
     assert result is True
     assert conn.committed is True
 
@@ -537,7 +537,7 @@ def test_update_download_job_status_returns_false_when_not_found():
 
     conn = RowcountConn()
     db = DBLayer(conn=conn)
-    result = db.update_download_job_status("missing-uuid", "complete")
+    result = db.update_download_job_status("missing-uuid", "ready")
     assert result is False
 
 
