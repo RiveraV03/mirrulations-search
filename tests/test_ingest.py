@@ -61,15 +61,42 @@ def _docket_dir_with_derived_json_and_plain_txt(tmpdir: str) -> Path:
     return root
 
 
+def _docket_dir_with_document_content_htm(
+    tmpdir: str, docket_id: str, filename: str, html: str
+) -> None:
+    """Lay out ``raw-data/documents`` with one content HTM as if fetch succeeded."""
+    docs = Path(tmpdir) / docket_id / "raw-data" / "documents"
+    docs.mkdir(parents=True)
+    (docs / filename).write_text(html, encoding="utf-8")
+
+
+def _fake_fetch_docket_ready(tmpdir: str, mock_popen, mock_which) -> Path:
+    """Configure fetch mocks, create minimal docket tree, run ``fetch_docket``."""
+    mock_which.return_value = "/usr/local/bin/mirrulations-fetch"
+    mock_proc = MagicMock()
+    mock_proc.poll.side_effect = [None, 0]
+    mock_proc.returncode = 0
+    mock_popen.return_value.__enter__.return_value = mock_proc
+    did = "FAA-2025-0618"
+    _docket_dir_with_document_content_htm(
+        tmpdir,
+        did,
+        f"{did}-0001_content.htm",
+        "<html><body>Airworthiness</body></html>",
+    )
+    return fetch_docket(did, tmpdir)
+
+
 class TestFetchDocket:
     """Test docket file fetching functionality."""
 
-    @patch('ingest.subprocess.Popen')
-    def test_fetch_docket_success(self, mock_popen):
+    @patch("ingest.subprocess.Popen")
+    @patch("ingest.shutil.which")
+    def test_fetch_docket_success(self, mock_which, mock_popen):
         """Successfully fetch docket using mirrulations-fetch."""
+        mock_which.return_value = "/usr/local/bin/mirrulations-fetch"
         mock_proc = MagicMock()
-        mock_proc.poll.return_value = None  # Not finished
-        mock_proc.poll.side_effect = [None, 0]  # First returns None, then 0 (done)
+        mock_proc.poll.side_effect = [None, 0]
         mock_proc.returncode = 0
         mock_popen.return_value.__enter__.return_value = mock_proc
 
@@ -79,15 +106,18 @@ class TestFetchDocket:
 
             result = fetch_docket("FAA-2025-0618", tmpdir)
 
+            mock_which.assert_called_once_with("mirrulations-fetch")
             assert result == docket_dir
+            assert result.name == "FAA-2025-0618"
             mock_popen.assert_called_once()
             call_args = mock_popen.call_args
-            assert "mirrulations-fetch" in call_args[0][0]
-            assert "FAA-2025-0618" in call_args[0][0]
+            assert call_args[0][0] == ["/usr/local/bin/mirrulations-fetch", "FAA-2025-0618"]
 
-    @patch('ingest.subprocess.Popen')
-    def test_fetch_docket_not_found(self, mock_popen):
+    @patch("ingest.subprocess.Popen")
+    @patch("ingest.shutil.which")
+    def test_fetch_docket_not_found(self, mock_which, mock_popen):
         """Handle missing docket directory after fetch."""
+        mock_which.return_value = "/usr/local/bin/mirrulations-fetch"
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 0
         mock_proc.returncode = 0
@@ -97,18 +127,30 @@ class TestFetchDocket:
             with pytest.raises(SystemExit):
                 fetch_docket("MISSING-2025-0001", tmpdir)
 
-    @patch('ingest.subprocess.Popen')
-    def test_fetch_docket_subprocess_error(self, mock_popen):
-        """Handle subprocess errors during fetch."""
+    @patch("ingest.subprocess.Popen")
+    @patch("ingest.shutil.which")
+    def test_fetch_docket_subprocess_error(self, mock_which, mock_popen):
+        """Handle Popen failing to start the fetch executable."""
+        mock_which.return_value = "/usr/local/bin/mirrulations-fetch"
         mock_popen.side_effect = FileNotFoundError("mirrulations-fetch not found")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with pytest.raises(SystemExit):
                 fetch_docket("FAA-2025-0618", tmpdir)
 
-    @patch('ingest.subprocess.Popen')
-    def test_fetch_docket_calculates_correct_path(self, mock_popen):
+    @patch("ingest.shutil.which")
+    def test_fetch_docket_command_not_on_path(self, mock_which):
+        """Exit when mirrulations-fetch is not on PATH."""
+        mock_which.return_value = None
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(SystemExit):
+                fetch_docket("FAA-2025-0618", tmpdir)
+
+    @patch("ingest.subprocess.Popen")
+    @patch("ingest.shutil.which")
+    def test_fetch_docket_calculates_correct_path(self, mock_which, mock_popen):
         """Verify fetch_docket returns correct path."""
+        mock_which.return_value = "/usr/local/bin/mirrulations-fetch"
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 0
         mock_proc.returncode = 0
@@ -123,9 +165,11 @@ class TestFetchDocket:
             assert result.name == "CMS-2025-0240"
             assert result.parent == Path(tmpdir)
 
-    @patch('ingest.subprocess.Popen')
-    def test_fetch_docket_non_zero_return_code(self, mock_popen):
+    @patch("ingest.subprocess.Popen")
+    @patch("ingest.shutil.which")
+    def test_fetch_docket_non_zero_return_code(self, mock_which, mock_popen):
         """Handle non-zero return code from subprocess."""
+        mock_which.return_value = "/usr/local/bin/mirrulations-fetch"
         mock_proc = MagicMock()
         mock_proc.poll.side_effect = [None, 1]  # Returns 1 (error code)
         mock_proc.returncode = 1
@@ -436,36 +480,24 @@ class TestFileDiscovery:
 class TestIntegration:
     """Integration tests for full ingest workflow."""
 
-    @patch('ingest.subprocess.Popen')
-    def test_full_workflow_fetch_then_ingest(self, mock_popen):
+    @patch("ingest.subprocess.Popen")
+    @patch("ingest.shutil.which")
+    def test_full_workflow_fetch_then_ingest(self, mock_which, mock_popen):
         """Test complete workflow: fetch docket, then ingest HTM files."""
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = 0
-        mock_proc.returncode = 0
-        mock_popen.return_value.__enter__.return_value = mock_proc
-
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Setup: Create docket structure with HTM file
-            docket_dir = Path(tmpdir) / "FAA-2025-0618"
-            docs_dir = docket_dir / "raw-data" / "documents"
-            docs_dir.mkdir(parents=True)
-            (docs_dir / "FAA-2025-0618-0001_content.htm").write_text(
-                "<html><body>Airworthiness</body></html>"
-            )
-
-            # Fetch the docket and verify
-            fetched_path = fetch_docket("FAA-2025-0618", tmpdir)
+            fetched_path = _fake_fetch_docket_ready(tmpdir, mock_popen, mock_which)
             assert fetched_path.exists()
 
-            # Ingest HTM files and verify
             mock_client = MagicMock()
             ingest_htm_files(fetched_path, mock_client)
             assert mock_client.index.called
             assert mock_client.index.call_count == 1
 
-    @patch('ingest.subprocess.Popen')
-    def test_full_workflow_fetch_verbose_logging(self, mock_popen):
+    @patch("ingest.subprocess.Popen")
+    @patch("ingest.shutil.which")
+    def test_full_workflow_fetch_verbose_logging(self, mock_which, mock_popen):
         """Test fetch_docket with spinner animation (verbose output simulation)."""
+        mock_which.return_value = "/usr/local/bin/mirrulations-fetch"
         mock_proc = MagicMock()
         # Simulate spinner updates by making poll() return None multiple times
         mock_proc.poll.side_effect = [None, None, None, 0]

@@ -23,6 +23,7 @@ import argparse
 import json
 import logging
 import re
+import shutil
 import ssl
 import sys
 import subprocess
@@ -175,8 +176,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default=".",
-        help="Output directory for fetched data (default: current directory)",
+        default="./db/dockets",
+        help="Output directory for fetched data (default: ./db/dockets)",
     )
     parser.add_argument(
         "--skip-fetch",
@@ -233,26 +234,35 @@ def parse_args() -> argparse.Namespace:
 
 def fetch_docket(docket_id: str, output_dir: str) -> Path:
     """Use mirrulations-fetch to download docket data."""
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    fetch_cmd = shutil.which("mirrulations-fetch")
+    if not fetch_cmd:
+        log.error(
+            "mirrulations-fetch not found. "
+            "Install it via: pip install mirrulations-fetch"
+        )
+        sys.exit(1)
+
     log.info(
         "Fetching docket data for %s using mirrulations-fetch...", docket_id
     )
+    spinner = itertools.cycle(
+        ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    )
     try:
-        # Run fetch with a spinner animation
-        spinner = itertools.cycle(
-            ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-        )
         with subprocess.Popen(  # pylint: disable=consider-using-with
-            ["mirrulations-fetch", docket_id],
+            [fetch_cmd, docket_id],
             cwd=output_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         ) as proc:
             while proc.poll() is None:
-                sys.stdout.write(f'\r{next(spinner)}')
+                sys.stdout.write(f"\r{next(spinner)}")
                 sys.stdout.flush()
                 time.sleep(0.1)
-            sys.stdout.write('\r \r')  # Clear spinner
+            sys.stdout.write("\r \r")
             sys.stdout.flush()
 
             if proc.returncode != 0:
@@ -262,9 +272,7 @@ def fetch_docket(docket_id: str, output_dir: str) -> Path:
 
         docket_path = Path(output_dir) / docket_id
         if not docket_path.exists():
-            log.error(
-                "Expected docket directory not found: %s", docket_path
-            )
+            log.error("Expected docket directory not found: %s", docket_path)
             sys.exit(1)
         return docket_path
     except FileNotFoundError as exc:
