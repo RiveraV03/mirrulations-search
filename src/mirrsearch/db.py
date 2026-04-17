@@ -774,9 +774,10 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         if self.conn is None:
             return []
         sql = """
-            SELECT email, name, authorized_at
-            FROM authorized_users
-            ORDER BY authorized_at DESC
+            SELECT au.email, au.name, au.authorized_at, u.last_login
+            FROM authorized_users au
+            LEFT JOIN users u ON u.email = au.email
+            ORDER BY au.authorized_at DESC
         """
         with self.conn.cursor() as cur:
             cur.execute(sql)
@@ -784,10 +785,25 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 {
                     "email": row[0],
                     "name": row[1],
-                    "authorized_at": row[2]
+                    "authorized_at": row[2],
+                    "last_login": row[3]
                 }
                 for row in cur.fetchall()
             ]
+
+    def update_last_login(self, email: str, name: str) -> None:
+        if self.conn is None:
+            return
+        sql = """
+            INSERT INTO users (email, name, last_login)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (email) DO UPDATE
+                SET name = EXCLUDED.name,
+                    last_login = NOW()
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email, name))
+        self.conn.commit()
 
 def _get_secrets_from_aws() -> Dict[str, str]:
     if boto3 is None:

@@ -259,6 +259,9 @@ export default function Admin() {
                                             <span className="admin-user-date">
                                                 Added {new Date(u.authorized_at).toLocaleDateString()}
                                             </span>
+                                            <span className="admin-user-date">
+                                                Last login: {u.last_login ? new Date(u.last_login).toLocaleDateString() : "Never"}
+                                            </span>
                                             <button
                                                 className="admin-remove-btn"
                                                 onClick={() => handleRemove(u.email)}

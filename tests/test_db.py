@@ -927,8 +927,8 @@ def test_get_authorized_users_no_conn_returns_empty():
 
 def test_get_authorized_users_returns_list():
     rows = [
-        ("user1@email.com", "User One", "2026-01-01T00:00:00"),
-        ("user2@email.com", "User Two", "2026-01-02T00:00:00"),
+        ("user1@email.com", "User One", "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
+        ("user2@email.com", "User Two", "2026-01-02T00:00:00", "2026-01-02T00:00:00"),
     ]
     db = DBLayer(conn=_FakeConn(rows))
     results = db.get_authorized_users()
@@ -941,3 +941,29 @@ def test_get_authorized_users_returns_list():
 def test_get_authorized_users_empty_table_returns_empty():
     db = DBLayer(conn=_FakeConn([]))
     assert db.get_authorized_users() == []
+
+# --- update_last_login tests ---
+
+def test_update_last_login_no_conn_returns_none():
+    assert DBLayer().update_last_login("user@email.com", "Test User") is None
+
+def test_update_last_login_executes_upsert():
+    db = DBLayer(conn=_FakeConn([]))
+    db.update_last_login("user@email.com", "Test User")
+    sql, params = db.conn.cursor_obj.executed[0]
+    assert "INSERT INTO users" in sql
+    assert "ON CONFLICT (email) DO UPDATE" in sql
+    assert "last_login" in sql
+    assert params == ("user@email.com", "Test User")
+
+def test_update_last_login_commits():
+    db = DBLayer(conn=_FakeConn([]))
+    db.update_last_login("user@email.com", "Test User")
+    assert len(db.conn.cursor_obj.executed) == 1
+
+def test_update_last_login_sets_name_in_params():
+    db = DBLayer(conn=_FakeConn([]))
+    db.update_last_login("prof@moravian.edu", "Dr. Smith")
+    _, params = db.conn.cursor_obj.executed[0]
+    assert params[0] == "prof@moravian.edu"
+    assert params[1] == "Dr. Smith"
