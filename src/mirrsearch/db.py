@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Optional
 import os
 import psycopg2
 from opensearchpy import OpenSearch
@@ -770,7 +770,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         return deleted
 
     def get_authorized_users(self) -> List[Dict[str, Any]]:
-        """Return all authorized users."""
+        """Return all authorized users including their last_login from the users table."""
         if self.conn is None:
             return []
         sql = """
@@ -792,6 +792,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             ]
 
     def update_last_login(self, email: str, name: str) -> None:
+        """Upsert the user row and stamp last_login to NOW()."""
         if self.conn is None:
             return
         sql = """
@@ -804,6 +805,30 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         with self.conn.cursor() as cur:
             cur.execute(sql, (email, name))
         self.conn.commit()
+
+    def get_last_login(self, email: str) -> Optional[Any]:
+        """Return the last_login timestamp for a user, or None if not found."""
+        if self.conn is None:
+            return None
+        sql = "SELECT last_login FROM users WHERE email = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email,))
+            row = cur.fetchone()
+        return row[0] if row else None
+
+    def get_download_s3_url(self, job_id: str, user_email: str) -> Optional[str]:
+        """Return the S3 URL for a completed download job, or None."""
+        if self.conn is None:
+            return None
+        sql = """
+            SELECT s3_path FROM download_jobs
+            WHERE job_id = %s AND user_email = %s AND status = 'ready'
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (job_id, user_email))
+            row = cur.fetchone()
+        return row[0] if row else None
+
 
 def _get_secrets_from_aws() -> Dict[str, str]:
     if boto3 is None:
