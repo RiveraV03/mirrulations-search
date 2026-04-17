@@ -74,10 +74,43 @@ def _update_job_status(conn, job_id, status, s3_path=None):
 # Download execution
 # ---------------------------------------------------------------------------
 
+def _search_paths_for_command(command_name, repo_env_var):
+    """Return candidate executable paths for a CLI command."""
+    candidates = []
+    venv_bin = os.path.dirname(sys.executable)
+    candidates.append(os.path.join(venv_bin, command_name))
+
+    repo_dir = os.getenv(repo_env_var, "").strip()
+    if repo_dir:
+        candidates.extend([
+            os.path.join(repo_dir, ".venv", "bin", command_name),
+            os.path.join(repo_dir, "venv", "bin", command_name),
+            os.path.join(repo_dir, "bin", command_name),
+        ])
+    return candidates
+
+
+def _resolve_command(command_name, repo_env_var):
+    """Resolve a worker CLI executable from the service venv, repo, or PATH."""
+    for candidate in _search_paths_for_command(command_name, repo_env_var):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+
+    from_path = shutil.which(command_name)
+    if from_path:
+        return from_path
+
+    raise FileNotFoundError(
+        f"Could not find '{command_name}'. "
+        f"Install it into the worker venv or set {repo_env_var} to a checkout with the CLI."
+    )
+
+
 def _run_fetch(docket_ids, output_dir, include_binaries):
     """Run mirrulations-fetch for each docket into output_dir."""
+    fetch_cmd = _resolve_command("mirrulations-fetch", "FETCH_REPO_DIR")
     for docket_id in docket_ids:
-        cmd = ["mirrulations-fetch", docket_id, "--output-folder", output_dir]
+        cmd = [fetch_cmd, docket_id, "--output-folder", output_dir]
         if include_binaries:
             cmd.append("--include-binary")
         log.info("Running fetch for docket %s", docket_id)
@@ -89,12 +122,17 @@ def _run_fetch(docket_ids, output_dir, include_binaries):
 
 def _run_csv(docket_ids, output_dir):
     """Run mirrulations-fetch then mirrulations-csv for each docket into output_dir."""
+    fetch_cmd = _resolve_command("mirrulations-fetch", "FETCH_REPO_DIR")
+    csv_cmd = _resolve_command("mirrulations-csv", "CSV_REPO_DIR")
     for docket_id in docket_ids:
         # First fetch the raw data
-        fetch_cmd = ["mirrulations-fetch", docket_id, "--output-folder", output_dir]
         log.info("Fetching raw data for docket %s", docket_id)
         result = subprocess.run(
-            fetch_cmd, capture_output=True, text=True, timeout=3600, check=False
+            [fetch_cmd, docket_id, "--output-folder", output_dir],
+            capture_output=True,
+            text=True,
+            timeout=3600,
+            check=False,
         )
         if result.returncode != 0:
             log.error("fetch failed for %s:\n%s", docket_id, result.stderr)
@@ -102,9 +140,14 @@ def _run_csv(docket_ids, output_dir):
 
         # Then convert comments to CSV
         comments_dir = os.path.join(output_dir, docket_id, "raw-data", "comments")
-        csv_cmd = ["mirrulations-csv", comments_dir, "-o", output_dir]
         log.info("Converting to CSV for docket %s", docket_id)
-        result = subprocess.run(csv_cmd, capture_output=True, text=True, timeout=3600, check=False)
+        result = subprocess.run(
+            [csv_cmd, comments_dir, "-o", output_dir],
+            capture_output=True,
+            text=True,
+            timeout=3600,
+            check=False,
+        )
         if result.returncode != 0:
             log.error("csv export failed for %s:\n%s", docket_id, result.stderr)
             raise RuntimeError(f"mirrulations-csv failed for docket {docket_id}")
@@ -171,6 +214,7 @@ def _process_job(payload_str):  # pylint: disable=too-many-locals
     log.info("Processing job %s: format=%s dockets=%s", job_id, data_format, docket_ids)
     conn = _get_pg_conn()
     try:
+        _update_job_status(conn, job_id, "processing")
         with tempfile.TemporaryDirectory() as work_dir:
             zip_path = _build_zip(job_id, docket_ids, data_format, include_binaries, work_dir)
             s3_uri = _upload_to_s3(zip_path, job_id)
