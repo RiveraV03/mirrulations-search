@@ -2,7 +2,8 @@
 import importlib
 import sys
 import types
-
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 if "redis" not in sys.modules:
     sys.modules["redis"] = types.SimpleNamespace(
@@ -13,7 +14,7 @@ if "redis" not in sys.modules:
 worker = importlib.import_module("worker")
 
 
-class _DummyConn:
+class _DummyConn: # pylint: disable=too-few-public-methods
     def close(self):
         return None
 
@@ -33,7 +34,7 @@ def test_resolve_command_prefers_search_venv(monkeypatch, tmp_path):
     monkeypatch.setattr(worker.sys, "executable", str(fake_python))
     monkeypatch.delenv("FETCH_REPO_DIR", raising=False)
 
-    assert worker._resolve_command("mirrulations-fetch", "FETCH_REPO_DIR") == str(cli)
+    assert worker._resolve_command("mirrulations-fetch", "FETCH_REPO_DIR") == str(cli) # pylint: disable=protected-access
 
 
 def test_resolve_command_falls_back_to_repo_checkout(monkeypatch, tmp_path):
@@ -49,17 +50,17 @@ def test_resolve_command_falls_back_to_repo_checkout(monkeypatch, tmp_path):
     monkeypatch.setenv("FETCH_REPO_DIR", str(repo_dir))
     monkeypatch.setattr(worker.shutil, "which", lambda _name: None)
 
-    assert worker._resolve_command("mirrulations-fetch", "FETCH_REPO_DIR") == str(repo_cli)
+    assert worker._resolve_command("mirrulations-fetch", "FETCH_REPO_DIR") == str(repo_cli) # pylint: disable=protected-access
 
 
 def test_process_job_marks_processing_before_ready(monkeypatch, tmp_path):
     """Worker should transition jobs through processing before ready."""
     statuses = []
 
-    def fake_update_job_status(conn, job_id, status, s3_path=None):
+    def fake_update_job_status(conn, job_id, status, s3_path=None): # pylint: disable=unused-argument
         statuses.append((job_id, status, s3_path))
 
-    monkeypatch.setattr(worker, "_get_pg_conn", lambda: _DummyConn())
+    monkeypatch.setattr(worker, "_get_pg_conn", lambda: _DummyConn()) # pylint: disable=unnecessary-lambda
     monkeypatch.setattr(worker, "_update_job_status", fake_update_job_status)
     monkeypatch.setattr(worker, "_build_zip", lambda *_args: str(tmp_path / "job.zip"))
     monkeypatch.setattr(worker, "_upload_to_s3", lambda *_args: "s3://bucket/downloads/job-1.zip")
@@ -68,7 +69,7 @@ def test_process_job_marks_processing_before_ready(monkeypatch, tmp_path):
         '{"job_id":"job-1","docket_ids":["CMS-2025-0240"],'
         '"format":"raw","include_binaries":false}'
     )
-    worker._process_job(payload)
+    worker._process_job(payload) # pylint: disable=protected-access
 
     assert statuses == [
         ("job-1", "processing", None),
