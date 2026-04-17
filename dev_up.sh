@@ -3,9 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+export PATH="/opt/homebrew/bin:$PATH"
 
 EXTRA_SEED_SQL_FILE=""
 FORCE_SEED=0
+DEV_PORT="${DEV_PORT:-8000}"
 
 # Optional CLI flags:
 #   --sql-opensearch-integration  Use the OpenSearch-integration Postgres fixture.
@@ -53,6 +55,15 @@ if command -v brew &>/dev/null; then
     brew services start opensearch 2>/dev/null || true
 fi
 
+# Ensure the project virtualenv exists and has current dependencies.
+if [[ ! -x ".venv/bin/python" ]]; then
+    python3 -m venv .venv
+fi
+if ! .venv/bin/python -c "import redis" >/dev/null 2>&1; then
+    echo "Installing/updating Python dependencies..."
+    .venv/bin/pip install -r requirements.txt
+fi
+
 # Seed OpenSearch indices/data for search numerators/denominators.
 if [[ -x ".venv/bin/python" ]]; then
     PYTHONPATH="$PWD/src" .venv/bin/python db/ingest_opensearch.py
@@ -65,6 +76,22 @@ fi
 
 # Load .env variables
 [[ -f .env ]] && source .env
+WORKER_PID_FILE="worker.pid"
+WORKER_LOG_FILE="worker.log"
+
+# Ensure Redis is running for download jobs.
+if ! command -v redis-cli &>/dev/null; then
+    echo "redis-cli is required for download worker startup."
+    exit 1
+fi
+if ! command -v redis-server &>/dev/null; then
+    echo "redis-server is required for download worker startup."
+    exit 1
+fi
+if ! redis-cli ping >/dev/null 2>&1; then
+    echo "Starting Redis..."
+    redis-server --daemonize yes
+fi
 
 # Generate JWT_SECRET if not set
 if [[ -z "${JWT_SECRET:-}" ]]; then
@@ -73,25 +100,60 @@ if [[ -z "${JWT_SECRET:-}" ]]; then
     echo "Generated JWT_SECRET and saved to .env"
 fi
 
+# Restart worker if it is already running.
+if [[ -f "$WORKER_PID_FILE" ]]; then
+    if kill -0 "$(cat "$WORKER_PID_FILE")" 2>/dev/null; then
+        echo "Stopping existing worker..."
+        kill -TERM "$(cat "$WORKER_PID_FILE")" 2>/dev/null || true
+    fi
+    rm -f "$WORKER_PID_FILE"
+fi
+
+# Start the download worker in the background.
+echo "Starting download worker..."
+PYTHONPATH="$PWD/src" \
+  OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+  USE_POSTGRES="${USE_POSTGRES:-}" \
+  DB_HOST="${DB_HOST:-}" \
+  DB_PORT="${DB_PORT:-}" \
+  DB_NAME="${DB_NAME:-}" \
+  DB_USER="${DB_USER:-}" \
+  DB_PASSWORD="${DB_PASSWORD:-}" \
+  BASE_URL="${BASE_URL:-}" \
+  GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}" \
+  GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}" \
+  JWT_SECRET="${JWT_SECRET:-}" \
+  REDIS_HOST="${REDIS_HOST:-localhost}" \
+  REDIS_PORT="${REDIS_PORT:-6379}" \
+  REDIS_DB="${REDIS_DB:-0}" \
+  .venv/bin/python worker.py >"$WORKER_LOG_FILE" 2>&1 &
+echo $! > "$WORKER_PID_FILE"
+
 # Stop existing Gunicorn if running (so we can start fresh)
 if [[ -f gunicorn.pid ]]; then
-    sudo kill -TERM "$(cat gunicorn.pid)" 2>/dev/null || true
+    kill -TERM "$(cat gunicorn.pid)" 2>/dev/null || true
     rm -f gunicorn.pid
 fi
 
-# Start the gunicorn server on port 80 using the configuration in conf/gunicorn.py
+# Start the gunicorn server on a non-privileged local dev port.
 export PYTHONPATH="$PWD/src"
-sudo OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
   PYTHONPATH="$PYTHONPATH" \
-  USE_POSTGRES="$USE_POSTGRES" \
-  DB_HOST="$DB_HOST" \
-  DB_PORT="$DB_PORT" \
-  DB_NAME="$DB_NAME" \
-  DB_USER="$DB_USER" \
-  DB_PASSWORD="$DB_PASSWORD" \
-  BASE_URL="$BASE_URL" \
-  GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
-  GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
-  JWT_SECRET="$JWT_SECRET" \
-  .venv/bin/gunicorn -c conf/gunicorn.py mirrsearch.app:app
-echo "Mirrulations search has been started"
+  USE_POSTGRES="${USE_POSTGRES:-}" \
+  DB_HOST="${DB_HOST:-}" \
+  DB_PORT="${DB_PORT:-}" \
+  DB_NAME="${DB_NAME:-}" \
+  DB_USER="${DB_USER:-}" \
+  DB_PASSWORD="${DB_PASSWORD:-}" \
+  BASE_URL="${BASE_URL:-http://localhost:${DEV_PORT}}" \
+  GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}" \
+  GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}" \
+  JWT_SECRET="${JWT_SECRET:-}" \
+  .venv/bin/gunicorn \
+    --bind "0.0.0.0:${DEV_PORT}" \
+    --workers 4 \
+    --timeout 120 \
+    --pid gunicorn.pid \
+    --daemon \
+    mirrsearch.app:app
+echo "Mirrulations search has been started on http://localhost:${DEV_PORT}"
