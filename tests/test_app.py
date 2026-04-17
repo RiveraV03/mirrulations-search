@@ -896,3 +896,51 @@ def test_single_download_redis_failure_marks_job_failed(  # pylint: disable=rede
         assert status_response.status_code == 200
         status_data = status_response.get_json()
         assert status_data["status"] == "failed"
+
+def test_list_download_jobs_returns_created_jobs(client):  # pylint: disable=redefined-outer-name
+    """GET /download/jobs returns jobs created by the user"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        # create a job first
+        client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        })
+
+    response = client.get('/download/jobs')
+    assert response.status_code == 200
+    data = response.get_json()
+
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    assert "job_id" in data[0]
+    assert "status" in data[0]
+
+def test_list_download_jobs_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """GET /download/jobs returns 401 without authentication"""
+    response = app.test_client().get('/download/jobs')
+    assert response.status_code == 401
+
+def test_list_download_jobs_empty(client):  # pylint: disable=redefined-outer-name
+    """GET /download/jobs returns empty list if no jobs exist"""
+    response = client.get('/download/jobs')
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+def test_list_download_jobs_multiple(client):  # pylint: disable=redefined-outer-name
+    """GET /download/jobs returns multiple jobs"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        })
+        client.post('/download/request/CMS-2025-0240', json={
+            "format": "csv",
+            "include_binaries": False
+        })
+
+    response = client.get('/download/jobs')
+    data = response.get_json()
+
+    assert len(data) >= 2
