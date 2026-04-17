@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Migrate (copy/upsert) all rows from `documentswithfrdoc` → `documents`.
+Migrate data from `documentswithfrdoc` → `documents`.
 
-Some deployments ended up with both tables, and `documentswithfrdoc` often has
-newer/extra fields. This script makes `documents` match and then bulk-upserts
-all rows server-side (no Python row loops).
+Default mode (merge): add any missing columns on `documents`, then bulk-upsert
+shared columns from `documentswithfrdoc` (keeps extra rows on `documents` that
+are not in the source).
+
+``--replace-table``: drop ``public.documents`` (CASCADE), recreate it as a
+structural copy of ``public.documentswithfrdoc`` (LIKE … INCLUDING ALL), then
+``INSERT … SELECT *``. ``documentswithfrdoc`` is never dropped.
 """
 
 from __future__ import annotations
@@ -29,7 +33,10 @@ EXTRA_COL_DEFS = [
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Upsert all documentswithfrdoc rows into documents (add missing columns first)."
+        description=(
+            "Copy documentswithfrdoc → documents: merge (upsert) by default, "
+            "or --replace-table to drop documents and recreate from source."
+        )
     )
     p.add_argument("--env-file", default=".env", help="Path to .env (default: .env)")
     p.add_argument("--sslmode", default=None, help="Override sslmode (e.g. require, verify-full)")
@@ -37,6 +44,14 @@ def parse_args() -> argparse.Namespace:
         "--sslrootcert",
         default=None,
         help="Path to CA bundle (used with sslmode=verify-full)",
+    )
+    p.add_argument(
+        "--replace-table",
+        action="store_true",
+        help=(
+            "Drop public.documents (CASCADE), recreate as LIKE documentswithfrdoc "
+            "INCLUDING ALL, INSERT SELECT *. Destructive; FKs to documents are dropped."
+        ),
     )
     p.add_argument("--dry-run", action="store_true", help="Print planned actions only.")
     return p.parse_args()
@@ -87,6 +102,94 @@ def existing_columns(cur, table_name: str) -> set[str]:
     return {r[0] for r in cur.fetchall()}
 
 
+def run_replace_table(cur, dry_run: bool) -> None:
+    """Drop documents, recreate as copy of documentswithfrdoc schema + data."""
+    if regclass(cur, "public.documentswithfrdoc") is None:
+        raise SystemExit("Missing table public.documentswithfrdoc")
+
+    stmts = []
+    if regclass(cur, "public.documents") is not None:
+        stmts.append("DROP TABLE public.documents CASCADE;")
+    stmts.append(
+        "CREATE TABLE public.documents (LIKE public.documentswithfrdoc INCLUDING ALL);"
+    )
+    stmts.append("INSERT INTO public.documents SELECT * FROM public.documentswithfrdoc;")
+
+    if dry_run:
+        print("Would run (replace-table):")
+        for s in stmts:
+            print(s)
+        return
+
+    for s in stmts:
+        cur.execute(s)
+    cur.execute("SELECT COUNT(*) FROM public.documents;")
+    n_doc = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM public.documentswithfrdoc;")
+    n_src = cur.fetchone()[0]
+    print(f"Done. documents row count = {n_doc}, documentswithfrdoc row count = {n_src}.")
+
+
+def run_merge(cur, dry_run: bool) -> None:
+    """Add missing columns on documents, then upsert shared columns from documentswithfrdoc."""
+    if regclass(cur, "public.documents") is None:
+        raise SystemExit("Missing table public.documents")
+    if regclass(cur, "public.documentswithfrdoc") is None:
+        raise SystemExit("Missing table public.documentswithfrdoc")
+
+    doc_cols = existing_columns(cur, "documents")
+    docw_cols = existing_columns(cur, "documentswithfrdoc")
+
+    # 1) Add missing "new" columns to documents
+    alters: list[str] = []
+    for col, coltype in EXTRA_COL_DEFS:
+        if col in docw_cols and col not in doc_cols:
+            alters.append(f"ALTER TABLE documents ADD COLUMN IF NOT EXISTS {col} {coltype};")
+
+    if alters:
+        if dry_run:
+            print("Would run ALTERs:")
+            for stmt in alters:
+                print(stmt)
+        else:
+            for stmt in alters:
+                cur.execute(stmt)
+            print(f"Added/verified {len(alters)} extra column(s) on documents.")
+    else:
+        print("No schema changes needed on documents.")
+
+    doc_cols = existing_columns(cur, "documents")
+    docw_cols = existing_columns(cur, "documentswithfrdoc")
+
+    # 2) Bulk upsert all shared columns (including newly added)
+    common = sorted((doc_cols & docw_cols) - {"id"})
+    if "document_id" not in common:
+        raise SystemExit("Expected shared primary key column document_id.")
+
+    insert_cols = ", ".join(common)
+    select_cols = ", ".join(common)
+
+    update_cols = [c for c in common if c != "document_id"]
+    update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+
+    upsert_sql = f"""
+        INSERT INTO documents ({insert_cols})
+        SELECT {select_cols}
+        FROM documentswithfrdoc
+        ON CONFLICT (document_id) DO UPDATE
+        SET {update_set}
+    """
+
+    if dry_run:
+        print("\nWould run UPSERT SQL:")
+        print(upsert_sql)
+        return
+
+    print("Starting UPSERT (this can take a while on millions of rows)...")
+    cur.execute(upsert_sql)
+    print("Done. documents now contains/upserts all documentswithfrdoc rows.")
+
+
 def main() -> None:
     args = parse_args()
     conn = connect(args.env_file, args.sslmode, args.sslrootcert)
@@ -94,66 +197,12 @@ def main() -> None:
 
     try:
         with conn.cursor() as cur:
-            if regclass(cur, "public.documents") is None:
-                raise SystemExit("Missing table public.documents")
-            if regclass(cur, "public.documentswithfrdoc") is None:
-                raise SystemExit("Missing table public.documentswithfrdoc")
-
-            doc_cols = existing_columns(cur, "documents")
-            docw_cols = existing_columns(cur, "documentswithfrdoc")
-
-            # 1) Add missing "new" columns to documents
-            alters: list[str] = []
-            for col, coltype in EXTRA_COL_DEFS:
-                if col in docw_cols and col not in doc_cols:
-                    alters.append(f"ALTER TABLE documents ADD COLUMN IF NOT EXISTS {col} {coltype};")
-
-            if alters:
-                if args.dry_run:
-                    print("Would run ALTERs:")
-                    for stmt in alters:
-                        print(stmt)
-                else:
-                    for stmt in alters:
-                        cur.execute(stmt)
-                    conn.commit()
-                    print(f"Added/verified {len(alters)} extra column(s) on documents.")
+            if args.replace_table:
+                run_replace_table(cur, args.dry_run)
             else:
-                print("No schema changes needed on documents.")
-
-            # Recompute columns after ALTER
-            doc_cols = existing_columns(cur, "documents")
-            docw_cols = existing_columns(cur, "documentswithfrdoc")
-
-            # 2) Bulk upsert all shared columns (including newly added)
-            common = sorted((doc_cols & docw_cols) - {"id"})
-            if "document_id" not in common:
-                raise SystemExit("Expected shared primary key column document_id.")
-
-            insert_cols = ", ".join(common)
-            select_cols = ", ".join(common)
-
-            update_cols = [c for c in common if c != "document_id"]
-            update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
-
-            upsert_sql = f"""
-                INSERT INTO documents ({insert_cols})
-                SELECT {select_cols}
-                FROM documentswithfrdoc
-                ON CONFLICT (document_id) DO UPDATE
-                SET {update_set}
-            """
-
-            if args.dry_run:
-                print("\nWould run UPSERT SQL:")
-                print(upsert_sql)
-                return
-
-            print("Starting UPSERT (this can take a while on millions of rows)...")
-            cur.execute(upsert_sql)
-            conn.commit()
-            print("Done. documents now contains/upserts all documentswithfrdoc rows.")
-
+                run_merge(cur, args.dry_run)
+            if not args.dry_run:
+                conn.commit()
     finally:
         conn.close()
 
