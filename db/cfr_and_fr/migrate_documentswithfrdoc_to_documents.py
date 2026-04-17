@@ -9,16 +9,26 @@ are not in the source).
 ``--replace-table``: drop ``public.documents`` (CASCADE), recreate it as a
 structural copy of ``public.documentswithfrdoc`` (LIKE … INCLUDING ALL), then
 ``INSERT … SELECT *``. ``documentswithfrdoc`` is never dropped.
+
+Connection: if ``USE_AWS_SECRETS`` is true (after loading ``--env-file``), reads
+``AWS_REGION`` (or ``AWS_DEFAULT_REGION``) and ``AWS_SECRET_NAME`` and uses the
+same JSON keys as the app: ``host``, ``port``, ``db`` (or ``dbname``),
+``username``, ``password``. Otherwise uses ``DB_HOST``, ``DB_NAME``, etc.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
 import psycopg2
 from dotenv import load_dotenv
+
+
+def _use_aws_secrets() -> bool:
+    return (os.getenv("USE_AWS_SECRETS", "").strip().lower() in {"1", "true", "yes", "on"})
 
 EXTRA_COL_DEFS = [
     # Columns present on documentswithfrdoc but sometimes missing on documents
@@ -60,14 +70,43 @@ def parse_args() -> argparse.Namespace:
 def connect(env_file: str, sslmode: str | None, sslrootcert: str | None):
     load_dotenv(Path(env_file))
 
-    host = os.environ["DB_HOST"]
-    kw = dict(
-        host=host,
-        port=os.environ.get("DB_PORT", "5432"),
-        dbname=os.environ["DB_NAME"],
-        user=os.environ["DB_USER"],
-        password=os.environ["DB_PASSWORD"],
-    )
+    if _use_aws_secrets():
+        try:
+            import boto3
+        except ImportError as exc:
+            raise SystemExit(
+                "USE_AWS_SECRETS is set but boto3 is not installed. "
+                "Install requirements or run: pip install boto3"
+            ) from exc
+        region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+        if not region:
+            raise SystemExit("USE_AWS_SECRETS requires AWS_REGION (or AWS_DEFAULT_REGION) in the environment.")
+        secret_id = os.environ.get("AWS_SECRET_NAME")
+        if not secret_id:
+            raise SystemExit("USE_AWS_SECRETS requires AWS_SECRET_NAME in the environment.")
+        client = boto3.client("secretsmanager", region_name=region)
+        creds = json.loads(client.get_secret_value(SecretId=secret_id)["SecretString"])
+        dbname = creds.get("db") or creds.get("dbname")
+        if not dbname:
+            raise SystemExit("Secret JSON must include a database name in key 'db' or 'dbname'.")
+        host = creds["host"]
+        port = int(creds.get("port", 5432))
+        kw = dict(
+            host=host,
+            port=port,
+            dbname=dbname,
+            user=creds["username"],
+            password=creds["password"],
+        )
+    else:
+        host = os.environ["DB_HOST"]
+        kw = dict(
+            host=host,
+            port=os.environ.get("DB_PORT", "5432"),
+            dbname=os.environ["DB_NAME"],
+            user=os.environ["DB_USER"],
+            password=os.environ["DB_PASSWORD"],
+        )
 
     # Default for RDS: require TLS unless overridden
     if sslmode:
