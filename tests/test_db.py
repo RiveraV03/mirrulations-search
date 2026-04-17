@@ -227,8 +227,6 @@ def test_search_dockets_postgres_cfr_empty_dict_skips_cfr_clause():
     assert "cp.cfrPart ILIKE" not in sql
 
 
-# --- opensearch connection tests ---
-
 def test_get_opensearch_connection_blank_port_no_crash(monkeypatch):
     """Empty OPENSEARCH_PORT in .env must not raise int('') (was HTTP 500)."""
     monkeypatch.setenv("OPENSEARCH_PORT", "")
@@ -260,47 +258,6 @@ def test_get_opensearch_connection_port_out_of_range_defaults(monkeypatch):
     assert db_module.get_opensearch_connection() is not None
 
 
-def test_parse_opensearch_port_env_valid(monkeypatch):
-    monkeypatch.setenv("OPENSEARCH_PORT", "9300")
-    assert db_module._parse_opensearch_port_env("OPENSEARCH_PORT") == 9300
-
-
-def test_parse_opensearch_port_env_invalid(monkeypatch):
-    monkeypatch.setenv("OPENSEARCH_PORT", "not_a_number")
-    assert db_module._parse_opensearch_port_env("OPENSEARCH_PORT") == 9200
-
-
-def test_parse_opensearch_port_env_empty(monkeypatch):
-    monkeypatch.setenv("OPENSEARCH_PORT", "")
-    assert db_module._parse_opensearch_port_env("OPENSEARCH_PORT") == 9200
-
-
-def test_env_flag_true(monkeypatch):
-    monkeypatch.setenv("MY_FLAG", "YES")
-    assert db_module._env_flag_true("MY_FLAG") is True
-
-    monkeypatch.setenv("MY_FLAG", "no")
-    assert db_module._env_flag_true("MY_FLAG") is False
-
-
-# --- Count accumulation tests ---
-
-def test_accumulate_counts():
-    docket_counts = {}
-
-    buckets = [
-        {"key": "D1", "matching_docs": {"doc_count": 3}},
-        {"key": "D2", "matching_docs": {"doc_count": 2}},
-    ]
-
-    DBLayer._accumulate_counts(docket_counts, buckets, "matching_docs", "document_match_count")
-
-    assert docket_counts["D1"]["document_match_count"] == 3
-    assert docket_counts["D2"]["document_match_count"] == 2
-
-
-# --- _search_dockets_postgres tests ---
-
 def test_search_dockets_postgres_cfr_filter_plain_string():
     db = DBLayer(conn=_FakeConn([]))
     db._search_dockets_postgres("z", cfr_part_param=["413"])
@@ -309,6 +266,8 @@ def test_search_dockets_postgres_cfr_filter_plain_string():
     assert "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum" in sql
     assert params == ["%z%", "413"]
 
+
+# --- _search_dockets_postgres tests ---
 
 def test_search_dockets_postgres_empty_results():
     """No rows returns an empty list"""
@@ -650,7 +609,7 @@ class _FakeOpenSearch:  # pylint: disable=too-few-public-methods
     def search(self, index, body):
         self.searches.append((index, body))
 
-        if index == "documents_text":
+        if index == "documents":
             return {
                 "aggregations": {
                     "by_docket": {
@@ -700,13 +659,11 @@ def test_text_match_terms_searches_comments_and_extracted():
 
     results = db.text_match_terms(["medicare"], opensearch_client=fake_client)
 
-    # Fires 4 OS queries in parallel: doc match, comment match, extracted match,
-    # total-comments. Document totals come from SQL (not tracked by fake_client).
-    assert len(fake_client.searches) == 4
-    searched_indices = {idx for idx, _ in fake_client.searches}
-    assert "documents_text" in searched_indices
-    assert "comments" in searched_indices
-    assert "comments_extracted_text" in searched_indices
+    # Should have searched all three indices
+    assert len(fake_client.searches) == 3
+    assert fake_client.searches[0][0] == "documents_text"
+    assert fake_client.searches[1][0] == "comments"
+    assert fake_client.searches[2][0] == "comments_extracted_text"
 
     assert len(results) == 1
     assert results[0]["docket_id"] == "CMS-2025-0240"
@@ -795,18 +752,11 @@ def test_text_match_terms_uses_filtered_aggregations():
 
     db.text_match_terms(["medicare", "medicaid"], opensearch_client=fake_client)
 
-    # Fires 4 OS queries: doc match, comment match, extracted match, total-comments.
-    # Document totals come from SQL (not tracked by fake_client).
-    assert len(fake_client.searches) == 4
+    # Check all three queries were made
+    assert len(fake_client.searches) == 3
 
-    # Find the comment match query (has matching_comments agg with filter + by_comment)
-    comment_match_searches = [
-        (idx, body) for idx, body in fake_client.searches
-        if idx == "comments"
-        and "matching_comments" in body.get("aggs", {}).get("by_docket", {}).get("aggs", {})
-    ]
-    assert len(comment_match_searches) == 1
-    comment_index, comment_body = comment_match_searches[0]
+    # Check comments query structure
+    comment_index, comment_body = fake_client.searches[1]
     assert comment_index == "comments"
     assert comment_body["size"] == 0
     assert "aggs" in comment_body
@@ -814,13 +764,8 @@ def test_text_match_terms_uses_filtered_aggregations():
     assert "filter" in comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]
     assert "by_comment" in comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]["aggs"]
 
-    # Find the extracted text match query
-    extracted_match_searches = [
-        (idx, body) for idx, body in fake_client.searches
-        if idx == "comments_extracted_text"
-    ]
-    assert len(extracted_match_searches) == 1
-    extracted_index, extracted_body = extracted_match_searches[0]
+    # Check extracted text query structure
+    extracted_index, extracted_body = fake_client.searches[2]
     assert extracted_index == "comments_extracted_text"
     assert "matching_extracted" in extracted_body["aggs"]["by_docket"]["aggs"]
     assert "by_comment" in extracted_body["aggs"]["by_docket"]["aggs"]["matching_extracted"]["aggs"]

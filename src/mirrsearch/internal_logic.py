@@ -1,5 +1,4 @@
 """Internal logic module for search operations with pagination"""
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from typing import List
 
@@ -164,22 +163,18 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         Returns:
             dict: Paginated response with metadata
         """
-        # Run Postgres and OpenSearch queries in parallel
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            sql_future = executor.submit(
-                self.db_layer.search,
-                query, docket_type_param, agency, cfr_part_param,
-                start_date=start_date, end_date=end_date
-            )
-            os_future = executor.submit(
-                self.db_layer.text_match_terms,
-                [(query or "").strip()]
-            )
-            sql_results = sql_future.result()
-            os_hits = os_future.result()
-
+        sql_results = self.db_layer.search(
+            query,
+            docket_type_param,
+            agency,
+            cfr_part_param,
+            start_date=start_date,
+            end_date=end_date
+        )
         title_rows = [{**r, "match_source": "title"} for r in sql_results]
         title_ids = {_row_docket_key(r) for r in sql_results}
+
+        os_hits = self.db_layer.text_match_terms([(query or "").strip()])
         os_counts_by_id = {str(hit["docket_id"]): hit for hit in os_hits}
 
         # Get new IDs from OpenSearch not in SQL results
@@ -196,8 +191,8 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
 
         all_results = title_rows + full_text_rows
 
-        # Read totals out of data already returned by text_match_terms
-        self._add_totals_and_scores(all_results, os_counts_by_id)
+        # Add totals and scores
+        self._add_totals_and_scores(all_results)
 
         # Sort results
         self._sort_results(all_results, sort_by=sort_by)
@@ -253,38 +248,16 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             })
         return full_text_rows
 
-    def _add_totals_and_scores(self, rows, os_counts_by_id): # pylint: disable=too-many-locals
-        """
-        Add document/comment totals and correlation scores to rows.
-
-        For dockets present in os_counts_by_id (i.e. they had a full-text match),
-        totals are read directly from that dict.
-        
-        For dockets absent from os_counts_by_id (title-only SQL matches with no
-        OpenSearch hit), we fall back to a single batched call to
-        get_docket_document_comment_totals so their denominators are still correct.
-        """
-        missing_ids = [
-            _row_docket_key(row)
-            for row in rows
-            if _row_docket_key(row) not in os_counts_by_id
-        ]
-        fallback_totals = (
-            self.db_layer.get_docket_document_comment_totals(missing_ids)
-            if missing_ids
-            else {}
-        )
+    def _add_totals_and_scores(self, rows):
+        """Add document/comment totals and correlation scores to rows."""
+        docket_ids = [_row_docket_key(r) for r in rows]
+        totals_map = self.db_layer.get_docket_document_comment_totals(docket_ids)
 
         for row in rows:
             did = _row_docket_key(row)
-            if did in os_counts_by_id:
-                hit = os_counts_by_id[did]
-                row["document_total_count"] = hit.get("document_total_count", 0)
-                row["comment_total_count"] = hit.get("comment_total_count", 0)
-            else:
-                totals = fallback_totals.get(did, {})
-                row["document_total_count"] = totals.get("document_total_count", 0)
-                row["comment_total_count"] = totals.get("comment_total_count", 0)
+            totals = totals_map.get(did, {})
+            row["document_total_count"] = totals.get("document_total_count", 0)
+            row["comment_total_count"] = totals.get("comment_total_count", 0)
             row["correlation_score"] = _correlation_score(row)
 
     def _sort_results(self, rows, sort_by=None):

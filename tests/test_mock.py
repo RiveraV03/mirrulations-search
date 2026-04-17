@@ -207,7 +207,11 @@ def test_text_match_terms_structure(db):
     """Results contain correct structure"""
     result = db.text_match_terms(["medicare"])
     for item in result:
-        assert {"docket_id", "document_match_count", "comment_match_count"}.issubset(item.keys())
+        assert set(item.keys()) == {
+            "docket_id",
+            "document_match_count",
+            "comment_match_count"
+        }
         assert isinstance(item["docket_id"], str)
         assert isinstance(item["document_match_count"], int)
         assert isinstance(item["comment_match_count"], int)
