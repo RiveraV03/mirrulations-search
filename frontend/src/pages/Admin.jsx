@@ -45,12 +45,27 @@ export default function Admin() {
             .finally(() => setUsersLoading(false));
     }, [adminUser]);
 
+    function parseEmailInput(raw) {
+        // Matches: Display Name <email@example.com>
+        const match = raw.match(/^(.+?)\s*<([^>]+)>\s*$/);
+        if (match) {
+            return { name: match[1].trim(), email: match[2].trim().toLowerCase() };
+        }
+        return { name: null, email: raw.trim().toLowerCase() };
+    }
+
     const handleAdd = async (e) => {
         e.preventDefault();
         setAddError(null);
         setAddSuccess(null);
-        const email = newEmail.trim().toLowerCase();
-        const name = newName.trim();
+        const parsed = parseEmailInput(newEmail);
+        const email = parsed.email;
+        const name = newName.trim() || parsed.name || "";
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email || !emailRegex.test(email)) {
+            setAddError("Please enter a valid email address.");
+            return;
+        }
         if (!email || !name) {
             setAddError("Both email and name are required.");
             return;
@@ -168,7 +183,7 @@ export default function Admin() {
                                 <label htmlFor="new-email" className="admin-label">Google Email</label>
                                 <input
                                     id="new-email"
-                                    type="email"
+                                    type="text"
                                     className="admin-input"
                                     placeholder="user@example.com"
                                     value={newEmail}
