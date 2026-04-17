@@ -8,7 +8,12 @@ const Login = () => {
   const unauthorized = new URLSearchParams(window.location.search).get("error") === "unauthorized";
 
   const handleGoogleLogin = () => {
-    window.location.href = "/auth/login";
+    const confirmed = window.confirm(
+      "This application is in testing beta. Only authorized users can access it. Continue?"
+    );
+    if (confirmed) {
+    window.location.href = "/auth/login"; 
+  }
   };
 
   return (
