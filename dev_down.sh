@@ -3,6 +3,8 @@ set -euo pipefail
 
 PID_FILE="gunicorn.pid"
 WORKER_PID_FILE="worker.pid"
+REDIS_HOST="${DEV_REDIS_HOST:-127.0.0.1}"
+REDIS_PORT="${DEV_REDIS_PORT:-6380}"
 
 if [ ! -f "$PID_FILE" ]; then
   echo "No PID file found, have you run dev_up.sh"
@@ -18,7 +20,7 @@ if [ -f "$WORKER_PID_FILE" ]; then
 fi
 
 if [[ "${STOP_REDIS_ON_DOWN:-0}" == "1" ]] && command -v redis-cli &>/dev/null; then
-  redis-cli shutdown nosave 2>/dev/null || true
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" shutdown nosave 2>/dev/null || true
 fi
 
 echo "Mirralations Search is down"

@@ -78,6 +78,16 @@ fi
 [[ -f .env ]] && source .env
 WORKER_PID_FILE="worker.pid"
 WORKER_LOG_FILE="worker.log"
+GUNICORN_ACCESS_LOG="gunicorn-access.log"
+GUNICORN_ERROR_LOG="gunicorn-error.log"
+REDIS_DATA_DIR="$PWD/.redis-data"
+REDIS_PID_FILE="$REDIS_DATA_DIR/redis.pid"
+REDIS_LOG_FILE="$REDIS_DATA_DIR/redis.log"
+REDIS_HOST="${DEV_REDIS_HOST:-127.0.0.1}"
+REDIS_PORT="${DEV_REDIS_PORT:-6380}"
+REDIS_DB="${DEV_REDIS_DB:-0}"
+FETCH_REPO_DIR="${FETCH_REPO_DIR:-$PWD/../mirrulations-fetch}"
+CSV_REPO_DIR="${CSV_REPO_DIR:-$PWD/../mirrulations-csv}"
 
 # Ensure Redis is running for download jobs.
 if ! command -v redis-cli &>/dev/null; then
@@ -88,9 +98,20 @@ if ! command -v redis-server &>/dev/null; then
     echo "redis-server is required for download worker startup."
     exit 1
 fi
-if ! redis-cli ping >/dev/null 2>&1; then
+mkdir -p "$REDIS_DATA_DIR"
+if ! redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping >/dev/null 2>&1; then
     echo "Starting Redis..."
-    redis-server --daemonize yes
+    redis-server \
+      --daemonize yes \
+      --bind "$REDIS_HOST" \
+      --port "$REDIS_PORT" \
+      --dir "$REDIS_DATA_DIR" \
+      --pidfile "$REDIS_PID_FILE" \
+      --logfile "$REDIS_LOG_FILE" \
+      --dbfilename dump.rdb \
+      --save "" \
+      --appendonly no \
+      --stop-writes-on-bgsave-error no
 fi
 
 # Generate JWT_SECRET if not set
@@ -123,9 +144,11 @@ PYTHONPATH="$PWD/src" \
   GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}" \
   GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}" \
   JWT_SECRET="${JWT_SECRET:-}" \
-  REDIS_HOST="${REDIS_HOST:-localhost}" \
-  REDIS_PORT="${REDIS_PORT:-6379}" \
-  REDIS_DB="${REDIS_DB:-0}" \
+  REDIS_HOST="$REDIS_HOST" \
+  REDIS_PORT="$REDIS_PORT" \
+  REDIS_DB="$REDIS_DB" \
+  FETCH_REPO_DIR="$FETCH_REPO_DIR" \
+  CSV_REPO_DIR="$CSV_REPO_DIR" \
   .venv/bin/python worker.py >"$WORKER_LOG_FILE" 2>&1 &
 echo $! > "$WORKER_PID_FILE"
 
@@ -149,10 +172,16 @@ OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
   GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}" \
   GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}" \
   JWT_SECRET="${JWT_SECRET:-}" \
+  REDIS_HOST="$REDIS_HOST" \
+  REDIS_PORT="$REDIS_PORT" \
+  REDIS_DB="$REDIS_DB" \
   .venv/bin/gunicorn \
     --bind "0.0.0.0:${DEV_PORT}" \
     --workers 4 \
     --timeout 120 \
+    --access-logfile "$GUNICORN_ACCESS_LOG" \
+    --error-logfile "$GUNICORN_ERROR_LOG" \
+    --capture-output \
     --pid gunicorn.pid \
     --daemon \
     mirrsearch.app:app
