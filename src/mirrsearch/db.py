@@ -834,6 +834,35 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 for row in cur.fetchall()
             ]
 
+    def get_download_jobs(self, user_email: str) -> List[Dict[str, Any]]:
+        """Return all download jobs for the given user, newest first."""
+        if self.conn is None:
+            return []
+        sql = """
+            SELECT job_id, user_email, docket_ids, format, include_binaries,
+                status, s3_path, created_at, updated_at, expires_at
+            FROM download_jobs
+            WHERE user_email = %s
+            ORDER BY created_at DESC
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (user_email,))
+            return [
+                {
+                    "job_id": str(row[0]),
+                    "user_email": row[1],
+                    "docket_ids": row[2],
+                    "format": row[3],
+                    "include_binaries": row[4],
+                    "status": row[5],
+                    "s3_path": row[6],
+                    "created_at": row[7].isoformat() if row[7] else None,
+                    "updated_at": row[8].isoformat() if row[8] else None,
+                    "expires_at": row[9].isoformat() if row[9] else None,
+                }
+                for row in cur.fetchall()
+            ]
+
 def _get_secrets_from_aws() -> Dict[str, str]:
     if boto3 is None:
         raise ImportError("boto3 is required to use AWS Secrets Manager.")
