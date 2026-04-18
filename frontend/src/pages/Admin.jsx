@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { getAdminStatus, getAuthorizedUsers, addAuthorizedUser, removeAuthorizedUser } from "../api/adminApi";
+import { getAdminStatus, getAuthorizedUsers, addAuthorizedUser, removeAuthorizedUser, updateAuthorizedUserName } from "../api/adminApi";
 import "../styles/Admin.css";
 
 export default function Admin() {
@@ -26,6 +26,11 @@ export default function Admin() {
 
     const [removeTarget, setRemoveTarget] = useState(null);
     const [removeLoading, setRemoveLoading] = useState(false);
+
+    const [editTarget, setEditTarget] = useState(null);   // email being edited
+    const [editName, setEditName] = useState("");
+    const [editLoading, setEditLoading] = useState(false);
+    const [editError, setEditError] = useState(null);
 
     useEffect(() => {
         getAdminStatus().then((data) => {
@@ -98,6 +103,24 @@ export default function Admin() {
         } finally {
             setRemoveLoading(false);
             setRemoveTarget(null);
+        }
+    };
+
+    const handleEditSave = async (email) => {
+        const name = editName.trim();
+        if (!name) return;
+        setEditLoading(true);
+        setEditError(null);
+        try {
+            await updateAuthorizedUserName(email, name);
+            setUsers((prev) =>
+                prev.map((u) => (u.email === email ? { ...u, name } : u))
+            );
+            setEditTarget(null);
+        } catch (err) {
+            setEditError(err.message);
+        } finally {
+            setEditLoading(false);
         }
     };
 
@@ -240,12 +263,15 @@ export default function Admin() {
 
                 {/* Users list */}
                 <section className="admin-card">
-                    <h2 className="admin-card-title">
-                        Current Authorized Users
-                        {!usersLoading && (
-                            <span className="admin-user-count">{users.length}</span>
-                        )}
-                    </h2>
+                <h2 className="admin-card-title">
+                    Current Authorized Users
+                    {!usersLoading && (
+                        <span className="admin-user-count">{users.length}</span>
+                    )}
+                    {!usersLoading && users.length > 0 && (
+                        <span className="admin-edit-hint">Click a user's name to edit it!</span>
+                    )}
+                </h2>
 
                     {usersLoading && <div className="admin-list-loading">Loading users…</div>}
                     {usersError && <p className="admin-form-error">{usersError}</p>}
@@ -267,12 +293,49 @@ export default function Admin() {
                                         transition={{ duration: 0.22 }}
                                     >
                                         <div className="admin-user-info">
-                                            <span className="admin-user-item-name">{u.name}</span>
+                                            {editTarget === u.email ? (
+                                                <div className="admin-edit-row">
+                                                    <input
+                                                        className="admin-input"
+                                                        value={editName}
+                                                        onChange={(e) => setEditName(e.target.value)}
+                                                        disabled={editLoading}
+                                                        autoFocus
+                                                    />
+                                                    <button
+                                                        className="admin-user-edit-btn"
+                                                        onClick={() => handleEditSave(u.email)}
+                                                        disabled={editLoading || !editName.trim()}
+                                                    >
+                                                        {editLoading ? "Saving…" : "Save"}
+                                                    </button>
+                                                    <button
+                                                        className="admin-cancel-edit-btn"
+                                                        onClick={() => setEditTarget(null)}
+                                                        disabled={editLoading}
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    {editError && <span className="admin-form-error">{editError}</span>}
+                                                </div>
+                                            ) : (
+                                                <span
+                                                    className="admin-user-item-name"
+                                                    style={{ cursor: "pointer" }}
+                                                    onClick={() => { setEditTarget(u.email); setEditName(u.name); setEditError(null); }}
+                                                    title="Click to edit name"
+                                                >
+                                                    {u.name}
+                                                </span>
+                                            )}
                                             <span className="admin-user-item-email">{u.email}</span>
                                         </div>
                                         <div className="admin-user-meta">
                                             <span className="admin-user-date">
                                                 Added {new Date(u.authorized_at).toLocaleDateString()}
+                                            </span>
+                                            <span className="admin-user-date">
+                                                Last login: {u.last_login ? new Date(u.last_login).toLocaleDateString() : "Never"}
                                             </span>
                                             <button
                                                 className="admin-remove-btn"

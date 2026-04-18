@@ -33,3 +33,16 @@ export async function removeAuthorizedUser(email) {
     if (response.status === 404) throw new Error("USER_NOT_FOUND");
     if (!response.ok) throw new Error(`Failed to remove authorized user: ${response.status}`);
 }
+
+export async function updateAuthorizedUserName(email, name) {
+    const response = await fetch(`/api/authorized/${encodeURIComponent(email)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+    });
+    if (response.status === 401) throw new Error("UNAUTHORIZED");
+    if (response.status === 403) throw new Error("FORBIDDEN");
+    if (response.status === 404) throw new Error("USER_NOT_FOUND");
+    if (!response.ok) throw new Error(`Failed to update user: ${response.status}`);
+    return response.json();
+}
