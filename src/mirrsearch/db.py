@@ -1,6 +1,5 @@
 import json
 from dataclasses import dataclass
-from operator import index
 from typing import List, Dict, Any, Set
 import os
 import psycopg2
@@ -392,18 +391,18 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             return []
 
 
-    def _run_text_match_queries(  # pylint: disable=too-many-locals
+    def _run_text_match_queries(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
         """Execute all three OpenSearch queries and merge their results."""
-        def safe_search(index: str, body: Dict) -> Dict:
+        def safe_search(index_name: str, body: Dict) -> Dict:
             try:
-                return opensearch_client.search(index=index, body=body)
+                return opensearch_client.search(index=index_name, body=body)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"OpenSearch index query failed for '{index}': {e}")
+                print(f"OpenSearch index query failed for '{index_name}': {e}")
                 return {"aggregations": {"by_docket": {"buckets": []}}}
- 
+
         docket_counts: Dict = {}
- 
+
         doc_match_clauses = [
             {"multi_match": {
                 "query": t,
@@ -416,7 +415,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         ]
         comment_match_clauses = [{"match": {"commentText": t}} for t in terms]
         extracted_match_clauses = [{"match": {"extractedText": t}} for t in terms]
- 
+
         # Document match counts from OpenSearch ---
         doc_resp = safe_search(
             "documents_text",
@@ -429,7 +428,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             "matching_docs",
             "document_match_count"
         )
- 
+
         # Find which dockets had comment/extracted text matches
         # cardinality agg tells us which dockets matched without bucket explosion
         comment_resp = safe_search(
@@ -444,7 +443,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 "matching_extracted", extracted_match_clauses
             )
         )
- 
+
         # Collect all docket IDs that had any comment or extracted text match
         matched_comment_dockets: Set[str] = set()
         for bucket in comment_resp["aggregations"]["by_docket"]["buckets"]:
@@ -453,12 +452,12 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         for bucket in extracted_resp["aggregations"]["by_docket"]["buckets"]:
             if bucket.get("matching_extracted", {}).get("doc_count", 0) > 0:
                 matched_comment_dockets.add(str(bucket["key"]))
- 
+
         for did in matched_comment_dockets:
             docket_counts.setdefault(
                 did, {"document_match_count": 0, "comment_match_count": 0}
             )
- 
+
         # Exact comment match counts from Postgres
         # COUNT(DISTINCT comment_id) gives exact deduplication across both indexes
         # because comments table is the single source of truth
@@ -471,9 +470,9 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                     did, {"document_match_count": 0, "comment_match_count": 0}
                 )
                 docket_counts[did]["comment_match_count"] = count
- 
+
         return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
-    
+
 
     def _get_comment_match_counts_postgres(
             self, terms: List[str], docket_ids: List[str]) -> Dict[str, int]:
@@ -497,7 +496,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
             return {row[0]: row[1] for row in cur.fetchall()}
- 
+
     @staticmethod
     def _comment_total_query(docket_ids: List[str]) -> Dict:
         """Aggregation: per docket, total comment count."""
@@ -524,8 +523,8 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 }
             },
         }
- 
-    def get_docket_document_comment_totals(
+
+    def get_docket_document_comment_totals( # pylint: disable=unused-argument
             self,
             docket_ids: List[str],
             opensearch_client=None
@@ -538,7 +537,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Docket totals query failed: {e}")
             return {}
- 
+
     def _fetch_docket_totals(
             self, docket_ids: List[str]) -> Dict[str, Dict[str, int]]:
         """
@@ -560,7 +559,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                     "document_total_count": count,
                     "comment_total_count": 0
                 }
- 
+
             # FIX 6: Comment total count from Postgres — not OpenSearch
             cur.execute(
                 "SELECT docket_id, COUNT(*) FROM comments "
@@ -573,7 +572,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                     {"document_total_count": 0, "comment_total_count": 0}
                 )
                 totals[docket_id]["comment_total_count"] = count
- 
+
         return totals
 
 
