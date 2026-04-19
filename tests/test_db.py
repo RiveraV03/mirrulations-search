@@ -5,10 +5,10 @@ Only tests DBLayer wiring, the postgres branch, and module-level
 factory functions. Dummy-data behavior tests live in test_mock.py.
 """
 # pylint: disable=redefined-outer-name,protected-access
+from datetime import datetime, timezone
 import pytest
 import mirrsearch.db as db_module
 from mirrsearch.db import DBLayer, cfr_part_filter_patterns, get_db
-
 
 # --- DBLayer instantiation ---
 
@@ -18,19 +18,16 @@ def test_db_layer_creation():
     assert db is not None
     assert isinstance(db, DBLayer)
 
-
 def test_db_layer_is_frozen():
     """Test that DBLayer is a frozen dataclass (immutable)"""
     db = DBLayer()
     with pytest.raises(Exception):  # FrozenInstanceError
         db.new_attribute = "test"
 
-
 def test_db_layer_no_conn_returns_empty():
     """DBLayer with no connection returns empty list from search"""
     db = DBLayer()
     assert db.search("anything") == []
-
 
 def test_get_agencies_no_conn_returns_empty():
     assert DBLayer().get_agencies() == []
@@ -38,7 +35,6 @@ def test_get_agencies_no_conn_returns_empty():
 
 def test_cfr_part_filter_patterns_skips_none_and_blank_parts():
     assert cfr_part_filter_patterns([None, {"part": "  "}, "413"]) == ["413"]
-
 
 def test_merge_unique_comment_matches_unions_distinct_comment_ids():
     comments = {
@@ -416,7 +412,6 @@ def test_get_dockets_by_ids_uses_any_and_reuses_row_shape():
     assert results[0]["docket_id"] == "DOC-002"
     assert results[0]["docket_title"] == "Other"
 
-
 # --- Factory function tests ---
 
 def test_get_postgres_connection_uses_env_and_dotenv(monkeypatch):
@@ -451,7 +446,6 @@ def test_get_postgres_connection_uses_env_and_dotenv(monkeypatch):
         "user": "dbuser",
         "password": "dbpass",
     }
-
 
 def test_get_postgres_connection_uses_aws_secrets(monkeypatch):
     """USE_AWS_SECRETS=true uses boto3 to get credentials"""
@@ -495,7 +489,6 @@ def test_get_secrets_from_aws_raises_without_boto3(monkeypatch):
     with pytest.raises(ImportError):
         db_module._get_secrets_from_aws()
 
-
 def test_get_db_uses_postgres_when_env_set(monkeypatch):
     sentinel = DBLayer(conn="conn")
     monkeypatch.setattr(db_module, "get_postgres_connection", lambda: sentinel)
@@ -503,7 +496,6 @@ def test_get_db_uses_postgres_when_env_set(monkeypatch):
     db = get_db()
 
     assert db is sentinel
-
 
 def test_get_opensearch_connection(monkeypatch):
     captured = {}
@@ -521,7 +513,6 @@ def test_get_opensearch_connection(monkeypatch):
     assert captured["use_ssl"] is False
     assert captured["verify_certs"] is False
     assert "http_auth" not in captured
-
 
 def test_get_opensearch_connection_https_and_basic_auth(monkeypatch):
     captured = {}
@@ -670,7 +661,6 @@ def test_text_match_terms_searches_comments_and_extracted():
     assert results[0]["comment_match_count"] == 6
     assert results[0]["document_match_count"] == 0
 
-
 def test_text_match_terms_combines_comment_sources():
     """Comment body and extracted text both count toward comNum."""
     doc_buckets = []
@@ -691,7 +681,6 @@ def test_text_match_terms_combines_comment_sources():
     assert results[0]["comment_match_count"] == 2
     assert results[0]["document_match_count"] == 0
 
-
 def test_text_match_terms_same_comment_id_body_and_extracted_counts_once():
     """Same commentId in commentText and extractedText: counted once in comNum."""
     doc_buckets = []
@@ -708,7 +697,6 @@ def test_text_match_terms_same_comment_id_body_and_extracted_counts_once():
     assert results[0]["docket_id"] == "D1"
     assert results[0]["comment_match_count"] == 1
     assert results[0]["document_match_count"] == 0
-
 
 def test_text_match_terms_multiple_dockets_comments():
     """Test searching comments across multiple dockets"""
@@ -875,7 +863,6 @@ def test_is_admin_returns_false_when_not_found():
     db = DBLayer(conn=_FakeConn([]))
     assert db.is_admin("notadmin@email.com") is False
 
-
 # --- is_authorized_user tests ---
 
 def test_is_authorized_user_no_conn_returns_false():
@@ -888,7 +875,6 @@ def test_is_authorized_user_returns_true_when_found():
 def test_is_authorized_user_returns_false_when_not_found():
     db = DBLayer(conn=_FakeConn([]))
     assert db.is_authorized_user("unknown@email.com") is False
-
 
 # --- add_authorized_user tests ---
 
@@ -918,7 +904,6 @@ def test_remove_authorized_user_returns_false_when_not_found():
     db = DBLayer(conn=_FakeConn([]))
     db.conn.cursor_obj.rowcount = 0
     assert db.remove_authorized_user("nobody@email.com") is False
-
 
 # --- get_authorized_users tests ---
 
@@ -959,3 +944,73 @@ def test_update_authorized_user_name_returns_false_when_not_found():
     db = DBLayer(conn=_FakeConn([]))
     db.conn.cursor_obj.rowcount = 0
     assert db.update_authorized_user_name("nobody@email.com", "Name") is False
+
+# --- get_download_jobs tests ---
+
+def test_get_download_jobs_no_conn_returns_empty():
+    assert DBLayer().get_download_jobs("user@email.com") == []
+
+def test_get_download_jobs_returns_list():
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = [
+        ("job-uuid-1", "user@email.com", ["CMS-2025-0240"], "raw", False,
+         "pending", None, now, now, now),
+        ("job-uuid-2", "user@email.com", ["EPA-2024-0001"], "csv", True,
+         "ready", "s3://bucket/job-uuid-2.zip", now, now, now),
+    ]
+    db = DBLayer(conn=_FakeConn(rows))
+    results = db.get_download_jobs("user@email.com")
+    assert len(results) == 2
+    assert results[0]["job_id"] == "job-uuid-1"
+    assert results[0]["user_email"] == "user@email.com"
+    assert results[0]["docket_ids"] == ["CMS-2025-0240"]
+    assert results[0]["format"] == "raw"
+    assert results[0]["include_binaries"] is False
+    assert results[0]["status"] == "pending"
+    assert results[0]["s3_path"] is None
+    assert results[1]["job_id"] == "job-uuid-2"
+    assert results[1]["status"] == "ready"
+    assert results[1]["s3_path"] == "s3://bucket/job-uuid-2.zip"
+
+def test_get_download_jobs_empty_table_returns_empty():
+    db = DBLayer(conn=_FakeConn([]))
+    assert db.get_download_jobs("user@email.com") == []
+
+def test_get_download_jobs_serializes_datetimes():
+    """created_at, updated_at, expires_at are ISO strings, not datetime objects."""
+    now = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+    rows = [
+        ("job-uuid-1", "user@email.com", ["CMS-2025-0240"], "raw", False,
+         "pending", None, now, now, now),
+    ]
+    db = DBLayer(conn=_FakeConn(rows))
+    results = db.get_download_jobs("user@email.com")
+    assert isinstance(results[0]["created_at"], str)
+    assert isinstance(results[0]["updated_at"], str)
+    assert isinstance(results[0]["expires_at"], str)
+
+def test_get_download_jobs_none_datetimes_serialize_as_none():
+    """None timestamps should not crash — returned as None."""
+    rows = [
+        ("job-uuid-1", "user@email.com", ["CMS-2025-0240"], "raw", False,
+         "pending", None, None, None, None),
+    ]
+    db = DBLayer(conn=_FakeConn(rows))
+    results = db.get_download_jobs("user@email.com")
+    assert results[0]["created_at"] is None
+    assert results[0]["updated_at"] is None
+    assert results[0]["expires_at"] is None
+
+def test_get_download_jobs_queries_correct_user():
+    """Only jobs matching the given user_email are fetched."""
+    db = DBLayer(conn=_FakeConn([]))
+    db.get_download_jobs("specific@email.com")
+    _sql, params = db.conn.cursor_obj.executed[0]
+    assert params == ("specific@email.com",)
+
+def test_get_download_jobs_orders_by_created_at_desc():
+    """SQL should order results newest first."""
+    db = DBLayer(conn=_FakeConn([]))
+    db.get_download_jobs("user@email.com")
+    sql, _ = db.conn.cursor_obj.executed[0]
+    assert "ORDER BY created_at DESC" in sql

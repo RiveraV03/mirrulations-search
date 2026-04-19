@@ -69,3 +69,10 @@ export async function getCollectionDockets(collectionId, page = 1) {
     };
     return { results, pagination };
 }
+
+export async function getDownloadJobs() {
+    const response = await fetch("/download/jobs");
+    if (response.status === 401) throw new Error("UNAUTHORIZED");
+    if (!response.ok) throw new Error(`Failed to fetch download jobs: ${response.status}`);
+    return response.json();
+}

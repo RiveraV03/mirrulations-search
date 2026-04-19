@@ -509,7 +509,17 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
     def collections_page():
         return send_from_directory(dist_dir, "index.html")
 
+    @flask_app.route("/download/jobs", methods=["GET"])
+    def list_download_jobs():
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        jobs = db_layer.get_download_jobs(user["email"])
+        return jsonify(jobs)
+
     return flask_app
+
 
 
 app = create_app(db_layer=get_db())
