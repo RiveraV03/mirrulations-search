@@ -177,7 +177,7 @@ export default function Home() {
               <>
                 <p>Sign in with Google to open the search experience.</p>
                 <div className="home-cta-row">
-                  <MotionLink to="/auth/login" className="home-cta-primary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <MotionLink to="/login" className="home-cta-primary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                     Sign in
                   </MotionLink>
                   <MotionLink to="/privacy" className="home-cta-secondary" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>

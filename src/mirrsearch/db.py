@@ -768,6 +768,16 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             deleted = cur.rowcount > 0
         self.conn.commit()
         return deleted
+    def update_authorized_user_name(self, email: str, name: str) -> bool:
+        """Update the display name of an authorized user. Returns True if updated."""
+        if self.conn is None:
+            return False
+        sql = "UPDATE authorized_users SET name = %s WHERE email = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (name, email))
+            updated = cur.rowcount > 0
+        self.conn.commit()
+        return updated
 
     def get_authorized_users(self) -> List[Dict[str, Any]]:
         """Return all authorized users including their last_login from the users table."""
@@ -829,6 +839,34 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             row = cur.fetchone()
         return row[0] if row else None
 
+    def get_download_jobs(self, user_email: str) -> List[Dict[str, Any]]:
+        """Return all download jobs for the given user, newest first."""
+        if self.conn is None:
+            return []
+        sql = """
+            SELECT job_id, user_email, docket_ids, format, include_binaries,
+                status, s3_path, created_at, updated_at, expires_at
+            FROM download_jobs
+            WHERE user_email = %s
+            ORDER BY created_at DESC
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (user_email,))
+            return [
+                {
+                    "job_id": str(row[0]),
+                    "user_email": row[1],
+                    "docket_ids": row[2],
+                    "format": row[3],
+                    "include_binaries": row[4],
+                    "status": row[5],
+                    "s3_path": row[6],
+                    "created_at": row[7].isoformat() if row[7] else None,
+                    "updated_at": row[8].isoformat() if row[8] else None,
+                    "expires_at": row[9].isoformat() if row[9] else None,
+                }
+                for row in cur.fetchall()
+            ]
 
 def _get_secrets_from_aws() -> Dict[str, str]:
     if boto3 is None:
@@ -908,7 +946,6 @@ def _opensearch_client_kwargs() -> Dict[str, Any]:
         kwargs["http_auth"] = (user, password)
     return kwargs
 
-
 class _AossClient:  # pylint: disable=too-few-public-methods
     """Thin requests-based client that mimics opensearchpy .search() interface."""
     def __init__(self, base_url, session):
@@ -921,9 +958,7 @@ class _AossClient:  # pylint: disable=too-few-public-methods
         resp.raise_for_status()
         return resp.json()
 
-
 _OPENSEARCH_CLIENT_SINGLETON = None
-
 
 def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-statements
     global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement

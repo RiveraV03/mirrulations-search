@@ -152,9 +152,18 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods,protected-access
             }
         # Update last_login with current datetime object (not string)
         self._last_logins[email_lower] = datetime.now()
+
     def add_admin(self, email: str) -> None:
         """Add an admin user."""
         self._admins.add(email.lower())
+
+    def update_authorized_user_name(self, email: str, name: str) -> bool:
+        """Update the display name of an authorized user. Returns True if updated."""
+        key = email.lower()
+        if key not in self._authorized_users:
+            return False
+        self._authorized_users[key]["name"] = name
+        return True
 
     # pylint: disable=line-too-long
     def _opensearch_items(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -336,3 +345,7 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods,protected-access
 
     def get_download_s3_url(self, job_id, user_email):  # pylint: disable=unused-argument
         return None
+
+    def get_download_jobs(self, user_email):  # pylint: disable=unused-argument
+        """Return all download jobs for a user"""
+        return list(self._jobs.values())
