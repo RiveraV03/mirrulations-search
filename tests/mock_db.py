@@ -118,6 +118,14 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         del self._authorized_users[key]
         return True
 
+    def update_authorized_user_name(self, email: str, name: str) -> bool:
+        """Update the display name of an authorized user. Returns True if updated."""
+        key = email.lower()
+        if key not in self._authorized_users:
+            return False
+        self._authorized_users[key]["name"] = name
+        return True
+
     # pylint: disable=line-too-long
     def _opensearch_items(self) -> Dict[str, List[Dict[str, Any]]]:
         """Dummy OpenSearch data matching real production structure"""
