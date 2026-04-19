@@ -4,7 +4,8 @@ Tests for the database layer (db.py)
 Only tests DBLayer wiring, the postgres branch, and module-level
 factory functions. Dummy-data behavior tests live in test_mock.py.
 """
-# pylint: disable=redefined-outer-name,protected-access
+# pylint: disable=redefined-outer-name,protected-access, too-many-lines
+from types import SimpleNamespace
 import pytest
 import mirrsearch.db as db_module
 from mirrsearch.db import DBLayer, cfr_part_filter_patterns, get_db
@@ -586,7 +587,7 @@ def _fake_os_comment_agg_bucket(docket_key: str, agg_name: str, *comment_ids: st
     }
 
 
-class _FakeOpenSearch:
+class _FakeOpenSearch: #pylint: disable=too-few-public-methods
     """
     Fake OpenSearch client returning cardinality-style agg responses.
     Comment counts come from unique_comments.value, not by_comment buckets.
@@ -621,7 +622,9 @@ def _make_db_with_postgres_comment_counts(comment_counts: dict):
 
 
 def test_text_match_terms_searches_comments_and_extracted(monkeypatch):
-    """text_match_terms searches all three indexes and returns correct comment count from Postgres."""
+    """
+    text_match_terms searches all three indexes and returns correct comment count from Postgres.
+    """
     comment_buckets = [
         _fake_os_comment_agg_bucket(
             "CMS-2025-0240", "matching_comments", "c1", "c2")
@@ -746,18 +749,27 @@ def test_text_match_terms_uses_filtered_aggregations():
     comment_index, comment_body = fake_client.searches[1]
     assert comment_index == "comments"
     assert comment_body["size"] == 0
-    assert "aggs" in comment_body
-    assert "matching_comments" in comment_body["aggs"]["by_docket"]["aggs"]
-    assert "filter" in comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]
-    assert "unique_comments" in comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]["aggs"]
-    assert "cardinality" in comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]["aggs"]["unique_comments"]
-    assert "by_comment" not in comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"].get("aggs", {})
+    assert "aggs" in \
+        comment_body
+    assert "matching_comments" in \
+        comment_body["aggs"]["by_docket"]["aggs"]
+    assert "filter" in \
+        comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]
+    assert "unique_comments" in \
+        comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]["aggs"]
+    assert "cardinality" in \
+        comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"]["aggs"]["unique_comments"]
+    assert "by_comment" not in \
+        comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"].get("aggs", {})
 
     extracted_index, extracted_body = fake_client.searches[2]
     assert extracted_index == "comments_extracted_text"
-    assert "matching_extracted" in extracted_body["aggs"]["by_docket"]["aggs"]
-    assert "unique_comments" in extracted_body["aggs"]["by_docket"]["aggs"]["matching_extracted"]["aggs"]
-    assert "by_comment" not in extracted_body["aggs"]["by_docket"]["aggs"]["matching_extracted"].get("aggs", {})
+    assert "matching_extracted" in \
+        extracted_body["aggs"]["by_docket"]["aggs"]
+    assert "unique_comments" in \
+        extracted_body["aggs"]["by_docket"]["aggs"]["matching_extracted"]["aggs"]
+    assert "by_comment" not in \
+        extracted_body["aggs"]["by_docket"]["aggs"]["matching_extracted"].get("aggs", {})
 
 
 def test_text_match_terms_returns_correct_structure(monkeypatch):
@@ -974,7 +986,7 @@ def test_accumulate_counts_accumulates_multiple_buckets():
 # Lines 400-402: text_match_terms KeyError/AttributeError fallback
 def test_text_match_terms_keyerror_returns_empty():
     """KeyError in _run_text_match_queries returns empty list."""
-    class KeyErrorClient:
+    class KeyErrorClient: #pylint: disable=too-few-public-methods
         def search(self, index, body):
             raise KeyError("aggregations")
     db = DBLayer()
@@ -983,7 +995,7 @@ def test_text_match_terms_keyerror_returns_empty():
 
 def test_text_match_terms_exception_returns_empty():
     """Generic exception in _run_text_match_queries returns empty list."""
-    class BrokenClient:
+    class BrokenClient: #pylint: disable=too-few-public-methods
         def search(self, index, body):
             raise RuntimeError("connection refused")
     db = DBLayer()
@@ -1066,13 +1078,13 @@ def test_comment_total_query_structure():
 def test_get_docket_document_comment_totals_empty_returns_empty():
     """Empty docket_ids returns empty dict without hitting DB."""
     db = DBLayer(conn=_FakeConn([]))
-    assert db.get_docket_document_comment_totals([]) == {}
+    assert not db.get_docket_document_comment_totals([])
 
 
 def test_get_docket_document_comment_totals_no_conn_returns_empty():
     """No connection returns empty dict."""
     db = DBLayer()
-    assert db.get_docket_document_comment_totals(["D1"]) == {}
+    assert not db.get_docket_document_comment_totals(["D1"])
 
 
 def test_fetch_docket_totals_returns_document_and_comment_counts():
@@ -1114,7 +1126,7 @@ def test_fetch_docket_totals_returns_document_and_comment_counts():
     assert result["D1"]["comment_total_count"] == 12
 
 
-def test_fetch_docket_totals_exception_returns_empty(monkeypatch):
+def test_fetch_docket_totals_exception_returns_empty():
     """Exception in _fetch_docket_totals is caught and returns empty dict."""
     class _BrokenConn:
         def cursor(self):
@@ -1124,13 +1136,12 @@ def test_fetch_docket_totals_exception_returns_empty(monkeypatch):
 
     db = DBLayer(conn=_BrokenConn())
     result = db.get_docket_document_comment_totals(["D1"])
-    assert result == {}
+    assert not result
 
 
-# Lines 947-954: _AossClient init and search
-def test_aoss_client_search_calls_correct_url(monkeypatch):
+# --- _AossClient init and search ---
+def test_aoss_client_search_calls_correct_url():
     """_AossClient.search constructs correct URL and returns JSON."""
-    import mirrsearch.db as db_mod
 
     class _FakeResponse:
         def raise_for_status(self):
@@ -1138,54 +1149,45 @@ def test_aoss_client_search_calls_correct_url(monkeypatch):
         def json(self):
             return {"aggregations": {}}
 
-    class _FakeSession:
+    class _FakeSession: # pylint: disable=too-few-public-methods
         def __init__(self):
             self.calls = []
-        def post(self, url, json=None, timeout=None):
+        def post(self, url, json=None, timeout=None): # pylint: disable=unused-argument
             self.calls.append(url)
             return _FakeResponse()
 
     session = _FakeSession()
-    client = db_mod._AossClient("https://example.aoss.amazonaws.com", session)
+    client = db_module._AossClient("https://example.aoss.amazonaws.com", session)
     result = client.search(index="comments", body={"size": 0})
     assert "https://example.aoss.amazonaws.com/comments/_search" in session.calls
     assert result == {"aggregations": {}}
 
 
-# Lines 967-981: get_opensearch_connection AWS secrets path
+# --- get_opensearch_connection AWS secrets path ---
 def test_get_opensearch_connection_aoss_host_uses_singleton(monkeypatch):
     """AOSS host returns singleton _AossClient and reuses it on second call."""
-    import mirrsearch.db as db_mod
 
-    monkeypatch.setattr(db_mod, "_OPENSEARCH_CLIENT_SINGLETON", None)
+    monkeypatch.setattr(db_module, "_OPENSEARCH_CLIENT_SINGLETON", None)
     monkeypatch.setenv("OPENSEARCH_HOST", "https://test.aoss.amazonaws.com")
 
-    class _FakeCreds:
-        def get_credentials(self):
-            return object()
+    mocks = SimpleNamespace(
+        boto3=SimpleNamespace(
+            Session=lambda: SimpleNamespace(get_credentials=lambda: object())
+        ),
+        AWS4Auth=lambda **_: SimpleNamespace(),
+        requests=SimpleNamespace(
+            Session=lambda: SimpleNamespace(auth=None)
+        ),
+    )
 
-    class _FakeAWS4Auth:
-        def __init__(self, **_):
-            pass
+    monkeypatch.setattr(db_module, "boto3", mocks.boto3)
+    monkeypatch.setattr(db_module, "AWS4Auth", mocks.AWS4Auth)
+    monkeypatch.setattr(db_module, "requests", mocks.requests)
 
-    class _FakeSession:
-        auth = None
-        def __init__(self): pass
+    client1 = db_module.get_opensearch_connection()
+    assert isinstance(client1, db_module._AossClient)
 
-    monkeypatch.setattr(db_mod, "boto3", type("b", (), {
-        "Session": staticmethod(lambda: _FakeCreds())
-    })())
-    monkeypatch.setattr(db_mod, "AWS4Auth", lambda **kw: _FakeAWS4Auth())
-    monkeypatch.setattr(db_mod, "requests", type("r", (), {
-        "Session": staticmethod(lambda: _FakeSession())
-    })())
-
-    client1 = db_mod.get_opensearch_connection()
-    assert isinstance(client1, db_mod._AossClient)
-
-    # Second call returns same singleton
-    client2 = db_mod.get_opensearch_connection()
+    client2 = db_module.get_opensearch_connection()
     assert client1 is client2
 
-    # Reset singleton for other tests
-    monkeypatch.setattr(db_mod, "_OPENSEARCH_CLIENT_SINGLETON", None)
+    monkeypatch.setattr(db_module, "_OPENSEARCH_CLIENT_SINGLETON", None)
