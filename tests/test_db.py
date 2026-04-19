@@ -941,3 +941,21 @@ def test_get_authorized_users_returns_list():
 def test_get_authorized_users_empty_table_returns_empty():
     db = DBLayer(conn=_FakeConn([]))
     assert db.get_authorized_users() == []
+
+def test_update_authorized_user_name_no_conn_returns_false():
+    assert DBLayer().update_authorized_user_name("user@email.com", "New Name") is False
+
+def test_update_authorized_user_name_updates_and_returns_true():
+    db = DBLayer(conn=_FakeConn([]))
+    db.conn.cursor_obj.rowcount = 1
+    result = db.update_authorized_user_name("user@email.com", "New Name")
+    assert result is True
+    sql, params = db.conn.cursor_obj.executed[0]
+    assert "UPDATE authorized_users" in sql
+    assert "SET name = %s" in sql
+    assert params == ("New Name", "user@email.com")
+
+def test_update_authorized_user_name_returns_false_when_not_found():
+    db = DBLayer(conn=_FakeConn([]))
+    db.conn.cursor_obj.rowcount = 0
+    assert db.update_authorized_user_name("nobody@email.com", "Name") is False
