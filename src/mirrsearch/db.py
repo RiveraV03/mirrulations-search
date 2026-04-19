@@ -391,7 +391,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             return []
 
 
-    def _run_text_match_queries(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+    def _run_text_match_queries(  # pylint: disable=too-many-locals
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
         """Execute all three OpenSearch queries and merge their results."""
         def safe_search(index_name: str, body: Dict) -> Dict:
@@ -444,58 +444,38 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             )
         )
 
-        # Collect all docket IDs that had any comment or extracted text match
-        matched_comment_dockets: Set[str] = set()
-        for bucket in comment_resp["aggregations"]["by_docket"]["buckets"]:
-            if bucket.get("matching_comments", {}).get("doc_count", 0) > 0:
-                matched_comment_dockets.add(str(bucket["key"]))
-        for bucket in extracted_resp["aggregations"]["by_docket"]["buckets"]:
-            if bucket.get("matching_extracted", {}).get("doc_count", 0) > 0:
-                matched_comment_dockets.add(str(bucket["key"]))
-
-        for did in matched_comment_dockets:
+        # Read cardinality match counts from both comment indexes and take the max per docket
+        comment_counts = self._extract_cardinality_counts(
+            comment_resp, "matching_comments"
+        )
+        extracted_counts = self._extract_cardinality_counts(
+            extracted_resp, "matching_extracted"
+        )
+        for did in set(comment_counts) | set(extracted_counts):
             docket_counts.setdefault(
                 did, {"document_match_count": 0, "comment_match_count": 0}
             )
-
-        # Exact comment match counts from Postgres
-        # COUNT(DISTINCT comment_id) gives exact deduplication across both indexes
-        # because comments table is the single source of truth
-        if matched_comment_dockets and self.conn is not None:
-            comment_counts = self._get_comment_match_counts_postgres(
-                terms, list(matched_comment_dockets)
+            docket_counts[did]["comment_match_count"] = max(
+                comment_counts.get(did, 0),
+                extracted_counts.get(did, 0)
             )
-            for did, count in comment_counts.items():
-                docket_counts.setdefault(
-                    did, {"document_match_count": 0, "comment_match_count": 0}
-                )
-                docket_counts[did]["comment_match_count"] = count
 
         return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
 
+    @staticmethod
+    def _extract_cardinality_counts(resp: Dict, agg_name: str) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        buckets = (
+            resp.get("aggregations", {}).get("by_docket", {}).get("buckets", [])
+        )
+        for bucket in buckets:
+            inner = bucket.get(agg_name, {})
+            if inner.get("doc_count", 0) > 0:
+                value = inner.get("unique_comments", {}).get("value", 0)
+                if value > 0:
+                    counts[str(bucket["key"])] = value
+        return counts
 
-    def _get_comment_match_counts_postgres(
-            self, terms: List[str], docket_ids: List[str]) -> Dict[str, int]:
-        """
-        Exact distinct comment counts per docket from Postgres.
-        Uses full-text search on comment text to match the same terms as OpenSearch.
-        Deduplicates across comments and extracted text natively since both
-        reference the same comment_id in the comments table.
-        """
-        if self.conn is None or not docket_ids or not terms:
-            return {}
-        conditions = " OR ".join("c.comment ILIKE %s" for _ in terms)
-        sql = f"""
-            SELECT c.docket_id, COUNT(DISTINCT c.comment_id)
-            FROM comments c
-            WHERE c.docket_id = ANY(%s)
-            AND ({conditions})
-            GROUP BY c.docket_id
-        """
-        params: List[Any] = [docket_ids] + [f"%{t}%" for t in terms]
-        with self.conn.cursor() as cur:
-            cur.execute(sql, params)
-            return {row[0]: row[1] for row in cur.fetchall()}
 
     @staticmethod
     def _comment_total_query(docket_ids: List[str]) -> Dict:
