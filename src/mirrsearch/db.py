@@ -768,6 +768,16 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             deleted = cur.rowcount > 0
         self.conn.commit()
         return deleted
+    def update_authorized_user_name(self, email: str, name: str) -> bool:
+        """Update the display name of an authorized user. Returns True if updated."""
+        if self.conn is None:
+            return False
+        sql = "UPDATE authorized_users SET name = %s WHERE email = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (name, email))
+            updated = cur.rowcount > 0
+        self.conn.commit()
+        return updated
 
     def get_authorized_users(self) -> List[Dict[str, Any]]:
         """Return all authorized users."""
