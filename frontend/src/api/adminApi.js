@@ -35,8 +35,8 @@ export async function removeAuthorizedUser(email) {
 }
 
 export async function updateAuthorizedUserName(email, name) {
-    const response = await fetch(`/api/authorized/${encodeURIComponent(email)}`, {
-        method: "PATCH",
+    const response = await fetch(`/api/authorized/${encodeURIComponent(email)}/update-name`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
     });
@@ -46,3 +46,4 @@ export async function updateAuthorizedUserName(email, name) {
     if (!response.ok) throw new Error(`Failed to update user: ${response.status}`);
     return response.json();
 }
+
