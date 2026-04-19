@@ -145,6 +145,38 @@ def test_remove_authorized_user_case_insensitive(db):  # pylint: disable=redefin
     assert db.remove_authorized_user("USER@EXAMPLE.COM") is True
 
 
+# --- MockDBLayer update_authorized_user_name ---
+
+def test_update_authorized_user_name_returns_true(db):  # pylint: disable=redefined-outer-name
+    """update_authorized_user_name returns True and updates the name"""
+    db.add_authorized_user("user@example.com", "Old Name")
+    assert db.update_authorized_user_name("user@example.com", "New Name") is True
+    users = db.get_authorized_users()
+    assert users[0]["name"] == "New Name"
+
+
+def test_update_authorized_user_name_returns_false_when_not_found(db):  # pylint: disable=redefined-outer-name
+    """update_authorized_user_name returns False when email does not exist"""
+    assert db.update_authorized_user_name("nobody@example.com", "Whatever") is False
+
+
+def test_update_authorized_user_name_case_insensitive(db):  # pylint: disable=redefined-outer-name
+    """update_authorized_user_name matches email case-insensitively"""
+    db.add_authorized_user("user@example.com", "Old Name")
+    assert db.update_authorized_user_name("USER@EXAMPLE.COM", "New Name") is True
+    users = db.get_authorized_users()
+    assert users[0]["name"] == "New Name"
+
+
+def test_update_authorized_user_name_preserves_other_fields(db):  # pylint: disable=redefined-outer-name
+    """update_authorized_user_name does not alter email or authorized_at"""
+    db.add_authorized_user("user@example.com", "Old Name")
+    db.update_authorized_user_name("user@example.com", "New Name")
+    users = db.get_authorized_users()
+    assert users[0]["email"] == "user@example.com"
+    assert users[0]["authorized_at"] == "2026-01-01T00:00:00"
+
+
 # --- /admin/login endpoint ---
 
 def test_admin_login_redirects_to_oauth(app):  # pylint: disable=redefined-outer-name
@@ -288,6 +320,68 @@ def test_remove_authorized_user_no_longer_in_list(admin_client, db):  # pylint: 
     admin_client.delete('/api/authorized/gone@example.com')
     users = admin_client.get('/api/authorized').get_json()
     assert not any(u["email"] == "gone@example.com" for u in users)
+
+def test_update_authorized_user_success(admin_client, db):  # pylint: disable=redefined-outer-name
+    """POST /api/authorized/<email>/update-name updates the name and returns 200"""
+    db.add_authorized_user("edit@example.com", "Old Name")
+    response = admin_client.post(
+        '/api/authorized/edit@example.com/update-name', json={"name": "New Name"}
+    )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["email"] == "edit@example.com"
+    assert data["name"] == "New Name"
+
+
+def test_update_authorized_user_reflected_in_get(admin_client, db):  # pylint: disable=redefined-outer-name
+    """Name change via POST /update-name is reflected in GET /api/authorized"""
+    db.add_authorized_user("edit@example.com", "Old Name")
+    admin_client.post('/api/authorized/edit@example.com/update-name', json={"name": "Updated Name"})
+    users = admin_client.get('/api/authorized').get_json()
+    match = next(u for u in users if u["email"] == "edit@example.com")
+    assert match["name"] == "Updated Name"
+
+
+def test_update_authorized_user_not_found(admin_client):  # pylint: disable=redefined-outer-name
+    """POST /api/authorized/<email>/update-name returns 404 when user does not exist"""
+    response = admin_client.post(
+        '/api/authorized/nobody@example.com/update-name', json={"name": "Whoever"}
+    )
+    assert response.status_code == 404
+
+
+def test_update_authorized_user_missing_name(admin_client, db):  # pylint: disable=redefined-outer-name
+    """POST /api/authorized/<email>/update-name returns 400 when name is missing"""
+    db.add_authorized_user("edit@example.com", "Old Name")
+    response = admin_client.post('/api/authorized/edit@example.com/update-name', json={})
+    assert response.status_code == 400
+
+
+def test_update_authorized_user_blank_name(admin_client, db):  # pylint: disable=redefined-outer-name
+    """POST /api/authorized/<email>/update-name returns 400 when name is blank"""
+    db.add_authorized_user("edit@example.com", "Old Name")
+    response = admin_client.post(
+        '/api/authorized/edit@example.com/update-name', json={"name": "   "}
+    )
+    assert response.status_code == 400
+
+
+def test_update_authorized_user_forbidden_for_non_admin(client, db):  # pylint: disable=redefined-outer-name
+    """POST /api/authorized/<email>/update-name returns 403 for non-admin"""
+    db.add_authorized_user("edit@example.com", "Old Name")
+    response = client.post(
+        '/api/authorized/edit@example.com/update-name', json={"name": "New Name"}
+    )
+    assert response.status_code == 403
+
+
+def test_update_authorized_user_forbidden_without_cookie(app, db):  # pylint: disable=redefined-outer-name
+    """POST /api/authorized/<email>/update-name returns 403 when not logged in"""
+    db.add_authorized_user("edit@example.com", "Old Name")
+    response = app.test_client().post(
+        '/api/authorized/edit@example.com/update-name', json={"name": "New Name"}
+    )
+    assert response.status_code == 403
 
 
 # --- /admin and /admin/ page routes ---

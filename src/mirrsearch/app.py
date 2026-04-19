@@ -275,6 +275,22 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             return jsonify({"error": "User not found"}), 404
         return "", 204
 
+    @flask_app.route("/api/authorized/<email>/update-name", methods=["POST"])
+    def update_authorized_user(email):
+        """Update the display name of an authorized user."""
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
+            return jsonify({"error": "Forbidden"}), 403
+        body = request.get_json(silent=True) or {}
+        name = (body.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        updated = db_layer.update_authorized_user_name(email, name)
+        if not updated:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify({"email": email, "name": name})
+
     @flask_app.route("/admin")
     @flask_app.route("/admin/")
     def admin_page():
