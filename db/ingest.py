@@ -94,7 +94,7 @@ FR_API_URL = "https://www.federalregister.gov/api/v1/documents/{}.json"
 
 _REQUIRED_FR_TABLES = frozenset({"federal_register_documents", "cfrparts"})
 
-OPENSEARCH_DOCUMENTS_INDEX = "documents"
+OPENSEARCH_DOCUMENTS_INDEX = "documents_text"
 
 DOCUMENTS_INDEX_BODY: dict[str, Any] = {
     "mappings": {
