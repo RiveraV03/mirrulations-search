@@ -40,19 +40,25 @@ def test_cfr_part_filter_patterns_skips_none_and_blank_parts():
     assert cfr_part_filter_patterns([None, {"part": "  "}, "413"]) == ["413"]
 
 
-def test_comment_deduplication_via_postgres():
+def test_comment_deduplication_via_cardinality():
     """
-    Cross-index comment deduplication now happens in Postgres.
-    _get_comment_match_counts_postgres returns exact distinct comment_id counts.
-    A comment that matched in both comments and comments_extracted_text
-    indexes is counted once because the comments table is the single source
-    of truth for comment_id.
+    Cross-index comment deduplication uses OpenSearch cardinality agg.
+    _extract_cardinality_counts reads unique_comments.value from each index;
+    _run_text_match_queries takes the max per docket so shared comment IDs
+    across indexes are not double-counted.
     """
-    # Two rows representing the same comment_id counted once by Postgres
-    rows = [("D1", 1)]  # docket_id, COUNT(DISTINCT comment_id)
-    db = DBLayer(conn=_FakeConn(rows))
-    result = db._get_comment_match_counts_postgres(["term"], ["D1"])
-    assert result == {"D1": 1}
+    comment_buckets = [
+        _fake_os_comment_agg_bucket("D1", "matching_comments", "SHARED-ID")
+    ]
+    extracted_buckets = [
+        _fake_os_comment_agg_bucket("D1", "matching_extracted", "SHARED-ID")
+    ]
+    fake_client = _FakeOpenSearch([], comment_buckets, extracted_buckets)
+    db = DBLayer()
+    results = db.text_match_terms(["term"], opensearch_client=fake_client)
+    assert len(results) == 1
+    assert results[0]["docket_id"] == "D1"
+    assert results[0]["comment_match_count"] == 1
 
 def test_search_with_cfr_dict_applies_exact_docket_filter(monkeypatch):
     """Dict-style CFR filter keeps only dockets returned by exact title+part map."""
@@ -209,7 +215,6 @@ def test_opensearch_bucket_size_invalid_env_defaults(monkeypatch):
     monkeypatch.setenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "not-a-number")
     assert db_module._opensearch_match_docket_bucket_size() == 50000
 
-<<<<<<< HEAD
 
 def test_opensearch_comment_id_terms_size_does_not_exist():
     """Confirm the deleted constant is truly gone — prevents accidental re-introduction."""
@@ -217,11 +222,6 @@ def test_opensearch_comment_id_terms_size_does_not_exist():
         "_opensearch_comment_id_terms_size should be deleted — "
         "cardinality agg replaced the nested terms agg on commentId"
     )
-=======
-def test_opensearch_comment_id_size_blank_env_defaults(monkeypatch):
-    monkeypatch.setenv("OPENSEARCH_COMMENT_ID_TERMS_SIZE", "")
-    assert db_module._opensearch_comment_id_terms_size() == 65535
->>>>>>> 35dd778c47ac6967c080e9c4b90cd0592de10508
 
 def test_get_opensearch_connection_invalid_port_env_defaults(monkeypatch):
     monkeypatch.setenv("OPENSEARCH_PORT", "not-a-port")
@@ -576,7 +576,6 @@ class _FakeOpenSearch: #pylint: disable=too-few-public-methods
     """
     Fake OpenSearch client returning cardinality-style agg responses.
     Comment counts come from unique_comments.value, not by_comment buckets.
-    Actual comment_match_count in results comes from Postgres (mocked separately).
     """
     def __init__(self, doc_buckets, comment_buckets, extracted_buckets):
         self.doc_buckets = doc_buckets
@@ -595,20 +594,11 @@ class _FakeOpenSearch: #pylint: disable=too-few-public-methods
         return {"aggregations": {"by_docket": {"buckets": []}}}
 
 
-def _make_db_with_postgres_comment_counts(comment_counts: dict):
-    """
-    Return a DBLayer whose _get_comment_match_counts_postgres is patched
-    to return the given {docket_id: count} dict without hitting a real DB.
-    comment_counts should be {docket_id: expected_count}.
-    """
-    # Build fake rows as (docket_id, count) tuples for _FakeConn
-    rows = list(comment_counts.items())
-    return DBLayer(conn=_FakeConn(rows))
 
-
-def test_text_match_terms_searches_comments_and_extracted(monkeypatch):
+def test_text_match_terms_searches_comments_and_extracted():
     """
-    text_match_terms searches all three indexes and returns correct comment count from Postgres.
+    text_match_terms searches all three indexes and returns correct comment count
+    from OpenSearch cardinality (max of both comment indexes).
     """
     comment_buckets = [
         _fake_os_comment_agg_bucket(
@@ -620,11 +610,7 @@ def test_text_match_terms_searches_comments_and_extracted(monkeypatch):
     ]
     fake_client = _FakeOpenSearch([], comment_buckets, extracted_buckets)
 
-    db = DBLayer(conn=_FakeConn([]))
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {"CMS-2025-0240": 6}
-    )
+    db = DBLayer()
 
     results = db.text_match_terms(["medicare"], opensearch_client=fake_client)
 
@@ -635,12 +621,12 @@ def test_text_match_terms_searches_comments_and_extracted(monkeypatch):
 
     assert len(results) == 1
     assert results[0]["docket_id"] == "CMS-2025-0240"
-    assert results[0]["comment_match_count"] == 6
+    assert results[0]["comment_match_count"] == 4
     assert results[0]["document_match_count"] == 0
 
 
-def test_text_match_terms_combines_comment_sources(monkeypatch):
-    """Comment body and extracted text both contribute dockets; Postgres counts them exactly."""
+def test_text_match_terms_combines_comment_sources():
+    """Comment body and extracted text both contribute dockets; cardinality takes the max."""
     comment_buckets = [
         _fake_os_comment_agg_bucket("DEA-2024-0059", "matching_comments", "c1")
     ]
@@ -649,24 +635,20 @@ def test_text_match_terms_combines_comment_sources(monkeypatch):
     ]
     fake_client = _FakeOpenSearch([], comment_buckets, extracted_buckets)
 
-    db = DBLayer(conn=_FakeConn([]))
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {"DEA-2024-0059": 2}
-    )
+    db = DBLayer()
 
     results = db.text_match_terms(["cannabis"], opensearch_client=fake_client)
 
     assert len(results) == 1
     assert results[0]["docket_id"] == "DEA-2024-0059"
-    assert results[0]["comment_match_count"] == 2
+    assert results[0]["comment_match_count"] == 1
     assert results[0]["document_match_count"] == 0
 
 
-def test_text_match_terms_same_comment_id_body_and_extracted_counts_once(monkeypatch):
+def test_text_match_terms_same_comment_id_body_and_extracted_counts_once():
     """
     Same commentId in both indexes is counted once.
-    Postgres COUNT(DISTINCT comment_id) handles deduplication — returns 1 not 2.
+    Cardinality agg handles deduplication — max(1, 1) = 1, not 2.
     """
     comment_buckets = [
         _fake_os_comment_agg_bucket("D1", "matching_comments", "SHARED-COMMENT-ID")
@@ -676,11 +658,7 @@ def test_text_match_terms_same_comment_id_body_and_extracted_counts_once(monkeyp
     ]
     fake_client = _FakeOpenSearch([], comment_buckets, extracted_buckets)
 
-    db = DBLayer(conn=_FakeConn([]))
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {"D1": 1}  # Postgres deduplicates
-    )
+    db = DBLayer()
 
     results = db.text_match_terms(["x"], opensearch_client=fake_client)
 
@@ -690,8 +668,8 @@ def test_text_match_terms_same_comment_id_body_and_extracted_counts_once(monkeyp
     assert results[0]["document_match_count"] == 0
 
 
-def test_text_match_terms_multiple_dockets_comments(monkeypatch):
-    """Multiple dockets each get their own exact Postgres comment count."""
+def test_text_match_terms_multiple_dockets_comments():
+    """Multiple dockets each get their own cardinality-based comment count."""
     comment_buckets = [
         _fake_os_comment_agg_bucket("CMS-2025-0240", "matching_comments", "c1", "c2"),
         _fake_os_comment_agg_bucket("DEA-2024-0059", "matching_comments", "c3"),
@@ -702,17 +680,13 @@ def test_text_match_terms_multiple_dockets_comments(monkeypatch):
     ]
     fake_client = _FakeOpenSearch([], comment_buckets, extracted_buckets)
 
-    db = DBLayer(conn=_FakeConn([]))
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {"CMS-2025-0240": 6, "DEA-2024-0059": 1}
-    )
+    db = DBLayer()
 
     results = db.text_match_terms(["test"], opensearch_client=fake_client)
 
     assert len(results) == 2
     cms = next(r for r in results if r["docket_id"] == "CMS-2025-0240")
-    assert cms["comment_match_count"] == 6
+    assert cms["comment_match_count"] == 4
     assert cms["document_match_count"] == 0
 
     dea = next(r for r in results if r["docket_id"] == "DEA-2024-0059")
@@ -757,18 +731,14 @@ def test_text_match_terms_uses_filtered_aggregations():
         extracted_body["aggs"]["by_docket"]["aggs"]["matching_extracted"].get("aggs", {})
 
 
-def test_text_match_terms_returns_correct_structure(monkeypatch):
+def test_text_match_terms_returns_correct_structure():
     """Verify each result has the required fields with correct types."""
     comment_buckets = [
         _fake_os_comment_agg_bucket("TEST-001", "matching_comments", *[f"C{i}" for i in range(5)])
     ]
     fake_client = _FakeOpenSearch([], comment_buckets, [])
 
-    db = DBLayer(conn=_FakeConn([]))
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {"TEST-001": 5}
-    )
+    db = DBLayer()
 
     results = db.text_match_terms(["test"], opensearch_client=fake_client)
 
@@ -791,7 +761,7 @@ def test_text_match_terms_handles_empty_results():
     assert not results
 
 
-def test_text_match_terms_only_returns_comment_matches(monkeypatch):
+def test_text_match_terms_only_returns_comment_matches():
     """Only dockets with doc_count > 0 in the filter agg are included."""
     comment_buckets = [
         _fake_os_comment_agg_bucket("HAS-MATCH", "matching_comments", "H1", "H2", "H3", "H4", "H5"),
@@ -802,11 +772,7 @@ def test_text_match_terms_only_returns_comment_matches(monkeypatch):
     ]
     fake_client = _FakeOpenSearch([], comment_buckets, [])
 
-    db = DBLayer(conn=_FakeConn([]))
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {"HAS-MATCH": 5}
-    )
+    db = DBLayer()
 
     results = db.text_match_terms(["test"], opensearch_client=fake_client)
 
@@ -814,7 +780,7 @@ def test_text_match_terms_only_returns_comment_matches(monkeypatch):
     assert results[0]["docket_id"] == "HAS-MATCH"
 
 
-def test_text_match_terms_docket_only_in_comments(monkeypatch):
+def test_text_match_terms_docket_only_in_comments():
     """Docket with matches only in comment body text is included with correct count."""
     comment_buckets = [
         _fake_os_comment_agg_bucket(
@@ -822,11 +788,7 @@ def test_text_match_terms_docket_only_in_comments(monkeypatch):
     ]
     fake_client = _FakeOpenSearch([], comment_buckets, [])
 
-    db = DBLayer(conn=_FakeConn([]))
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {"COMMENT-ONLY": 10}
-    )
+    db = DBLayer()
 
     results = db.text_match_terms(["test"], opensearch_client=fake_client)
 
@@ -924,8 +886,6 @@ def test_get_authorized_users_empty_table_returns_empty():
     db = DBLayer(conn=_FakeConn([]))
     assert db.get_authorized_users() == []
 
-<<<<<<< HEAD
-=======
 def test_update_authorized_user_name_no_conn_returns_false():
     assert DBLayer().update_authorized_user_name("user@email.com", "New Name") is False
 
@@ -945,7 +905,6 @@ def test_update_authorized_user_name_returns_false_when_not_found():
     assert db.update_authorized_user_name("nobody@email.com", "Name") is False
 
 # --- get_download_jobs tests ---
->>>>>>> 35dd778c47ac6967c080e9c4b90cd0592de10508
 
 # --- Additional coverage tests for missing lines ---
 
@@ -1010,7 +969,7 @@ def test_text_match_terms_exception_returns_empty():
 
 
 # Lines 465-472: _run_text_match_queries document match accumulation
-def test_run_text_match_queries_document_counts(monkeypatch):
+def test_run_text_match_queries_document_counts():
     """Document match counts from documents_text are accumulated correctly."""
     doc_buckets = [
         {"key": "DOC-001", "matching_docs": {"doc_count": 4}},
@@ -1018,10 +977,6 @@ def test_run_text_match_queries_document_counts(monkeypatch):
     ]
     fake_client = _FakeOpenSearch(doc_buckets, [], [])
     db = DBLayer()
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {}
-    )
     results = db.text_match_terms(["test"], opensearch_client=fake_client)
     ids = {r["docket_id"]: r for r in results}
     assert ids["DOC-001"]["document_match_count"] == 4
@@ -1029,7 +984,7 @@ def test_run_text_match_queries_document_counts(monkeypatch):
 
 
 # Lines 485-498: _collect_matched_dockets and matched_comment_dockets set union
-def test_collect_matched_dockets_unions_both_indexes(monkeypatch):
+def test_collect_matched_dockets_unions_both_indexes():
     """Dockets from both comments and extracted indexes are unioned correctly."""
     comment_buckets = [
         _fake_os_comment_agg_bucket("D1", "matching_comments", "c1"),
@@ -1038,11 +993,7 @@ def test_collect_matched_dockets_unions_both_indexes(monkeypatch):
         _fake_os_comment_agg_bucket("D2", "matching_extracted", "e1"),
     ]
     fake_client = _FakeOpenSearch([], comment_buckets, extracted_buckets)
-    db = DBLayer(conn=_FakeConn([]))
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {"D1": 1, "D2": 1}
-    )
+    db = DBLayer()
     results = db.text_match_terms(["x"], opensearch_client=fake_client)
     docket_ids = {r["docket_id"] for r in results}
     assert "D1" in docket_ids
@@ -1050,7 +1001,7 @@ def test_collect_matched_dockets_unions_both_indexes(monkeypatch):
 
 
 # Line 503: _run_text_match_queries setdefault for existing docket in comment_counts
-def test_run_text_match_queries_comment_count_set_on_existing_docket(monkeypatch):
+def test_run_text_match_queries_comment_count_set_on_existing_docket():
     """Comment count is set on a docket that already has a document match count."""
     doc_buckets = [
         {"key": "BOTH-001", "matching_docs": {"doc_count": 3}},
@@ -1059,11 +1010,7 @@ def test_run_text_match_queries_comment_count_set_on_existing_docket(monkeypatch
         _fake_os_comment_agg_bucket("BOTH-001", "matching_comments", "c1", "c2"),
     ]
     fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, [])
-    db = DBLayer(conn=_FakeConn([]))
-    monkeypatch.setattr(
-        DBLayer, "_get_comment_match_counts_postgres",
-        lambda self, terms, docket_ids: {"BOTH-001": 2}
-    )
+    db = DBLayer()
     results = db.text_match_terms(["test"], opensearch_client=fake_client)
     assert len(results) == 1
     assert results[0]["document_match_count"] == 3
@@ -1179,7 +1126,7 @@ def test_get_opensearch_connection_aoss_host_uses_singleton(monkeypatch):
 
     mocks = SimpleNamespace(
         boto3=SimpleNamespace(
-            Session=lambda: SimpleNamespace(get_credentials=lambda: object())
+            Session=lambda: SimpleNamespace(get_credentials=lambda: object())  # pylint: disable=unnecessary-lambda
         ),
         AWS4Auth=lambda **_: SimpleNamespace(),
         requests=SimpleNamespace(

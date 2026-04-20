@@ -207,7 +207,7 @@ class TestIngestOpenSearch:
             mock_client.index.assert_called_once()
             call_kwargs = mock_client.index.call_args[1]
 
-            assert call_kwargs["index"] == "documents"
+            assert call_kwargs["index"] == "documents_text"
             assert call_kwargs["id"] == "FAA-2025-0618-0001_content.htm"
             assert call_kwargs["body"]["docketId"] == "FAA-2025-0618"
             assert call_kwargs["body"]["documentId"] == "FAA-2025-0618-0001_content.htm"
