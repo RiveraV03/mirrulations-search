@@ -187,7 +187,8 @@ CREATE TABLE IF NOT EXISTS federal_register_documents (
 
 CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(320) NOT NULL PRIMARY KEY,
-    name VARCHAR(200) NOT NULL
+    name VARCHAR(200) NOT NULL,
+    last_login TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- =========================================
