@@ -6,53 +6,45 @@ from S3 into the documentswithfrdoc table in the Mirrulations PostgreSQL databas
 WHAT IT DOES:
     Paginates through all files in s3://mirrulations/raw-data/ matching the
     pattern raw-data/<agency>/Docket/text-<docketID>/documents/<documentID>.json,
-    streams each JSON file directly from S3 (no disk needed), maps the fields
-    to the database schema, and inserts them in batches using upsert
-    (ON CONFLICT DO UPDATE).
+    streams each JSON file directly from S3 using a thread pool (no disk needed),
+    maps the fields to the database schema, and inserts them in batches using
+    upsert (ON CONFLICT DO UPDATE).
 
     A checkpoint file tracks which S3 keys have been successfully inserted.
     If the script is interrupted, re-running it will skip already-processed
     files and resume from where it left off.
 
 HOW TO USE:
-    1. Set the following environment variables (or edit the defaults below):
+    1. Ensure load_s3.env exists with your DB credentials:
 
-        DB_HOST         Hostname of the RDS PostgreSQL instance
-        DB_PORT         Port (default: 5432)
-        DB_NAME         Database name
-        DB_USER         Database user
-        DB_PASSWORD     Database password
-        S3_BUCKET       S3 bucket name (default: mirrulations)
-        S3_PREFIX       S3 prefix to scan (default: raw-data/)
-        CHECKPOINT_FILE Path to checkpoint file (default: ~/load_s3_checkpoint.txt)
+        DB_HOST=your-rds-endpoint.rds.amazonaws.com
+        DB_PORT=5432
+        DB_NAME=your_db
+        DB_USER=your_user
+        DB_PASSWORD=your_password
 
     2. Ensure the RDS SSL certificate is present at /certs/global-bundle.pem.
 
     3. Run the script:
 
-        Without date filter-
+        Without date filter:
+            nohup python3 load_documents.py > ~/load_s3_output.log 2>&1 &
 
-            nohup python3 load_documents_s3.py > ~/load_s3_output.log 2>&1 &
-        
-        With date filter-
+        With date filter (gap backfill):
+            nohup python3 load_documents.py --start-date 2025-03-20 --end-date 2025-04-20 > ~/load_s3_output.log 2>&1 &
 
-            python3 load_documents.py --start-date 2025-03-26 --end-date 2025-04-17             
-                                                                                      
-            Or with nohup:   
-                                                                               
-            nohup python3 load_documents.py --start-date 2025-03-26 --end-date 2025-04-17 >     
-            ~/load_gap_output.log 2>&1 &
-
-    To restart from scratch, delete the checkpoint file before running.
+    To restart from scratch, delete the checkpoint file:
+        rm ~/load_s3_checkpoint.txt
 """
 
 import os
 import json
 import logging
 import argparse
-from datetime import datetime, timezone
 import boto3
 import psycopg2
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from psycopg2.extras import execute_values
 from pathlib import Path
 from dotenv import load_dotenv
@@ -78,7 +70,8 @@ DB_CONFIG = {
 S3_BUCKET       = os.environ.get("S3_BUCKET", "mirrulations")
 S3_PREFIX       = os.environ.get("S3_PREFIX", "raw-data/")
 CHECKPOINT_FILE = Path(os.environ.get("CHECKPOINT_FILE", os.path.expanduser("~/load_s3_checkpoint.txt")))
-BATCH_SIZE      = 500
+BATCH_SIZE      = 2000   
+MAX_WORKERS     = 20     
 
 
 def load_checkpoint():
@@ -106,7 +99,7 @@ def map_document(raw, s3_key):
         return None
 
     document_id       = data.get("id")
-    docket_id         = attr.get("docketId")
+    docket_id         = attr.get("docketId") or (document_id.rsplit("-", 1)[0] if document_id else None)
     modify_date       = attr.get("modifyDate")
     doc_type          = attr.get("documentType")
     document_api_link = links.get("self")
@@ -172,52 +165,53 @@ def map_document(raw, s3_key):
     }
 
 
-def iter_s3_documents(bucket, prefix, processed, start_date=None, end_date=None):
+def fetch_and_map(bucket, key):
+    """Fetch a single S3 object and map it. Returns (doc, key) or (None, key)."""
+    try:
+        s3       = boto3.client("s3")
+        response = s3.get_object(Bucket=bucket, Key=key)
+        raw      = json.load(response["Body"])
+        doc      = map_document(raw, key)
+        return doc, key
+    except json.JSONDecodeError as e:
+        log.warning("Skipping %s — invalid JSON: %s", key, e)
+        return None, key
+    except Exception as e:
+        log.warning("Skipping %s — unexpected error: %s", key, e)
+        return None, key
+
+
+def list_eligible_keys(bucket, prefix, processed, start_date=None, end_date=None):
+    """Paginate S3 and yield keys that match the date filter and aren't checkpointed."""
     s3        = boto3.client("s3")
     paginator = s3.get_paginator("list_objects_v2")
-    total_found = 0
+    total     = 0
 
     date_range_msg = ""
     if start_date or end_date:
-        date_range_msg = f" (LastModified filter: {start_date or '*'} → {end_date or '*'})"
+        date_range_msg = f" (LastModified filter: {start_date or '*'} -> {end_date or '*'})"
     log.info("Scanning s3://%s/%s ...%s", bucket, prefix, date_range_msg)
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj["Key"]
 
-            # Only process files inside a documents/ folder
             if "/documents/" not in key or not key.endswith(".json"):
                 continue
-
             if key in processed:
                 continue
+            if start_date and obj["LastModified"] < start_date:
+                continue
+            if end_date and obj["LastModified"] > end_date:
+                continue
 
-            # Filter by S3 LastModified date (UTC-aware)
-            if start_date or end_date:
-                last_modified = obj["LastModified"]
-                if start_date and last_modified < start_date:
-                    continue
-                if end_date and last_modified > end_date:
-                    continue
+            total += 1
+            if total % 10_000 == 0:
+                log.info("Listed %d eligible S3 keys so far...", total)
 
-            total_found += 1
-            if total_found % 10_000 == 0:
-                log.info("Scanned %d eligible S3 keys so far...", total_found)
-
-            try:
-                response = s3.get_object(Bucket=bucket, Key=key)
-                raw      = json.load(response["Body"])
-                doc      = map_document(raw, key)
-                if doc:
-                    yield doc, key
-            except json.JSONDecodeError as e:
-                log.warning("Skipping %s — invalid JSON: %s", key, e)
-            except Exception as e:
-                log.warning("Skipping %s — unexpected error: %s", key, e)
+            yield key
 
 
-# ── DB insert ──────────────────────────────────────────────────────────────────
 COLUMNS = [
     "document_id", "docket_id", "document_api_link", "address1", "address2",
     "agency_id", "is_late_comment", "author_date", "comment_category", "city",
@@ -249,7 +243,6 @@ INSERT_SQL = f"""
 
 
 def insert_batch(cursor, batch):
-    # Deduplicate within batch by document_id
     seen = {}
     for doc in batch:
         seen[doc["document_id"]] = doc
@@ -259,16 +252,8 @@ def insert_batch(cursor, batch):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Bulk-load S3 document JSON files into RDS.")
-    parser.add_argument(
-        "--start-date",
-        metavar="YYYY-MM-DD",
-        help="Only process S3 objects with LastModified >= this date (UTC)",
-    )
-    parser.add_argument(
-        "--end-date",
-        metavar="YYYY-MM-DD",
-        help="Only process S3 objects with LastModified <= this date (UTC)",
-    )
+    parser.add_argument("--start-date", metavar="YYYY-MM-DD", help="Only process S3 objects with LastModified >= this date (UTC)")
+    parser.add_argument("--end-date",   metavar="YYYY-MM-DD", help="Only process S3 objects with LastModified <= this date (UTC)")
     return parser.parse_args()
 
 
@@ -280,7 +265,6 @@ def main():
         if args.start_date else None
     )
     end_date = (
-        # Use end of day so --end-date 2025-04-17 includes all of that day
         datetime.strptime(args.end_date, "%Y-%m-%d").replace(
             hour=23, minute=59, second=59, tzinfo=timezone.utc
         )
@@ -294,37 +278,57 @@ def main():
     conn.autocommit = False
     cursor = conn.cursor()
 
-    batch       = []
-    batch_keys  = []
+    batch           = []
+    batch_keys      = []
     total_inserted  = 0
     total_skipped   = 0
     total_processed = 0
 
+    key_gen = list_eligible_keys(S3_BUCKET, S3_PREFIX, processed, start_date, end_date)
+
     try:
-        for doc, key in iter_s3_documents(S3_BUCKET, S3_PREFIX, processed, start_date, end_date):
-            batch.append(doc)
-            batch_keys.append(key)
-            total_processed += 1
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            chunk = []
+            for key in key_gen:
+                chunk.append(key)
 
-            if total_processed % 10_000 == 0:
-                log.info("Processed %d docs so far (inserted: %d)", total_processed, total_inserted)
+                # Process in chunks to avoid overwhelming memory
+                if len(chunk) >= BATCH_SIZE * 2:
+                    futures = {executor.submit(fetch_and_map, S3_BUCKET, k): k for k in chunk}
+                    for future in as_completed(futures):
+                        doc, key = future.result()
+                        if doc:
+                            batch.append(doc)
+                            batch_keys.append(key)
+                            total_processed += 1
 
-            if len(batch) >= BATCH_SIZE:
-                try:
-                    insert_batch(cursor, batch)
-                    conn.commit()
-                    save_checkpoint(batch_keys)
-                    total_inserted += len(batch)
-                    log.info("Inserted %d rows (total: %d)", len(batch), total_inserted)
-                except Exception as e:
-                    conn.rollback()
-                    log.error("Batch insert failed, rolling back: %s", e)
-                    total_skipped += len(batch)
-                finally:
-                    batch.clear()
-                    batch_keys.clear()
+                        if len(batch) >= BATCH_SIZE:
+                            try:
+                                insert_batch(cursor, batch)
+                                conn.commit()
+                                save_checkpoint(batch_keys)
+                                total_inserted += len(batch)
+                                log.info("Inserted %d rows (total: %d)", len(batch), total_inserted)
+                            except Exception as e:
+                                conn.rollback()
+                                log.error("Batch insert failed, rolling back: %s", e)
+                                total_skipped += len(batch)
+                            finally:
+                                batch.clear()
+                                batch_keys.clear()
+                    chunk.clear()
 
-        # Insert remaining
+            # Process remaining keys
+            if chunk:
+                futures = {executor.submit(fetch_and_map, S3_BUCKET, k): k for k in chunk}
+                for future in as_completed(futures):
+                    doc, key = future.result()
+                    if doc:
+                        batch.append(doc)
+                        batch_keys.append(key)
+                        total_processed += 1
+
+        # Insert any remaining docs
         if batch:
             try:
                 insert_batch(cursor, batch)
