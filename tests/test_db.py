@@ -36,7 +36,6 @@ def test_db_layer_no_conn_returns_empty():
 def test_get_agencies_no_conn_returns_empty():
     assert DBLayer().get_agencies() == []
 
-
 def test_cfr_part_filter_patterns_skips_none_and_blank_parts():
     assert cfr_part_filter_patterns([None, {"part": "  "}, "413"]) == ["413"]
 
@@ -55,7 +54,6 @@ def test_comment_deduplication_via_postgres():
     result = db._get_comment_match_counts_postgres(["term"], ["D1"])
     assert result == {"D1": 1}
 
-
 def test_search_with_cfr_dict_applies_exact_docket_filter(monkeypatch):
     """Dict-style CFR filter keeps only dockets returned by exact title+part map."""
     rows = [
@@ -72,7 +70,6 @@ def test_search_with_cfr_dict_applies_exact_docket_filter(monkeypatch):
 
     assert [r["docket_id"] for r in results] == ["DOC-002"]
 
-
 def test_search_with_plain_cfr_string_skips_exact_cfr_lookup(monkeypatch):
     """String-style CFR filters should not invoke exact title+part lookup."""
     db = DBLayer(conn=_FakeConn([]))
@@ -83,12 +80,10 @@ def test_search_with_plain_cfr_string_skips_exact_cfr_lookup(monkeypatch):
     monkeypatch.setattr(DBLayer, "_get_cfr_docket_ids", should_not_call)
     db.search("x", cfr_part_param=["413"])
 
-
 def test_get_db_returns_dblayer():
     """Test the get_db factory function returns a DBLayer"""
     db = get_db()
     assert isinstance(db, DBLayer)
-
 
 # --- Fake postgres helpers ---
 
@@ -117,7 +112,6 @@ class _FakeCursor:
     def close(self):
         return None
 
-
 class _FakeConn:
     def __init__(self, rows):
         self.cursor_obj = _FakeCursor(rows)
@@ -131,11 +125,9 @@ class _FakeConn:
     def close(self):
         return None
 
-
 def test_get_agencies_with_conn():
     db = DBLayer(conn=_FakeConn([("CMS",), ("EPA",)]))
     assert db.get_agencies() == ["CMS", "EPA"]
-
 
 # --- _search_dockets_postgres filter tests ---
 
@@ -147,7 +139,6 @@ def test_search_dockets_postgres_agency_filter():
     assert "agency_id ILIKE %s" in sql
     assert params == ["%%", "%CMS%"]
 
-
 def test_search_dockets_postgres_agency_multi_filter():
     """Multiple agencies produce OR'd ILIKE clauses"""
     db = DBLayer(conn=_FakeConn([]))
@@ -157,7 +148,6 @@ def test_search_dockets_postgres_agency_multi_filter():
     assert "%CMS%" in params
     assert "%EPA%" in params
 
-
 def test_search_dockets_postgres_docket_type_filter():
     """Docket type filter adds exact match clause"""
     db = DBLayer(conn=_FakeConn([]))
@@ -165,7 +155,6 @@ def test_search_dockets_postgres_docket_type_filter():
     sql, params = db.conn.cursor_obj.executed[0]
     assert "d.docket_type = %s" in sql
     assert params == ["%%", "Rulemaking"]
-
 
 def test_search_dockets_postgres_agency_and_docket_type_filter():
     """Both filters add their clauses and params in order"""
@@ -176,7 +165,6 @@ def test_search_dockets_postgres_agency_and_docket_type_filter():
     assert "agency_id ILIKE %s" in sql
     assert params == ["%renal%", "Rulemaking", "%CMS%"]
 
-
 def test_search_dockets_postgres_no_filter_no_extra_clauses():
     """Without filters, SQL has no extra AND clauses beyond docket_title"""
     db = DBLayer(conn=_FakeConn([]))
@@ -185,7 +173,6 @@ def test_search_dockets_postgres_no_filter_no_extra_clauses():
     assert "d.docket_type = %s" not in sql
     assert "agency_id ILIKE %s" not in sql
     assert params == ["%abc%"]
-
 
 def test_search_dockets_postgres_cfr_filter_from_api_dict():
     """Dict CFR filter applies exact cfrPart = via EXISTS and exact FRD title+part EXISTS."""
@@ -202,7 +189,6 @@ def test_search_dockets_postgres_cfr_filter_from_api_dict():
     assert "cp2.cfrPart = %s" in sql
     assert params == ["%renal%", "413", "42 CFR Parts 413 and 512", "413"]
 
-
 def test_search_dockets_postgres_cfr_empty_dict_skips_cfr_clause():
     """Dict with empty part does not add CFR SQL (avoids bogus %%dict%% params)."""
     db = DBLayer(conn=_FakeConn([]))
@@ -210,22 +196,20 @@ def test_search_dockets_postgres_cfr_empty_dict_skips_cfr_clause():
     sql, _params = db.conn.cursor_obj.executed[0]
     assert "cp.cfrPart ILIKE" not in sql
 
-
 def test_get_opensearch_connection_blank_port_no_crash(monkeypatch):
     """Empty OPENSEARCH_PORT in .env must not raise int('') (was HTTP 500)."""
     monkeypatch.setenv("OPENSEARCH_PORT", "")
     assert db_module.get_opensearch_connection() is not None
 
-
 def test_opensearch_bucket_size_blank_env_defaults(monkeypatch):
     monkeypatch.setenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "")
     assert db_module._opensearch_match_docket_bucket_size() == 50000
-
 
 def test_opensearch_bucket_size_invalid_env_defaults(monkeypatch):
     monkeypatch.setenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "not-a-number")
     assert db_module._opensearch_match_docket_bucket_size() == 50000
 
+<<<<<<< HEAD
 
 def test_opensearch_comment_id_terms_size_does_not_exist():
     """Confirm the deleted constant is truly gone — prevents accidental re-introduction."""
@@ -233,17 +217,19 @@ def test_opensearch_comment_id_terms_size_does_not_exist():
         "_opensearch_comment_id_terms_size should be deleted — "
         "cardinality agg replaced the nested terms agg on commentId"
     )
-
+=======
+def test_opensearch_comment_id_size_blank_env_defaults(monkeypatch):
+    monkeypatch.setenv("OPENSEARCH_COMMENT_ID_TERMS_SIZE", "")
+    assert db_module._opensearch_comment_id_terms_size() == 65535
+>>>>>>> 35dd778c47ac6967c080e9c4b90cd0592de10508
 
 def test_get_opensearch_connection_invalid_port_env_defaults(monkeypatch):
     monkeypatch.setenv("OPENSEARCH_PORT", "not-a-port")
     assert db_module.get_opensearch_connection() is not None
 
-
 def test_get_opensearch_connection_port_out_of_range_defaults(monkeypatch):
     monkeypatch.setenv("OPENSEARCH_PORT", "70000")
     assert db_module.get_opensearch_connection() is not None
-
 
 def test_search_dockets_postgres_cfr_filter_plain_string():
     db = DBLayer(conn=_FakeConn([]))
@@ -252,7 +238,6 @@ def test_search_dockets_postgres_cfr_filter_plain_string():
     assert "cp3.cfrPart = %s" in sql
     assert "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum" in sql
     assert params == ["%z%", "413"]
-
 
 # --- _search_dockets_postgres tests ---
 
@@ -939,6 +924,28 @@ def test_get_authorized_users_empty_table_returns_empty():
     db = DBLayer(conn=_FakeConn([]))
     assert db.get_authorized_users() == []
 
+<<<<<<< HEAD
+=======
+def test_update_authorized_user_name_no_conn_returns_false():
+    assert DBLayer().update_authorized_user_name("user@email.com", "New Name") is False
+
+def test_update_authorized_user_name_updates_and_returns_true():
+    db = DBLayer(conn=_FakeConn([]))
+    db.conn.cursor_obj.rowcount = 1
+    result = db.update_authorized_user_name("user@email.com", "New Name")
+    assert result is True
+    sql, params = db.conn.cursor_obj.executed[0]
+    assert "UPDATE authorized_users" in sql
+    assert "SET name = %s" in sql
+    assert params == ("New Name", "user@email.com")
+
+def test_update_authorized_user_name_returns_false_when_not_found():
+    db = DBLayer(conn=_FakeConn([]))
+    db.conn.cursor_obj.rowcount = 0
+    assert db.update_authorized_user_name("nobody@email.com", "Name") is False
+
+# --- get_download_jobs tests ---
+>>>>>>> 35dd778c47ac6967c080e9c4b90cd0592de10508
 
 # --- Additional coverage tests for missing lines ---
 
