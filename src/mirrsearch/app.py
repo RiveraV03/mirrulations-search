@@ -1,4 +1,5 @@
 """Flask application with pagination via HTTP headers"""
+import logging
 import os
 from datetime import date, datetime
 from flask import Flask, request, jsonify, send_from_directory, redirect, make_response
@@ -6,6 +7,9 @@ from mirrsearch.internal_logic import InternalLogic, _transform_cfr_refs
 from mirrsearch.oauth_handler import OAuthHandler, OAuthCodeError, OAuthVerificationError
 from mirrsearch.oauth_handler import TokenExpiredError, TokenInvalidError
 from mirrsearch.db import get_db
+
+
+logger = logging.getLogger(__name__)
 
 
 def _get_search_params():
@@ -114,6 +118,7 @@ def _push_job_to_redis(job_id, user_email, docket_ids, data_format, include_bina
 
 def _handle_redis_enqueue_failure(db_layer, job_id):
     """Mark the job failed after enqueue errors and return an API error response."""
+    logger.exception("Failed to enqueue download job %s", job_id)
     db_layer.update_download_job_status(job_id, "failed")
     return jsonify({"error": "Unable to queue download job"}), 503
 
@@ -161,6 +166,13 @@ def _handle_oauth_callback(handler, db_layer_ref=None): # pylint: disable=too-ma
                 response = make_response(redirect("/login?error=unauthorized"))
                 response.delete_cookie("login_intent")
                 return response
+
+        # Record the login timestamp for this user
+        if db_layer_ref is not None:
+            try:
+                db_layer_ref.update_last_login(user_info["email"], user_info["name"])
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass  # Non-fatal: don't block login if last_login update fails
 
         user_id = f"{user_info['name']}|{user_info['email']}"
         token = handler.create_jwt_token(user_id)
@@ -223,7 +235,6 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return send_from_directory(dist_dir, "index.html")
 
     @flask_app.route("/admin/login")
-
     def admin_login():
         handler = oauth_handler or _make_oauth_handler()
         authorization_url, _ = handler.get_authorization_url()
@@ -275,10 +286,58 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             return jsonify({"error": "User not found"}), 404
         return "", 204
 
+    @flask_app.route("/api/authorized/<email>/update-name", methods=["POST"])
+    def update_authorized_user(email):
+        """Update the display name of an authorized user."""
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
+            return jsonify({"error": "Forbidden"}), 403
+        body = request.get_json(silent=True) or {}
+        name = (body.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        updated = db_layer.update_authorized_user_name(email, name)
+        if not updated:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify({"email": email, "name": name})
+
     @flask_app.route("/admin")
     @flask_app.route("/admin/")
     def admin_page():
         return send_from_directory(dist_dir, "index.html")
+
+    @flask_app.route("/api/user/last-login", methods=["GET"])
+    def get_user_last_login():
+        """Return the current user's last login timestamp."""
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        if db_layer is None:
+            return jsonify({"error": "Service unavailable"}), 503
+        last_login = db_layer.get_last_login(user["email"])
+        if last_login is None:
+            return jsonify({"email": user["email"], "last_login": None})
+        last_login_str = last_login.isoformat() if isinstance(last_login, (date, datetime)) \
+            else last_login
+        return jsonify({"email": user["email"], "last_login": last_login_str})
+
+    @flask_app.route("/admin/users", methods=["GET"])
+    def admin_get_users_with_last_login():
+        """Admin-only: return all authorized users including their last_login timestamps."""
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
+            return jsonify({"error": "Forbidden"}), 403
+        users = db_layer.get_authorized_users()
+        # Serialize any datetime fields so JSON encoding never fails
+        for u in users:
+            for field in ("authorized_at", "last_login"):
+                val = u.get(field)
+                if isinstance(val, (date, datetime)):
+                    u[field] = val.isoformat()
+        return jsonify(users)
 
     @flask_app.route("/search/")
     def search():
@@ -499,7 +558,17 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
     def collections_page():
         return send_from_directory(dist_dir, "index.html")
 
+    @flask_app.route("/download/jobs", methods=["GET"])
+    def list_download_jobs():
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        jobs = db_layer.get_download_jobs(user["email"])
+        return jsonify(jobs)
+
     return flask_app
+
 
 
 app = create_app(db_layer=get_db())

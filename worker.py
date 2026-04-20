@@ -90,15 +90,30 @@ def _search_paths_for_command(command_name, repo_env_var):
     return candidates
 
 
+def _repo_script_path(repo_dir, command_name):
+    if not repo_dir:
+        return None
+    if command_name == "mirrulations-fetch":
+        return os.path.join(repo_dir, "mirrulations_fetch", "download_docket.py")
+    if command_name == "mirrulations-csv":
+        return os.path.join(repo_dir, "mirrulations_csv", "docket_to_csv.py")
+    return None
+
+
 def _resolve_command(command_name, repo_env_var):
     """Resolve a worker CLI executable from the service venv, repo, or PATH."""
     for candidate in _search_paths_for_command(command_name, repo_env_var):
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
+            return [candidate]
 
     from_path = shutil.which(command_name)
     if from_path:
-        return from_path
+        return [from_path]
+
+    repo_dir = os.getenv(repo_env_var, "").strip()
+    repo_script = _repo_script_path(repo_dir, command_name)
+    if repo_script and os.path.isfile(repo_script):
+        return [sys.executable, repo_script]
 
     raise FileNotFoundError(
         f"Could not find '{command_name}'. "
@@ -110,7 +125,7 @@ def _run_fetch(docket_ids, output_dir, include_binaries):
     """Run mirrulations-fetch for each docket into output_dir."""
     fetch_cmd = _resolve_command("mirrulations-fetch", "FETCH_REPO_DIR")
     for docket_id in docket_ids:
-        cmd = [fetch_cmd, docket_id, "--output-folder", output_dir]
+        cmd = [*fetch_cmd, docket_id, "--output-folder", output_dir]
         if include_binaries:
             cmd.append("--include-binary")
         log.info("Running fetch for docket %s", docket_id)
@@ -128,7 +143,7 @@ def _run_csv(docket_ids, output_dir):
         # First fetch the raw data
         log.info("Fetching raw data for docket %s", docket_id)
         result = subprocess.run(
-            [fetch_cmd, docket_id, "--output-folder", output_dir],
+            [*fetch_cmd, docket_id, "--output-folder", output_dir],
             capture_output=True,
             text=True,
             timeout=3600,
@@ -142,7 +157,7 @@ def _run_csv(docket_ids, output_dir):
         comments_dir = os.path.join(output_dir, docket_id, "raw-data", "comments")
         log.info("Converting to CSV for docket %s", docket_id)
         result = subprocess.run(
-            [csv_cmd, comments_dir, "-o", output_dir],
+            [*csv_cmd, comments_dir, "-o", output_dir],
             capture_output=True,
             text=True,
             timeout=3600,

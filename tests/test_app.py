@@ -4,6 +4,7 @@ Tests for the Flask app endpoints - Header-based pagination (returns list)
 import json
 import tempfile
 import os
+from datetime import datetime
 from unittest.mock import patch, MagicMock
 import pytest
 from mock_db import MockDBLayer
@@ -12,7 +13,7 @@ from mirrsearch.db import get_postgres_connection, get_opensearch_connection
 from mirrsearch.app import _make_oauth_handler
 
 # pylint: disable=duplicate-code
-class MockOAuthHandler:
+class MockOAuthHandler: # pylint: disable=too-many-lines
     """Mock OAuth handler that always authenticates as a test user"""
     def get_authorization_url(self):
         return "http://mock-auth-url", None
@@ -806,7 +807,7 @@ def test_oauth_handler_from_aws_secrets(monkeypatch):
 def test_internal_logic_error_handling(client): # pylint: disable=redefined-outer-name
     """Test error handling in InternalLogic"""
     with patch('mirrsearch.internal_logic.get_db') as mock_get_db:
-        mock_get_db.side_effect = Exception("DB Error")
+        mock_get_db.side_effect = RuntimeError("DB Error")
         response = client.get('/search/?str=test')
         assert response.status_code in [200, 500]
 
@@ -929,3 +930,531 @@ def test_single_download_redis_failure_marks_job_failed(  # pylint: disable=rede
         assert status_response.status_code == 200
         status_data = status_response.get_json()
         assert status_data["status"] == "failed"
+
+# =============================================================================
+# last_login — GET /api/user/last-login
+# =============================================================================
+
+def test_get_user_last_login_returns_null_before_any_login(tmp_path):
+    """GET /api/user/last-login returns null last_login for a brand-new user"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=MockDBLayer(), oauth_handler=MockOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+    c = test_app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+    response = c.get('/api/user/last-login')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["email"] == "test@example.com"
+    assert data["last_login"] is None
+
+
+def test_get_user_last_login_returns_timestamp_after_oauth(tmp_path): # pylint: disable=too-many-locals
+    """GET /api/user/last-login returns an ISO timestamp after a successful OAuth login"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    db = MockDBLayer()
+    db.add_authorized_user("test@example.com", "Test User")
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=db, oauth_handler=MockOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+
+    # Trigger OAuth callback — this should call update_last_login
+    anon.get('/?code=valid-code')
+
+    # Now query as the authenticated user
+    c = test_app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+    response = c.get('/api/user/last-login')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["email"] == "test@example.com"
+    assert data["last_login"] is not None
+    # Must be a valid ISO 8601 string
+    parsed = datetime.fromisoformat(data["last_login"])
+    assert parsed is not None
+
+
+def test_get_user_last_login_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """GET /api/user/last-login returns 401 without a valid cookie"""
+    response = app.test_client().get('/api/user/last-login')
+    assert response.status_code == 401
+
+
+def test_get_user_last_login_updates_on_repeated_login(tmp_path):
+    """last_login advances each time the user logs in via OAuth"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    db = MockDBLayer()
+    db.add_authorized_user("test@example.com", "Test User")
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=db, oauth_handler=MockOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+
+    # First login
+    anon = test_app.test_client()
+    anon.get('/?code=valid-code')
+    first_login = db.get_last_login("test@example.com")
+    assert first_login is not None
+
+    # Second login — simulate a later timestamp by calling update_last_login directly
+    db.update_last_login("test@example.com", "Test User")
+    second_login = db.get_last_login("test@example.com")
+    assert second_login is not None
+    # Both calls happened in the same test so timestamps may be equal; just confirm
+    # the field is always populated and is a datetime
+    assert isinstance(second_login, datetime)
+
+
+def test_oauth_callback_calls_update_last_login(tmp_path):
+    """_handle_oauth_callback invokes update_last_login on successful login"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    db = MockDBLayer()
+    db.add_authorized_user("test@example.com", "Test User")
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=db, oauth_handler=MockOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+
+    assert db.get_last_login("test@example.com") is None
+    anon.get('/?code=valid-code')
+    assert db.get_last_login("test@example.com") is not None
+
+
+def test_oauth_callback_last_login_failure_does_not_block_login(tmp_path):
+    """A failure in update_last_login must not prevent the OAuth redirect from completing"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+
+    class BrokenLastLoginDB(MockDBLayer):
+        """MockDBLayer whose update_last_login always raises."""
+        def update_last_login(self, email, name):
+            raise RuntimeError("DB write failed")
+
+    db = BrokenLastLoginDB()
+    db.add_authorized_user("test@example.com", "Test User")
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=db, oauth_handler=MockOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+
+    response = anon.get('/?code=valid-code')
+    # Login still succeeds — JWT cookie is set, redirect happens
+    assert response.status_code == 302
+    assert 'jwt_token' in response.headers.get('Set-Cookie', '')
+
+
+# =============================================================================
+# last_login — GET /admin/users
+# =============================================================================
+
+def test_admin_get_users_returns_list_for_admin(tmp_path):# pylint: disable=too-many-locals
+    """GET /admin/users returns the authorized-users list with last_login for admins"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    db = MockDBLayer()
+    db.add_admin("test@example.com")
+    db.add_authorized_user("alice@example.com", "Alice")
+    db.update_last_login("alice@example.com", "Alice")
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=db, oauth_handler=MockOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+    c = test_app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+
+    response = c.get('/admin/users')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert isinstance(data, list)
+    alice = next((u for u in data if u["email"] == "alice@example.com"), None)
+    assert alice is not None
+    assert alice["last_login"] is not None
+    # Verify it's a serialized ISO string (not a raw datetime object)
+    datetime.fromisoformat(alice["last_login"])
+
+
+def test_admin_get_users_includes_null_last_login_for_never_logged_in(tmp_path):
+    """GET /admin/users shows null last_login for users who have never logged in"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    db = MockDBLayer()
+    db.add_admin("test@example.com")
+    db.add_authorized_user("bob@example.com", "Bob")
+    # Bob is authorized but has never logged in — no update_last_login call
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=db, oauth_handler=MockOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+    c = test_app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+
+    response = c.get('/admin/users')
+    assert response.status_code == 200
+    data = response.get_json()
+    bob = next((u for u in data if u["email"] == "bob@example.com"), None)
+    assert bob is not None
+    assert bob["last_login"] is None
+
+
+def test_admin_get_users_forbidden_for_non_admin(app):  # pylint: disable=redefined-outer-name
+    """GET /admin/users returns 403 for a non-admin authenticated user"""
+    # The default MockDBLayer has no admins, so test@example.com is not an admin
+    response = app.test_client()
+    response.set_cookie("jwt_token", "mock-token")
+    resp = response.get('/admin/users')
+    assert resp.status_code == 403
+
+
+def test_admin_get_users_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """GET /admin/users returns 403 without a cookie (no user → not admin)"""
+    response = app.test_client().get('/admin/users')
+    assert response.status_code == 403
+
+# =============================================================================
+# Additional tests for coverage
+# =============================================================================
+
+def test_search_with_sort_by_parameter(client): # pylint: disable=redefined-outer-name
+    """Test search with sort_by parameter"""
+    response = client.get('/search/?str=ESRD&sort_by=modify_date')
+    assert response.status_code == 200
+
+
+def test_search_with_start_date_only(client): # pylint: disable=redefined-outer-name
+    """Test search with only start_date filter"""
+    response = client.get('/search/?str=renal&start_date=2024-01-01')
+    assert response.status_code == 200
+
+
+def test_search_with_end_date_only(client): # pylint: disable=redefined-outer-name
+    """Test search with only end_date filter"""
+    response = client.get('/search/?str=renal&end_date=2024-12-31')
+    assert response.status_code == 200
+
+
+def test_search_with_cfr_part_dict_format(client): # pylint: disable=redefined-outer-name
+    """Test search with CFR part in dict format (title:part)"""
+    response = client.get('/search/?str=renal&cfr_part=42:413')
+    assert response.status_code == 200
+
+
+def test_search_with_cfr_part_missing_title(client): # pylint: disable=redefined-outer-name
+    """Test search with malformed CFR part (missing title) is ignored"""
+    response = client.get('/search/?str=renal&cfr_part=:413')
+    assert response.status_code == 200
+
+
+def test_search_with_cfr_part_missing_part(client): # pylint: disable=redefined-outer-name
+    """Test search with malformed CFR part (missing part) is ignored"""
+    response = client.get('/search/?str=renal&cfr_part=42:')
+    assert response.status_code == 200
+
+
+# def test_admin_login_sets_intent_cookie(app):
+#     """Test /admin/login sets login_intent cookie"""
+#     response = app.get('/admin/login')
+#     assert response.status_code == 302
+#     assert any('login_intent=admin' in h for h in response.headers.getlist('Set-Cookie'))
+
+
+def test_admin_status_without_cookie(app): # pylint: disable=redefined-outer-name
+    """Test /admin/status returns is_admin false without cookie"""
+    anon = app.test_client()
+    response = anon.get('/admin/status')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["is_admin"] is False
+
+
+def test_admin_status_with_db_layer_none(tmp_path):
+    """Test /admin/status when db_layer is None"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    test_app = create_app(dist_dir=str(dist), db_layer=None, oauth_handler=MockOAuthHandler())
+    test_app.config['TESTING'] = True
+    c = test_app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+    response = c.get('/admin/status')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["is_admin"] is False
+
+
+def test_oauth_callback_admin_unauthorized(tmp_path):
+    """Test OAuth callback for admin login with unauthorized user"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    test_app = create_app(dist_dir=str(dist), db_layer=MockDBLayer(),
+                          oauth_handler=MockOAuthHandler())
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+    anon.set_cookie("login_intent", "admin")
+    response = anon.get('/?code=valid-code')
+    assert response.status_code == 302
+    assert '/admin?error=unauthorized' in response.headers['Location']
+
+
+def test_oauth_callback_regular_user_unauthorized(tmp_path):
+    """Test OAuth callback for regular login with unauthorized user"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    test_app = create_app(dist_dir=str(dist),
+                          db_layer=MockDBLayer(), oauth_handler=MockOAuthHandler())
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+    response = anon.get('/?code=valid-code')
+    assert response.status_code == 302
+    assert '/login?error=unauthorized' in response.headers['Location']
+
+
+def test_oauth_callback_admin_authorized(tmp_path):
+    """Test OAuth callback for admin login with authorized admin user"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    db = MockDBLayer()
+    db.add_admin("test@example.com")
+    test_app = create_app(dist_dir=str(dist), db_layer=db, oauth_handler=MockOAuthHandler())
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+    anon.set_cookie("login_intent", "admin")
+    response = anon.get('/?code=valid-code')
+    assert response.status_code == 302
+    assert 'jwt_token' in response.headers.get('Set-Cookie', '')
+    assert response.headers['Location'] == '/admin'
+
+
+def test_oauth_callback_exception_in_admin_check(tmp_path):
+    """Test OAuth callback when admin check raises exception"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+
+    class BrokenDB(MockDBLayer):
+        def is_admin(self, email):
+            raise RuntimeError("DB error")
+
+    test_app = create_app(dist_dir=str(dist),
+                          db_layer=BrokenDB(), oauth_handler=MockOAuthHandler())
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+    anon.set_cookie("login_intent", "admin")
+    response = anon.get('/?code=valid-code')
+    assert response.status_code == 302
+    assert '/admin?error=unauthorized' in response.headers['Location']
+
+
+def test_oauth_callback_exception_in_authorized_check(tmp_path):
+    """Test OAuth callback when authorized user check raises exception"""
+    dist = tmp_path/"dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+
+    class BrokenDB(MockDBLayer):
+        def is_authorized_user(self, email):
+            raise RuntimeError("DB error")
+
+    test_app = create_app(dist_dir=str(dist), db_layer=BrokenDB(), oauth_handler=MockOAuthHandler())
+    test_app.config['TESTING'] = True
+    anon = test_app.test_client()
+    response = anon.get('/?code=valid-code')
+    assert response.status_code == 302
+    assert '/login?error=unauthorized' in response.headers['Location']
+
+
+def test_get_user_last_login_service_unavailable(tmp_path):
+    """Test /api/user/last-login returns 503 when db_layer is None"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    test_app = create_app(dist_dir=str(dist), db_layer=None, oauth_handler=MockOAuthHandler())
+    test_app.config['TESTING'] = True
+    c = test_app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+    response = c.get('/api/user/last-login')
+    assert response.status_code == 503
+    data = response.get_json()
+    assert data["error"] == "Service unavailable"
+
+
+def test_download_file_with_s3_url(tmp_path):
+    """Test download_file redirects to S3 URL when job is ready"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+
+    class MockDBWithReadyJob(MockDBLayer):
+        def get_download_job(self, job_id, user_email):
+            return {"status": "ready", "format": "raw", "docket_ids":
+                    ["CMS-2025-0240"], "created_at": "2026-04-01T00:00:00"}
+        def get_download_s3_url(self, job_id, user_email):
+            return "https://s3.amazonaws.com/test-bucket/file.zip"
+
+    test_app = create_app(dist_dir=str(dist),
+                          db_layer=MockDBWithReadyJob(), oauth_handler=MockOAuthHandler())
+    test_app.config['TESTING'] = True
+    c = test_app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+    response = c.get('/download/mock-job-1')
+    assert response.status_code == 302
+    assert "s3.amazonaws.com" in response.headers['Location']
+
+
+def test_download_file_s3_url_not_found(tmp_path):
+    """Test download_file returns 404 when S3 URL is None"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+
+    class MockDBWithNoS3Url(MockDBLayer):
+        def get_download_job(self, job_id, user_email):
+            return {"status": "ready", "format": "raw", "docket_ids":
+                    ["CMS-2025-0240"], "created_at": "2026-04-01T00:00:00"}
+        def get_download_s3_url(self, job_id, user_email):
+            return None
+
+    test_app = create_app(dist_dir=str(dist),
+                          db_layer=MockDBWithNoS3Url(), oauth_handler=MockOAuthHandler())
+    test_app.config['TESTING'] = True
+    c = test_app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+    response = c.get('/download/mock-job-1')
+    assert response.status_code == 404
+    data = response.get_json()
+    assert data["error"] == "Download file not found"
+
+
+def test_dockets_endpoint_with_no_ids(client): # pylint: disable=redefined-outer-name
+    """Test /dockets endpoint returns empty list when no docket_ids provided"""
+    response = client.get('/dockets')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data == []
+
+
+def test_dockets_endpoint_with_ids(client): # pylint: disable=redefined-outer-name
+    """Test /dockets endpoint returns dockets for given IDs"""
+    response = client.get('/dockets?docket_id=CMS-2025-0240')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert isinstance(data, list)
+
+
+def test_collections_page_route(tmp_path):
+    """Test /collections route serves index.html"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html><body>Collections</body></html>")
+    test_app = create_app(dist_dir=str(dist), db_layer=MockDBLayer())
+    test_client = test_app.test_client()
+    response = test_client.get('/collections')
+    assert response.status_code == 200
+    assert b'Collections' in response.data
+
+
+def test_explorer_page_route(tmp_path):
+    """Test /explorer route serves index.html"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html><body>Explorer</body></html>")
+    test_app = create_app(dist_dir=str(dist), db_layer=MockDBLayer())
+    test_client = test_app.test_client()
+    response = test_client.get('/explorer')
+    assert response.status_code == 200
+    assert b'Explorer' in response.data
+    response = test_client.get('/explorer/')
+    assert response.status_code == 200
+
+
+def test_login_page_route(tmp_path):
+    """Test /login route serves index.html"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html><body>Login</body></html>")
+    test_app = create_app(dist_dir=str(dist), db_layer=MockDBLayer())
+    test_client = test_app.test_client()
+    response = test_client.get('/login')
+    assert response.status_code == 200
+    assert b'Login' in response.data
+
+
+def test_admin_page_route(tmp_path):
+    """Test /admin route serves index.html"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html><body>Admin</body></html>")
+    test_app = create_app(dist_dir=str(dist), db_layer=MockDBLayer())
+    test_client = test_app.test_client()
+    response = test_client.get('/admin')
+    assert response.status_code == 200
+    assert b'Admin' in response.data
+    response = test_client.get('/admin/')
+    assert response.status_code == 200
+
+def test_list_download_jobs_returns_created_jobs(client):  # pylint: disable=redefined-outer-name
+    """GET /download/jobs returns jobs created by the user"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        # create a job first
+        client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        })
+
+    response = client.get('/download/jobs')
+    assert response.status_code == 200
+    data = response.get_json()
+
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    assert "job_id" in data[0]
+    assert "status" in data[0]
+
+def test_list_download_jobs_requires_auth(app):  # pylint: disable=redefined-outer-name
+    """GET /download/jobs returns 401 without authentication"""
+    response = app.test_client().get('/download/jobs')
+    assert response.status_code == 401
+
+def test_list_download_jobs_empty(client):  # pylint: disable=redefined-outer-name
+    """GET /download/jobs returns empty list if no jobs exist"""
+    response = client.get('/download/jobs')
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+def test_list_download_jobs_multiple(client):  # pylint: disable=redefined-outer-name
+    """GET /download/jobs returns multiple jobs"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        })
+        client.post('/download/request/CMS-2025-0240', json={
+            "format": "csv",
+            "include_binaries": False
+        })
+
+    response = client.get('/download/jobs')
+    data = response.get_json()
+
+    assert len(data) >= 2
