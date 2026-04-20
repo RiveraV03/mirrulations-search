@@ -1,8 +1,9 @@
 import re
+from datetime import datetime
 from typing import List, Dict, Any, Set
 
 
-class MockDBLayer:  # pylint: disable=too-many-public-methods
+class MockDBLayer:  # pylint: disable=too-many-public-methods,protected-access
     """
     Mock DB layer that returns hardcoded dummy data for testing.
     Mirrors the interface of DBLayer without any DB connection.
@@ -14,6 +15,7 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         self._jobs = {}
         self._authorized_users = {}
         self._admins = {"admin@example.com"}
+        self._last_logins = {}  # Track last_login separately
 
     def _items(self) -> List[Dict[str, Any]]:
         return [
@@ -99,8 +101,16 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         return email.lower() in self._admins
 
     def get_authorized_users(self) -> List[Dict[str, Any]]:
-        """Return all authorized users."""
-        return list(self._authorized_users.values())
+        """Return all authorized users with last_login."""
+        result = []
+        for email, user_data in self._authorized_users.items():
+            result.append({
+                "email": user_data["email"],
+                "name": user_data["name"],
+                "authorized_at": user_data["authorized_at"],
+                "last_login": self._last_logins.get(email)
+            })
+        return result
 
     def add_authorized_user(self, email: str, name: str) -> None:
         """Add or update an authorized user."""
@@ -116,6 +126,43 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         if key not in self._authorized_users:
             return False
         del self._authorized_users[key]
+        if key in self._last_logins:
+            del self._last_logins[key]
+        return True
+
+    def get_last_login(self, email: str):
+        """Return the last login timestamp for a user."""
+        value = self._last_logins.get(email.lower())
+        if value is None:
+            return None
+        # If it's a string, parse it to datetime
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        return value
+
+    def update_last_login(self, email: str, name: str) -> None:
+        """Update the last login timestamp for a user."""
+        email_lower = email.lower()
+        # Ensure the user exists in authorized_users
+        if email_lower not in self._authorized_users:
+            self._authorized_users[email_lower] = {
+                "email": email_lower,
+                "name": name,
+                "authorized_at": "2026-01-01T00:00:00",
+            }
+        # Update last_login with current datetime object (not string)
+        self._last_logins[email_lower] = datetime.now()
+
+    def add_admin(self, email: str) -> None:
+        """Add an admin user."""
+        self._admins.add(email.lower())
+
+    def update_authorized_user_name(self, email: str, name: str) -> bool:
+        """Update the display name of an authorized user. Returns True if updated."""
+        key = email.lower()
+        if key not in self._authorized_users:
+            return False
+        self._authorized_users[key]["name"] = name
         return True
 
     # pylint: disable=line-too-long
@@ -311,3 +358,7 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods
         if job:
             job["status"] = "ready"
             job["s3_url"] = s3_url
+
+    def get_download_jobs(self, user_email):  # pylint: disable=unused-argument
+        """Return all download jobs for a user."""
+        return list(self._jobs.values())

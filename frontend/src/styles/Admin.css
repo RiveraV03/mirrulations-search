@@ -391,6 +391,50 @@
     color: #94a3b8;
 }
 
+
+.admin-edit-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.admin-edit-hint {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted, #888);
+    margin-left: 0.75rem;
+}
+
+.admin-user-edit-btn {
+    background: #7c3aed;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.33rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+    white-space: nowrap;
+    align-self: flex-end;
+    height: 38px;
+}
+
+.admin-cancel-edit-btn {
+    background: #980303;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.33rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+    white-space: nowrap;
+    align-self: flex-end;
+    height: 38px;
+}
+
 /* ── Responsive ── */
 @media (max-width: 600px) {
     .admin-form-row {

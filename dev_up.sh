@@ -43,10 +43,10 @@ fi
 # Setup Postgres DB if not already initialized
 brew services start postgresql 2>/dev/null || true
 if [[ "$FORCE_SEED" == "1" ]]; then
-    EXTRA_SEED_SQL_FILE="$EXTRA_SEED_SQL_FILE" ./db/setup_postgres.sh
+    EXTRA_SEED_SQL_FILE="$EXTRA_SEED_SQL_FILE" ./db/setup_postgres_local.sh
 else
     if ! psql -lqt postgres 2>/dev/null | grep -qw mirrulations; then
-        ./db/setup_postgres.sh
+        ./db/setup_postgres_local.sh
     fi
 fi
 

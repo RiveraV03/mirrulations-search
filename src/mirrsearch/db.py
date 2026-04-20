@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Optional
 import os
 import psycopg2
 from opensearchpy import OpenSearch
@@ -130,7 +130,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         clauses = " OR ".join("(cp.title = %s AND cp.cfrPart = %s)" for _ in cfr_pairs)
         sql = f"""
             SELECT DISTINCT d.docket_id
-            FROM documentsWithFRdoc d
+            FROM documents d
             JOIN cfrparts cp ON cp.frdocnum = d.frdocnum
             WHERE ({clauses})
         """
@@ -159,7 +159,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 cp.cfrPart,
                 l.link
             FROM dockets d
-            JOIN documentsWithFRdoc doc ON doc.docket_id = d.docket_id
+            JOIN documents doc ON doc.docket_id = d.docket_id
             LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
             LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
             WHERE d.docket_title ILIKE %s
@@ -188,7 +188,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             clauses = " OR ".join("cp3.cfrPart = %s" for _ in cfr_patterns)
             sql += (
                 " AND EXISTS ("
-                "SELECT 1 FROM documentsWithFRdoc d3 "
+                "SELECT 1 FROM documents d3 "
                 "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum "
                 "WHERE d3.docket_id = d.docket_id "
                 f"AND ({clauses})"
@@ -203,7 +203,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             )
             sql += (
                 " AND EXISTS ("
-                "SELECT 1 FROM documentsWithFRdoc d2 "
+                "SELECT 1 FROM documents d2 "
                 "JOIN cfrparts cp2 ON cp2.frdocnum = d2.frdocnum "
                 "WHERE d2.docket_id = d.docket_id "
                 f"AND ({exact_clauses})"
@@ -238,7 +238,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 cp.cfrPart,
                 l.link
             FROM dockets d
-            JOIN documentsWithFRdoc doc ON doc.docket_id = d.docket_id
+            JOIN documents doc ON doc.docket_id = d.docket_id
             LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
             LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
             WHERE d.docket_id = ANY(%s)
@@ -456,7 +456,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         if self.conn is not None:
             with self.conn.cursor() as cur:
                 cur.execute(
-                    "SELECT docket_id, COUNT(*) FROM documentsWithFRdoc "
+                    "SELECT docket_id, COUNT(*) FROM documents "
                     "WHERE docket_id = ANY(%s) GROUP BY docket_id",
                     (list(docket_ids),)
                 )
@@ -802,15 +802,26 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             deleted = cur.rowcount > 0
         self.conn.commit()
         return deleted
+    def update_authorized_user_name(self, email: str, name: str) -> bool:
+        """Update the display name of an authorized user. Returns True if updated."""
+        if self.conn is None:
+            return False
+        sql = "UPDATE authorized_users SET name = %s WHERE email = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (name, email))
+            updated = cur.rowcount > 0
+        self.conn.commit()
+        return updated
 
     def get_authorized_users(self) -> List[Dict[str, Any]]:
-        """Return all authorized users."""
+        """Return all authorized users including their last_login from the users table."""
         if self.conn is None:
             return []
         sql = """
-            SELECT email, name, authorized_at
-            FROM authorized_users
-            ORDER BY authorized_at DESC
+            SELECT au.email, au.name, au.authorized_at, u.last_login
+            FROM authorized_users au
+            LEFT JOIN users u ON u.email = au.email
+            ORDER BY au.authorized_at DESC
         """
         with self.conn.cursor() as cur:
             cur.execute(sql)
@@ -818,7 +829,75 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 {
                     "email": row[0],
                     "name": row[1],
-                    "authorized_at": row[2]
+                    "authorized_at": row[2],
+                    "last_login": row[3]
+                }
+                for row in cur.fetchall()
+            ]
+
+    def update_last_login(self, email: str, name: str) -> None:
+        """Upsert the user row and stamp last_login to NOW()."""
+        if self.conn is None:
+            return
+        sql = """
+            INSERT INTO users (email, name, last_login)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (email) DO UPDATE
+                SET name = EXCLUDED.name,
+                    last_login = NOW()
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email, name))
+        self.conn.commit()
+
+    def get_last_login(self, email: str) -> Optional[Any]:
+        """Return the last_login timestamp for a user, or None if not found."""
+        if self.conn is None:
+            return None
+        sql = "SELECT last_login FROM users WHERE email = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email,))
+            row = cur.fetchone()
+        return row[0] if row else None
+
+    def get_download_s3_url(self, job_id: str, user_email: str) -> Optional[str]:
+        """Return the S3 URL for a completed download job, or None."""
+        if self.conn is None:
+            return None
+        sql = """
+            SELECT s3_path FROM download_jobs
+            WHERE job_id = %s AND user_email = %s AND status = 'ready'
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (job_id, user_email))
+            row = cur.fetchone()
+        return row[0] if row else None
+
+    def get_download_jobs(self, user_email: str) -> List[Dict[str, Any]]:
+        """Return all download jobs for the given user, newest first."""
+        if self.conn is None:
+            return []
+        sql = """
+            SELECT job_id, user_email, docket_ids, format, include_binaries,
+                status, s3_path, created_at, updated_at, expires_at
+            FROM download_jobs
+            WHERE user_email = %s
+            ORDER BY created_at DESC
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (user_email,))
+            return [
+                {
+                    "job_id": str(row[0]),
+                    "user_email": row[1],
+                    "docket_ids": row[2],
+                    "format": row[3],
+                    "include_binaries": row[4],
+                    "status": row[5],
+                    "s3_path": row[6],
+                    "created_at": row[7].isoformat() if row[7] else None,
+                    "updated_at": row[8].isoformat() if row[8] else None,
+                    "expires_at": row[9].isoformat() if row[9] else None,
                 }
                 for row in cur.fetchall()
             ]
@@ -901,7 +980,6 @@ def _opensearch_client_kwargs() -> Dict[str, Any]:
         kwargs["http_auth"] = (user, password)
     return kwargs
 
-
 class _AossClient:  # pylint: disable=too-few-public-methods
     """Thin requests-based client that mimics opensearchpy .search() interface."""
     def __init__(self, base_url, session):
@@ -914,9 +992,7 @@ class _AossClient:  # pylint: disable=too-few-public-methods
         resp.raise_for_status()
         return resp.json()
 
-
 _OPENSEARCH_CLIENT_SINGLETON = None
-
 
 def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-statements
     global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement
