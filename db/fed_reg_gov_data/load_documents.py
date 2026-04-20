@@ -38,6 +38,8 @@ HOW TO USE:
 import os
 import json
 import logging
+import argparse
+from datetime import datetime, timezone
 import boto3
 import psycopg2
 from psycopg2.extras import execute_values
@@ -159,12 +161,15 @@ def map_document(raw, s3_key):
     }
 
 
-def iter_s3_documents(bucket, prefix, processed):
+def iter_s3_documents(bucket, prefix, processed, start_date=None, end_date=None):
     s3        = boto3.client("s3")
     paginator = s3.get_paginator("list_objects_v2")
     total_found = 0
 
-    log.info("Scanning s3://%s/%s ...", bucket, prefix)
+    date_range_msg = ""
+    if start_date or end_date:
+        date_range_msg = f" (LastModified filter: {start_date or '*'} → {end_date or '*'})"
+    log.info("Scanning s3://%s/%s ...%s", bucket, prefix, date_range_msg)
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
@@ -176,6 +181,14 @@ def iter_s3_documents(bucket, prefix, processed):
 
             if key in processed:
                 continue
+
+            # Filter by S3 LastModified date (UTC-aware)
+            if start_date or end_date:
+                last_modified = obj["LastModified"]
+                if start_date and last_modified < start_date:
+                    continue
+                if end_date and last_modified > end_date:
+                    continue
 
             total_found += 1
             if total_found % 10_000 == 0:
@@ -233,7 +246,36 @@ def insert_batch(cursor, batch):
     execute_values(cursor, INSERT_SQL, rows)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Bulk-load S3 document JSON files into RDS.")
+    parser.add_argument(
+        "--start-date",
+        metavar="YYYY-MM-DD",
+        help="Only process S3 objects with LastModified >= this date (UTC)",
+    )
+    parser.add_argument(
+        "--end-date",
+        metavar="YYYY-MM-DD",
+        help="Only process S3 objects with LastModified <= this date (UTC)",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+
+    start_date = (
+        datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if args.start_date else None
+    )
+    end_date = (
+        # Use end of day so --end-date 2025-04-17 includes all of that day
+        datetime.strptime(args.end_date, "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59, tzinfo=timezone.utc
+        )
+        if args.end_date else None
+    )
+
     processed = load_checkpoint()
 
     log.info("Connecting to RDS at %s ...", DB_CONFIG["host"])
@@ -248,7 +290,7 @@ def main():
     total_processed = 0
 
     try:
-        for doc, key in iter_s3_documents(S3_BUCKET, S3_PREFIX, processed):
+        for doc, key in iter_s3_documents(S3_BUCKET, S3_PREFIX, processed, start_date, end_date):
             batch.append(doc)
             batch_keys.append(key)
             total_processed += 1
