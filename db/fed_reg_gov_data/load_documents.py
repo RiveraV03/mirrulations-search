@@ -44,7 +44,7 @@ from psycopg2.extras import execute_values
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv(os.path.expanduser("~/load_s3.env"))
+load_dotenv(os.path.expanduser("load_s3.env"))
 
 logging.basicConfig(
     level=logging.INFO,
