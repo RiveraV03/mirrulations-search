@@ -4,7 +4,7 @@ Tests for the database layer (db.py)
 Only tests DBLayer wiring, the postgres branch, and module-level
 factory functions. Dummy-data behavior tests live in test_mock.py.
 """
-# pylint: disable=redefined-outer-name,protected-access
+# pylint: disable=redefined-outer-name,protected-access,too-many-lines
 from datetime import datetime, timezone
 import pytest
 import mirrsearch.db as db_module
@@ -880,6 +880,51 @@ def test_get_authorized_users_returns_list():
 def test_get_authorized_users_empty_table_returns_empty():
     db = DBLayer(conn=_FakeConn([]))
     assert db.get_authorized_users() == []
+
+def test_get_expired_download_jobs_no_conn():
+    assert DBLayer().get_expired_download_jobs() == []
+
+
+def test_get_expired_download_jobs_returns_list():
+    rows = [("job-1", "s3://bucket/downloads/job-1.zip")]
+    db = DBLayer(conn=_FakeConn(rows))
+    result = db.get_expired_download_jobs()
+    assert len(result) == 1
+    assert result[0]["job_id"] == "job-1"
+    assert result[0]["s3_path"] == "s3://bucket/downloads/job-1.zip"
+
+
+def test_get_expired_download_jobs_empty():
+    db = DBLayer(conn=_FakeConn([]))
+    assert db.get_expired_download_jobs() == []
+
+
+def test_get_download_s3_url_no_conn():
+    assert DBLayer().get_download_s3_url("job-1", "user@test.com") is None
+
+
+def test_get_download_s3_url_no_job():
+    db = DBLayer(conn=_FakeConn([]))
+    assert db.get_download_s3_url("nonexistent", "user@test.com") is None
+
+
+def test_get_download_s3_url_local_path():
+    rows = [("job-1", "user@test.com", ["CMS-2025-0240"], "raw",
+             False, "ready", "local:///tmp/job-1.zip", None, None, None)]
+    db = DBLayer(conn=_FakeConn(rows))
+    result = db.get_download_s3_url("job-1", "user@test.com")
+    assert result == "/tmp/job-1.zip"
+
+
+def test_presign_s3_url_invalid_path():
+    db = DBLayer()
+    assert db._presign_s3_url("not-an-s3-path") is None
+
+
+def test_presign_s3_url_missing_key():
+    db = DBLayer()
+    assert db._presign_s3_url("s3://bucket-only") is None
+
 
 # --- update_last_login tests ---
 

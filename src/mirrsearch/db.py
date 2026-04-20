@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 import json
 from dataclasses import dataclass
 from typing import List, Dict, Any, Set, Optional
@@ -715,6 +716,40 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         self.conn.commit()
         return updated
 
+    def get_expired_download_jobs(self) -> List[Dict[str, Any]]:
+        """Return job_id and s3_path for all jobs where expires_at < NOW()."""
+        if self.conn is None:
+            return []
+        sql = "SELECT job_id, s3_path FROM download_jobs WHERE expires_at < NOW()"
+        with self.conn.cursor() as cur:
+            cur.execute(sql)
+            return [{"job_id": str(row[0]), "s3_path": row[1]} for row in cur.fetchall()]
+
+    def get_download_s3_url(self, job_id: str, user_email: str) -> str:
+        """Return a presigned S3 URL for the given job, or local path if in dev mode."""
+        if self.conn is None:
+            return None
+        job = self.get_download_job(job_id, user_email)
+        s3_path = job.get("s3_path") if job else None
+        if not s3_path:
+            return None
+        if s3_path.startswith("local://"):
+            return s3_path[len("local://"):]
+        return self._presign_s3_url(s3_path)
+
+    def _presign_s3_url(self, s3_path: str) -> str:
+        """Generate a presigned URL from an s3:// path, or None if invalid."""
+        if boto3 is None or not s3_path.startswith("s3://"):
+            return None
+        bucket, _, key = s3_path[len("s3://"):].partition("/")
+        if not bucket or not key:
+            return None
+        return boto3.client("s3").generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=3600,
+        )
+
     def prune_expired_download_jobs(self) -> int:
         """Delete download_jobs past their expires_at. Returns the number of rows deleted."""
         if self.conn is None:
@@ -823,19 +858,6 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         sql = "SELECT last_login FROM users WHERE email = %s"
         with self.conn.cursor() as cur:
             cur.execute(sql, (email,))
-            row = cur.fetchone()
-        return row[0] if row else None
-
-    def get_download_s3_url(self, job_id: str, user_email: str) -> Optional[str]:
-        """Return the S3 URL for a completed download job, or None."""
-        if self.conn is None:
-            return None
-        sql = """
-            SELECT s3_path FROM download_jobs
-            WHERE job_id = %s AND user_email = %s AND status = 'ready'
-        """
-        with self.conn.cursor() as cur:
-            cur.execute(sql, (job_id, user_email))
             row = cur.fetchone()
         return row[0] if row else None
 

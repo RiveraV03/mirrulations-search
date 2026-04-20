@@ -25,7 +25,7 @@ const PACKAGE_OPTIONS = [
 ];
 
 const FORMAT_OPTIONS = [
-  { id: "Raw", label: "RAW" },
+  { id: "raw", label: "RAW" },
   { id: "csv", label: "CSV" },
 ];
 
@@ -47,11 +47,19 @@ export default function DownloadModal({ collectionName, docketIds, onClose }) {
         const res = await fetch(`/download/status/${jobId}`);
         if (res.status === 401) {
           clearInterval(pollId);
+          setError("Your session expired. Please log in again.");
           return;
+        }
+        if (!res.ok) {
+          throw new Error(`Polling failed: ${res.status}`);
         }
         const data = await res.json();
         if (data.status === "ready") {
           setStatus("ready");
+          clearInterval(pollId);
+        } else if (data.status === "failed") {
+          setStatus(null);
+          setError("Failed to prepare download.");
           clearInterval(pollId);
         }
       } catch (err) {
@@ -71,35 +79,37 @@ export default function DownloadModal({ collectionName, docketIds, onClose }) {
 
 const handleDownload = async () => {
   if (selected.size === 0) return;
-  // setError(null);
+  setError(null);
   setSubmitting(true);
-  setMessage(null)
+  setMessage(null);
 
-  // Just show a message instead of making a request or setting an error
-  setMessage("Download is not ready yet.");
-
-  setSubmitting(false);
-
-  /*try {
+  try {
     const response = await fetch("/download/request", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         docket_ids: docketIds,
         format,
-        include_binaries: selected.has("attachments"),
+        include_binaries: selected.has("extracted_text"),
       }),
     });
     if (response.status === 401) throw new Error("UNAUTHORIZED");
-    if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `Request failed: ${response.status}`);
+    }
     const data = await response.json();
     setJobId(data.job_id);
     setStatus("pending");
   } catch (err) {
-    setError("Failed to request download.");
+    if (err.message === "UNAUTHORIZED") {
+      setError("Your session expired. Please log in again.");
+    } else {
+      setError(err.message || "Failed to request download.");
+    }
   } finally {
     setSubmitting(false);
-  }*/
+  }
 };
 
   const handleDownloadFile = () => {
@@ -143,6 +153,7 @@ const handleDownload = async () => {
         </h2>
  
         {message && <p className="modal-message">{message}</p>}
+        {error && <p className="modal-message">{error}</p>}
  
         {/* ── Pending ───────────────────────────────── */}
         {status === "pending" && (
