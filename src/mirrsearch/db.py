@@ -369,16 +369,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
     def text_match_terms(
             self, terms: List[str], opensearch_client=None) -> List[Dict[str, Any]]:
-        """
-        Search OpenSearch for dockets containing the given terms.
-
-        Searches:
-        - documents_text index: title and documentText fields
-        - comments index: commentText field
-        - comments_extracted_text index: extractedText field
-
-        Returns list of {docket_id, document_match_count, comment_match_count}.
-        """
+        """Search OpenSearch for dockets matching terms across all indexes."""
         if opensearch_client is None:
             opensearch_client = get_opensearch_connection()
         try:
@@ -389,7 +380,6 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"OpenSearch query failed (fallback to SQL): {e}")
             return []
-
 
     def _run_text_match_queries(  # pylint: disable=too-many-locals
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
@@ -416,12 +406,10 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         comment_match_clauses = [{"match": {"commentText": t}} for t in terms]
         extracted_match_clauses = [{"match": {"extractedText": t}} for t in terms]
 
-        # Document match counts from OpenSearch ---
         doc_resp = safe_search(
             "documents_text",
             self._build_docket_agg_query("matching_docs", doc_match_clauses)
         )
-        # _accumulate_counts used consistently for document counts
         self._accumulate_counts(
             docket_counts,
             doc_resp["aggregations"]["by_docket"]["buckets"],
@@ -429,8 +417,6 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             "document_match_count"
         )
 
-        # Find which dockets had comment/extracted text matches
-        # cardinality agg tells us which dockets matched without bucket explosion
         comment_resp = safe_search(
             "comments",
             self._build_docket_agg_query_unique_comments(
@@ -444,7 +430,6 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             )
         )
 
-        # Read cardinality match counts from both comment indexes and take the max per docket
         comment_counts = self._extract_cardinality_counts(
             comment_resp, "matching_comments"
         )
@@ -475,7 +460,6 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 if value > 0:
                     counts[str(bucket["key"])] = value
         return counts
-
 
     @staticmethod
     def _comment_total_query(docket_ids: List[str]) -> Dict:
@@ -520,15 +504,11 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
     def _fetch_docket_totals(
             self, docket_ids: List[str]) -> Dict[str, Dict[str, int]]:
-        """
-        Both document and comment total counts now come from Postgres.
-        Previously comment totals hit OpenSearch with an unbounded size parameter.
-        """
+        """Fetch document and comment total counts from Postgres."""
         totals: Dict[str, Dict[str, int]] = {}
         if self.conn is None:
             return totals
         with self.conn.cursor() as cur:
-            # Document total count from Postgres
             cur.execute(
                 "SELECT docket_id, COUNT(*) FROM documents "
                 "WHERE docket_id = ANY(%s) GROUP BY docket_id",
@@ -540,7 +520,6 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                     "comment_total_count": 0
                 }
 
-            # FIX 6: Comment total count from Postgres — not OpenSearch
             cur.execute(
                 "SELECT docket_id, COUNT(*) FROM comments "
                 "WHERE docket_id = ANY(%s) GROUP BY docket_id",
@@ -554,7 +533,6 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 totals[docket_id]["comment_total_count"] = count
 
         return totals
-
 
     def get_collections(self, user_email: str) -> List[Dict[str, Any]]:
         """Return all collections belonging to the given user."""
@@ -722,10 +700,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
     def update_download_job_status(
             self, job_id: str, status: str, s3_path: str = None) -> bool:
-        """Update the status (and optionally s3_path) of a download job.
-
-        Returns True if a row was updated.
-        """
+        """Update the status (and optionally s3_path) of a download job."""
         if self.conn is None:
             return False
         sql = """
