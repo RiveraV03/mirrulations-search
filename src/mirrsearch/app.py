@@ -162,6 +162,13 @@ def _handle_oauth_callback(handler, db_layer_ref=None): # pylint: disable=too-ma
                 response.delete_cookie("login_intent")
                 return response
 
+        # Record the login timestamp for this user
+        if db_layer_ref is not None:
+            try:
+                db_layer_ref.update_last_login(user_info["email"], user_info["name"])
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass  # Non-fatal: don't block login if last_login update fails
+
         user_id = f"{user_info['name']}|{user_info['email']}"
         token = handler.create_jwt_token(user_id)
         redirect_to = "/admin" if intent == "admin" else "/"
@@ -223,7 +230,6 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return send_from_directory(dist_dir, "index.html")
 
     @flask_app.route("/admin/login")
-
     def admin_login():
         handler = oauth_handler or _make_oauth_handler()
         authorization_url, _ = handler.get_authorization_url()
@@ -295,6 +301,38 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
     @flask_app.route("/admin/")
     def admin_page():
         return send_from_directory(dist_dir, "index.html")
+
+    @flask_app.route("/api/user/last-login", methods=["GET"])
+    def get_user_last_login():
+        """Return the current user's last login timestamp."""
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        if db_layer is None:
+            return jsonify({"error": "Service unavailable"}), 503
+        last_login = db_layer.get_last_login(user["email"])
+        if last_login is None:
+            return jsonify({"email": user["email"], "last_login": None})
+        last_login_str = last_login.isoformat() if isinstance(last_login, (date, datetime)) \
+            else last_login
+        return jsonify({"email": user["email"], "last_login": last_login_str})
+
+    @flask_app.route("/admin/users", methods=["GET"])
+    def admin_get_users_with_last_login():
+        """Admin-only: return all authorized users including their last_login timestamps."""
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+        if db_layer is None or not user or not db_layer.is_admin(user["email"]):
+            return jsonify({"error": "Forbidden"}), 403
+        users = db_layer.get_authorized_users()
+        # Serialize any datetime fields so JSON encoding never fails
+        for u in users:
+            for field in ("authorized_at", "last_login"):
+                val = u.get(field)
+                if isinstance(val, (date, datetime)):
+                    u[field] = val.isoformat()
+        return jsonify(users)
 
     @flask_app.route("/search/")
     def search():
