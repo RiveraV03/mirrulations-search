@@ -360,5 +360,5 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods,protected-access
             job["s3_url"] = s3_url
 
     def get_download_jobs(self, user_email):  # pylint: disable=unused-argument
-        """Return all download jobs for a user"""
+        """Return all download jobs for a user."""
         return list(self._jobs.values())

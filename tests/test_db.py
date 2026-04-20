@@ -881,7 +881,6 @@ def test_get_authorized_users_empty_table_returns_empty():
     db = DBLayer(conn=_FakeConn([]))
     assert db.get_authorized_users() == []
 
-
 def test_get_expired_download_jobs_no_conn():
     assert DBLayer().get_expired_download_jobs() == []
 
