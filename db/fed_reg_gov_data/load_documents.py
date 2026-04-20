@@ -30,7 +30,18 @@ HOW TO USE:
 
     3. Run the script:
 
-        nohup python3 load_documents_s3.py > ~/load_s3_output.log 2>&1 &
+        Without date filter-
+
+            nohup python3 load_documents_s3.py > ~/load_s3_output.log 2>&1 &
+        
+        With date filter-
+
+            python3 load_documents.py --start-date 2025-03-26 --end-date 2025-04-17             
+                                                                                      
+            Or with nohup:   
+                                                                               
+            nohup python3 load_documents.py --start-date 2025-03-26 --end-date 2025-04-17 >     
+            ~/load_gap_output.log 2>&1 &
 
     To restart from scratch, delete the checkpoint file before running.
 """
