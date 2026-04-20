@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Optional
 import os
 import psycopg2
 from opensearchpy import OpenSearch
@@ -804,13 +804,14 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         return updated
 
     def get_authorized_users(self) -> List[Dict[str, Any]]:
-        """Return all authorized users."""
+        """Return all authorized users including their last_login from the users table."""
         if self.conn is None:
             return []
         sql = """
-            SELECT email, name, authorized_at
-            FROM authorized_users
-            ORDER BY authorized_at DESC
+            SELECT au.email, au.name, au.authorized_at, u.last_login
+            FROM authorized_users au
+            LEFT JOIN users u ON u.email = au.email
+            ORDER BY au.authorized_at DESC
         """
         with self.conn.cursor() as cur:
             cur.execute(sql)
@@ -818,10 +819,49 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 {
                     "email": row[0],
                     "name": row[1],
-                    "authorized_at": row[2]
+                    "authorized_at": row[2],
+                    "last_login": row[3]
                 }
                 for row in cur.fetchall()
             ]
+
+    def update_last_login(self, email: str, name: str) -> None:
+        """Upsert the user row and stamp last_login to NOW()."""
+        if self.conn is None:
+            return
+        sql = """
+            INSERT INTO users (email, name, last_login)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (email) DO UPDATE
+                SET name = EXCLUDED.name,
+                    last_login = NOW()
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email, name))
+        self.conn.commit()
+
+    def get_last_login(self, email: str) -> Optional[Any]:
+        """Return the last_login timestamp for a user, or None if not found."""
+        if self.conn is None:
+            return None
+        sql = "SELECT last_login FROM users WHERE email = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (email,))
+            row = cur.fetchone()
+        return row[0] if row else None
+
+    def get_download_s3_url(self, job_id: str, user_email: str) -> Optional[str]:
+        """Return the S3 URL for a completed download job, or None."""
+        if self.conn is None:
+            return None
+        sql = """
+            SELECT s3_path FROM download_jobs
+            WHERE job_id = %s AND user_email = %s AND status = 'ready'
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (job_id, user_email))
+            row = cur.fetchone()
+        return row[0] if row else None
 
     def get_download_jobs(self, user_email: str) -> List[Dict[str, Any]]:
         """Return all download jobs for the given user, newest first."""
@@ -930,7 +970,6 @@ def _opensearch_client_kwargs() -> Dict[str, Any]:
         kwargs["http_auth"] = (user, password)
     return kwargs
 
-
 class _AossClient:  # pylint: disable=too-few-public-methods
     """Thin requests-based client that mimics opensearchpy .search() interface."""
     def __init__(self, base_url, session):
@@ -943,9 +982,7 @@ class _AossClient:  # pylint: disable=too-few-public-methods
         resp.raise_for_status()
         return resp.json()
 
-
 _OPENSEARCH_CLIENT_SINGLETON = None
-
 
 def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-statements
     global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement
