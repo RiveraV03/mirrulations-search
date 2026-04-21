@@ -97,10 +97,6 @@ def _opensearch_match_docket_bucket_size() -> int:
     return _parse_positive_int_env("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", 50000)
 
 
-def _opensearch_comment_id_terms_size() -> int:
-    """Max distinct commentId values per docket in nested terms aggregations."""
-    return _parse_positive_int_env("OPENSEARCH_COMMENT_ID_TERMS_SIZE", 65535)
-
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy engine — created once at module level, shared across all requests.
@@ -619,68 +615,25 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             self, docket_ids: List[str]) -> Dict[str, Dict[str, int]]:
         """Fetch document and comment total counts from Postgres."""
         totals: Dict[str, Dict[str, int]] = {}
-        if self.conn is None:
+        if self.engine is None:
             return totals
-        with self.conn.cursor() as cur:
-            cur.execute(
-                "SELECT docket_id, COUNT(*) FROM documents "
-                "WHERE docket_id = ANY(%s) GROUP BY docket_id",
-                (list(docket_ids),)
-            )
-            for docket_id, count in cur.fetchall():
-                totals[docket_id] = {
-                    "document_total_count": count,
-                    "comment_total_count": 0
-                }
-        if self.engine is not None:
-            rows = self._run(
-                "SELECT docket_id, COUNT(*) FROM documents "
-                "WHERE docket_id = ANY(:docket_ids) GROUP BY docket_id",
-                {"docket_ids": list(docket_ids)}
-            )
-            for docket_id, count in rows:
-                totals[docket_id] = {"document_total_count": count, "comment_total_count": 0}
-        comment_query = {
-            "size": 0,
-            "query": {"bool": {"filter": [{"terms": {"docketId.keyword": docket_ids}}]}},
-            "aggs": {"by_docket": {"terms": {"field": "docketId.keyword", "size": len(docket_ids)}}}
-        }
-        try:
-            resp = opensearch_client.search(index="comments", body=comment_query)
-            for bucket in resp["aggregations"]["by_docket"]["buckets"]:
-                docket_id = str(bucket["key"])
-                totals.setdefault(docket_id, {"document_total_count": 0, "comment_total_count": 0})
-                totals[docket_id]["comment_total_count"] = bucket["doc_count"]
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"Comment totals query failed: {e}")
+        rows = self._run(
+            "SELECT docket_id, COUNT(*) FROM documents "
+            "WHERE docket_id = ANY(:docket_ids) GROUP BY docket_id",
+            {"docket_ids": list(docket_ids)}
+        )
+        for docket_id, count in rows:
+            totals[docket_id] = {"document_total_count": count, "comment_total_count": 0}
+        rows = self._run(
+            "SELECT docket_id, COUNT(*) FROM comments "
+            "WHERE docket_id = ANY(:docket_ids) GROUP BY docket_id",
+            {"docket_ids": list(docket_ids)}
+        )
+        for docket_id, count in rows:
+            totals.setdefault(docket_id, {"document_total_count": 0, "comment_total_count": 0})
+            totals[docket_id]["comment_total_count"] = count
         return totals
 
-    def _run_text_match_queries(  # pylint: disable=too-many-locals,too-many-statements
-            self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
-        """Execute all three OpenSearch queries and merge their results."""
-        def buckets(resp):
-            return resp["aggregations"]["by_docket"]["buckets"]
-
-        def safe_search(index: str, body: Dict) -> Dict:
-            try:
-                return opensearch_client.search(index=index, body=body)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"OpenSearch index query failed for '{index}': {e}")
-                return {"aggregations": {"by_docket": {"buckets": []}}}
-
-            cur.execute(
-                "SELECT docket_id, COUNT(*) FROM comments "
-                "WHERE docket_id = ANY(%s) GROUP BY docket_id",
-                (list(docket_ids),)
-            )
-            for docket_id, count in cur.fetchall():
-                totals.setdefault(
-                    docket_id,
-                    {"document_total_count": 0, "comment_total_count": 0}
-                )
-                totals[docket_id]["comment_total_count"] = count
-
-        return totals
 
     def get_collections(self, user_email: str) -> List[Dict[str, Any]]:
         """Return all collections belonging to the given user."""
@@ -825,8 +778,6 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
     def update_download_job_status(
             self, job_id: str, status: str, s3_path: str = None) -> bool:
-        """Update the status (and optionally s3_path) of a download job."""
-        if self.conn is None:
         """Update the status (and optionally s3_path) of a download job.
 
         Returns True if a row was updated.

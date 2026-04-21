@@ -7,7 +7,7 @@ factory functions. Dummy-data behavior tests live in test_mock.py.
 # pylint: disable=redefined-outer-name,protected-access, too-many-lines
 from types import SimpleNamespace
 # pylint: disable=redefined-outer-name,protected-access,too-many-lines,duplicate-code
-from datetime import datetime, timezone
+from datetime import datetime
 import pytest
 import mirrsearch.db as db_module
 from mirrsearch.db import DBLayer, cfr_part_filter_patterns, get_db
@@ -432,8 +432,7 @@ def test_get_engine_uses_env_and_dotenv(monkeypatch):
     assert "dbname" in captured["dsn"]
 
 
-def test_get_postgres_connection_uses_aws_secrets(monkeypatch):
-def test_get_engine_uses_aws_secrets(monkeypatch):  # pylint: disable=too-many-locals
+def test_get_postgres_connection_uses_aws_secrets(monkeypatch):  # pylint: disable=too-many-locals
     """USE_AWS_SECRETS=true uses boto3 to get credentials"""
     fake_creds = {
         "host": "aws-host",
@@ -1015,6 +1014,51 @@ def test_accumulate_counts_accumulates_multiple_buckets():
     DBLayer._accumulate_counts(docket_counts, buckets, "matching_docs", "document_match_count")
     assert docket_counts["D1"]["document_match_count"] == 3
     assert docket_counts["D2"]["document_match_count"] == 7
+
+
+def test_get_download_jobs_returns_all_jobs():
+    from datetime import timezone  # pylint: disable=import-outside-toplevel
+    utc = timezone.utc
+    rows = [
+        (
+            "job-uuid-1", "user@email.com", ["CMS-2025-0240"], "raw", False, "pending", None,
+            datetime(2025, 1, 1, tzinfo=utc), datetime(2025, 1, 1, tzinfo=utc),
+            datetime(2025, 1, 8, tzinfo=utc)
+        ),
+        (
+            "job-uuid-2", "user@email.com", ["CMS-2025-0241"], "csv", True, "ready",
+            "s3://bucket/job-uuid-2.zip",
+            datetime(2025, 1, 2, tzinfo=utc), datetime(2025, 1, 2, tzinfo=utc),
+            datetime(2025, 1, 9, tzinfo=utc)
+        ),
+    ]
+
+    class _FakeResult:  # pylint: disable=too-few-public-methods
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    class _FakeConn:  # pylint: disable=too-few-public-methods
+        def __init__(self, rows):
+            self.rows = rows
+
+        def connect(self):
+            outer = self
+
+            class _Ctx:
+                def execute(self, sql, params=None):  # pylint: disable=unused-argument
+                    return _FakeResult(outer.rows)
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_):
+                    return False
+
+            return _Ctx()
+
     db = DBLayer(engine=_FakeConn(rows))
     results = db.get_download_jobs("user@email.com")
     assert len(results) == 2
@@ -1066,11 +1110,6 @@ def test_run_text_match_queries_document_counts():
     ids = {r["docket_id"]: r for r in results}
     assert ids["DOC-001"]["document_match_count"] == 4
     assert ids["DOC-002"]["document_match_count"] == 2
-    db = DBLayer(engine=_FakeConn(rows))
-    results = db.get_download_jobs("user@email.com")
-    assert isinstance(results[0]["created_at"], str)
-    assert isinstance(results[0]["updated_at"], str)
-    assert isinstance(results[0]["expires_at"], str)
 
 
 # Lines 485-498: _collect_matched_dockets and matched_comment_dockets set union
@@ -1121,7 +1160,7 @@ def test_comment_total_query_structure():
 # Lines 550-576: get_docket_document_comment_totals and _fetch_docket_totals
 def test_get_docket_document_comment_totals_empty_returns_empty():
     """Empty docket_ids returns empty dict without hitting DB."""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     assert not db.get_docket_document_comment_totals([])
 
 
@@ -1133,11 +1172,20 @@ def test_get_docket_document_comment_totals_no_conn_returns_empty():
 
 def test_fetch_docket_totals_returns_document_and_comment_counts():
     """_fetch_docket_totals returns both document and comment counts from Postgres."""
-    # _FakeConn only supports one fetchall — use monkeypatch style with multi-cursor
-    class _MultiCursor:
-        def __init__(self):
-            self.executed = []
-            self._calls = 0
+    call_count = [0]
+
+    class _FakeResult:
+        def __init__(self, rows):
+            self.rows = rows
+        def fetchall(self):
+            return self.rows
+
+    class _FakeConn:  # pylint: disable=too-few-public-methods
+        def execute(self, sql, params=None):  # pylint: disable=unused-argument
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _FakeResult([("D1", 5)])
+            return _FakeResult([("D1", 12)])
 
         def __enter__(self):
             return self
@@ -1145,26 +1193,11 @@ def test_fetch_docket_totals_returns_document_and_comment_counts():
         def __exit__(self, *_):
             return False
 
-        def execute(self, sql, params=None):
-            self.executed.append((sql, params))
-            self._calls += 1
+    class _FakeEngine:  # pylint: disable=too-few-public-methods
+        def connect(self):
+            return _FakeConn()
 
-        def fetchall(self):
-            if self._calls == 1:
-                return [("D1", 5)]   # document counts
-            return [("D1", 12)]      # comment counts
-
-    class _MultiConn:
-        def __init__(self):
-            self.cursor_obj = _MultiCursor()
-
-        def cursor(self):
-            return self.cursor_obj
-
-        def commit(self):
-            pass
-
-    db = DBLayer(conn=_MultiConn())
+    db = DBLayer(engine=_FakeEngine())
     result = db._fetch_docket_totals(["D1"])
     assert result["D1"]["document_total_count"] == 5
     assert result["D1"]["comment_total_count"] == 12
@@ -1178,7 +1211,7 @@ def test_fetch_docket_totals_exception_returns_empty():
         def commit(self):
             pass
 
-    db = DBLayer(conn=_BrokenConn())
+    db = DBLayer(engine=_BrokenConn())
     result = db.get_docket_document_comment_totals(["D1"])
     assert not result
 
@@ -1235,11 +1268,6 @@ def test_get_opensearch_connection_aoss_host_uses_singleton(monkeypatch):
     assert client1 is client2
 
     monkeypatch.setattr(db_module, "_OPENSEARCH_CLIENT_SINGLETON", None)
-    db = DBLayer(engine=_FakeConn(rows))
-    results = db.get_download_jobs("user@email.com")
-    assert results[0]["created_at"] is None
-    assert results[0]["updated_at"] is None
-    assert results[0]["expires_at"] is None
 
 def test_get_download_jobs_queries_correct_user():
     """Only jobs matching the given user_email are fetched."""
