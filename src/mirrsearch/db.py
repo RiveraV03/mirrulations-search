@@ -228,7 +228,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         allowed = self._get_cfr_docket_ids(exact_pairs)
         return [row for row in results if row["docket_id"] in allowed]
 
-    def _get_cfr_docket_ids(self, cfr_pairs: List[tuple]) -> Set[str]:
+    def _get_cfr_docket_ids(self, cfr_pairs: List[tuple]) -> Set[str]:  # pylint: disable=too-many-locals
         """Return docket IDs matching exact CFR title+part pairs."""
         if self.engine is None or not cfr_pairs:
             return set()
@@ -1026,10 +1026,10 @@ class _AossClient:  # pylint: disable=too-few-public-methods
         return resp.json()
 
 
-_OPENSEARCH_CLIENT_SINGLETON = None
+_OPENSEARCH_CLIENT_SINGLETON = None  # pylint: disable=invalid-name
 
 
-def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-statements    global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement
+def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-statements,too-many-locals    global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement
 
     host = (os.getenv("OPENSEARCH_HOST") or "").strip()
 
@@ -1058,7 +1058,7 @@ def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-s
         )
         session = requests.Session()
         session.auth = auth
-        _OPENSEARCH_CLIENT_SINGLETON = _AossClient(host, session)
+        _OPENSEARCH_CLIENT_SINGLETON = _AossClient(host, session)  # pylint: disable=invalid-name
         return _OPENSEARCH_CLIENT_SINGLETON
 
     if LOAD_DOTENV is not None:

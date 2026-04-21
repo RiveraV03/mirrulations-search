@@ -1,4 +1,4 @@
-# pylint: disable=redefined-outer-name,protected-access
+# pylint: disable=redefined-outer-name,protected-access,duplicate-code
 import uuid
 from datetime import datetime, timezone
 import pytest
@@ -57,14 +57,14 @@ class _FakeEngine:
         return conn
 
 
-def _FakeConn(rows=None, rowcount=None):
+def _FakeConn(rows=None, rowcount=None):  # pylint: disable=invalid-name
     """Compatibility shim — returns _FakeEngine."""
     return _FakeEngine(rows=rows or [], rowcount=rowcount)
 
 
-def _TrackingConn(rows_per_call=None):
+def _TrackingConn(rows_per_call=None, rowcount_per_call=None):  # pylint: disable=invalid-name
     """Compatibility shim for multi-call tracking."""
-    return _FakeEngine(rows_per_call=rows_per_call or {})
+    return _FakeEngine(rows_per_call=rows_per_call or {}, rowcount_per_call=rowcount_per_call or {})
 
 
 # Helper function to avoid duplicate code
@@ -288,7 +288,7 @@ def test_remove_docket_from_collection_wrong_owner_returns_false():
 
 
 def test_remove_docket_from_collection_success():
-    conn = _TrackingConn(rows_per_call={1: [(1,)], 2: []})
+    conn = _TrackingConn(rows_per_call={1: [(1,)]}, rowcount_per_call={2: 1})
     db = DBLayer(engine=conn)
     result = db.remove_docket_from_collection(1, "DOC-001", "user@example.com")
     assert result is True

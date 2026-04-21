@@ -4,7 +4,7 @@ Tests for the database layer (db.py)
 Only tests DBLayer wiring, the postgres branch, and module-level
 factory functions. Dummy-data behavior tests live in test_mock.py.
 """
-# pylint: disable=redefined-outer-name,protected-access,too-many-lines
+# pylint: disable=redefined-outer-name,protected-access,too-many-lines,duplicate-code
 from datetime import datetime, timezone
 import pytest
 import mirrsearch.db as db_module
@@ -149,7 +149,7 @@ class _FakeEngine:
         return self._executed[-1][1] if self._executed else {}
 
 
-def _FakeConn(rows, rowcount=None):
+def _FakeConn(rows, rowcount=None):  # pylint: disable=invalid-name
     """Compatibility shim — returns a _FakeEngine so tests read naturally."""
     return _FakeEngine(rows, rowcount)
 
@@ -191,7 +191,9 @@ def test_search_dockets_postgres_agency_and_docket_type_filter():
     sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
     assert "d.docket_type = :docket_type" in sql
     assert "agency_id ILIKE :agency_" in sql
-    assert params.get("query") == "%renal%" and params.get("docket_type") == "Rulemaking" and params.get("agency_0") == "%CMS%"
+    assert params.get("query") == "%renal%"
+    assert params.get("docket_type") == "Rulemaking"
+    assert params.get("agency_0") == "%CMS%"
 
 def test_search_dockets_postgres_no_filter_no_extra_clauses():
     """Without filters, SQL has no extra AND clauses beyond docket_title"""
@@ -215,7 +217,9 @@ def test_search_dockets_postgres_cfr_filter_from_api_dict():
     assert "JOIN cfrparts cp2 ON cp2.frdocnum = d2.frdocnum" in sql
     assert "cp2.title = :etitle_" in sql
     assert "cp2.cfrPart = :epart_" in sql
-    assert params.get("query") == "%renal%" and params.get("cfr_0") == "413" and params.get("etitle_0") == "42 CFR Parts 413 and 512"
+    assert params.get("query") == "%renal%"
+    assert params.get("cfr_0") == "413"
+    assert params.get("etitle_0") == "42 CFR Parts 413 and 512"
 
 def test_search_dockets_postgres_cfr_empty_dict_skips_cfr_clause():
     """Dict with empty part does not add CFR SQL (avoids bogus %%dict%% params)."""
@@ -426,7 +430,7 @@ def test_get_engine_uses_env_and_dotenv(monkeypatch):
     assert "5433" in captured["dsn"]
     assert "dbname" in captured["dsn"]
 
-def test_get_engine_uses_aws_secrets(monkeypatch):
+def test_get_engine_uses_aws_secrets(monkeypatch):  # pylint: disable=too-many-locals
     """USE_AWS_SECRETS=true uses boto3 to get credentials"""
     fake_creds = {
         "host": "aws-host",
@@ -444,12 +448,6 @@ def test_get_engine_uses_aws_secrets(monkeypatch):
             return {}
 
     fake_boto3 = type("boto3", (), {"client": staticmethod(lambda *a, **kw: FakeClient())})()
-    captured = {}
-
-    def fake_connect(**kwargs):
-        captured.update(kwargs)
-        return "aws-conn"
-
     captured_dsn = {}
 
     def fake_build(dsn):
