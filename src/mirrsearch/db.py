@@ -1029,7 +1029,8 @@ class _AossClient:  # pylint: disable=too-few-public-methods
 _OPENSEARCH_CLIENT_SINGLETON = None  # pylint: disable=invalid-name
 
 
-def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-statements,too-many-locals    global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement
+def get_opensearch_connection():  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
+    global _OPENSEARCH_CLIENT_SINGLETON  # pylint: disable=global-statement
 
     host = (os.getenv("OPENSEARCH_HOST") or "").strip()
 
