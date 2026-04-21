@@ -1174,7 +1174,7 @@ def test_fetch_docket_totals_returns_document_and_comment_counts():
     """_fetch_docket_totals returns both document and comment counts from Postgres."""
     call_count = [0]
 
-    class _FakeResult:
+    class _FakeResult:  # pylint: disable=too-few-public-methods
         def __init__(self, rows):
             self.rows = rows
         def fetchall(self):
