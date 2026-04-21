@@ -166,7 +166,7 @@ export default function App() {
             <Navigate to="/login" replace />
           ) : (
             <div className="page page--with-site-nav">
-              <SiteNavbar theme="light" layout="app" showCollectionsLink />
+              <SiteNavbar theme="light" layout="app" showCollectionsLink onCheckDownloads={() => setOpenDownloadStatus(true)}/>
               <div className="layout">
                 <AdvancedSidebar
                   advOpen={advOpen}
@@ -258,7 +258,11 @@ export default function App() {
                   </div>
                 </main>
               </div>
+              {openDownloadStatus && (
+              <DownloadStatusModal onClose={() => setOpenDownloadStatus(null)} />
+              )}
             </div>
+            
           )
         }
       />

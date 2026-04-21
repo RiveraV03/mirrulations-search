@@ -74,7 +74,7 @@ export default function DownloadStatusModal({ onClose }) {
                   </div>
                   {job.status === "ready" && (
                     <button
-                      className="modal-btn-add"
+                      className="modal-btn-add-small"
                       style={{ marginTop: 4 }}
                       onClick={() => { window.location.href = `/download/${job.job_id}`; }}
                     >
