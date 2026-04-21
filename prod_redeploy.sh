@@ -31,10 +31,10 @@ fi
 
 # Install Redis if not present                                                  
 if ! command -v redis-cli &>/dev/null; then       
-    sudo dnf install redis -y
-    sudo systemctl enable redis
+    sudo dnf install redis6 -y
+    sudo systemctl enable redis6
 fi
-sudo systemctl start redis
+sudo systemctl start redis6
 
 if [ ! -d ".venv" ]; then
     python3 -m venv .venv
