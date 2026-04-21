@@ -249,7 +249,8 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         rows = self._run(sql, params)
         return {row[0] for row in rows}
 
-    def _search_dockets_postgres(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-branches,too-many-statements            self, query: str, docket_type_param: str = None,
+    def _search_dockets_postgres(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-branches,too-many-statements
+            self, query: str, docket_type_param: str = None,
             agency: List[str] = None,
             cfr_part_param: List[str] = None,
             start_date: str = None,
