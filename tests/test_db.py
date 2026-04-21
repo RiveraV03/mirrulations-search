@@ -173,8 +173,8 @@ def test_search_dockets_postgres_agency_multi_filter():
     db._search_dockets_postgres("", agency=["CMS", "EPA"])
     sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
     assert sql.count("agency_id ILIKE :agency_") == 2
-    assert "%CMS%" in params
-    assert "%EPA%" in params
+    assert "%CMS%" in params.values()
+    assert "%EPA%" in params.values()
 
 def test_search_dockets_postgres_docket_type_filter():
     """Docket type filter adds exact match clause"""
