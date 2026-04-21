@@ -6,6 +6,8 @@ factory functions. Dummy-data behavior tests live in test_mock.py.
 """
 # pylint: disable=redefined-outer-name,protected-access, too-many-lines
 from types import SimpleNamespace
+# pylint: disable=redefined-outer-name,protected-access,too-many-lines,duplicate-code
+from datetime import datetime, timezone
 import pytest
 import mirrsearch.db as db_module
 from mirrsearch.db import DBLayer, cfr_part_filter_patterns, get_db
@@ -66,7 +68,7 @@ def test_search_with_cfr_dict_applies_exact_docket_filter(monkeypatch):
         ("DOC-001", "First", "CMS", "Rulemaking", "2024-01-01", "Title 42", "413", "http://a"),
         ("DOC-002", "Second", "EPA", "Rulemaking", "2024-01-01", "Title 40", "40", "http://b"),
     ]
-    db = DBLayer(conn=_FakeConn(rows))
+    db = DBLayer(engine=_FakeConn(rows))
     monkeypatch.setattr(DBLayer, "_get_cfr_docket_ids", lambda self, _pairs: {"DOC-002"})
 
     results = db.search(
@@ -78,7 +80,7 @@ def test_search_with_cfr_dict_applies_exact_docket_filter(monkeypatch):
 
 def test_search_with_plain_cfr_string_skips_exact_cfr_lookup(monkeypatch):
     """String-style CFR filters should not invoke exact title+part lookup."""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
 
     def should_not_call(self, _pairs):
         raise AssertionError("_get_cfr_docket_ids should not run for plain string filters")
@@ -91,115 +93,135 @@ def test_get_db_returns_dblayer():
     db = get_db()
     assert isinstance(db, DBLayer)
 
-# --- Fake postgres helpers ---
+# --- Fake SQLAlchemy engine helpers ---
 
-class _FakeCursor:
-    rowcount = 0
-
-    def __init__(self, rows):
+class _FakeResult:
+    def __init__(self, rows, rowcount=None):
         self._rows = rows
-        self.executed = []
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def execute(self, sql, params=None):
-        self.executed.append((sql, params))
-
-    def fetchone(self):
-        return self._rows[0] if self._rows else None
+        self.rowcount = rowcount if rowcount is not None else len(rows)
 
     def fetchall(self):
         return self._rows
 
-    def close(self):
-        return None
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
 
-class _FakeConn:
-    def __init__(self, rows):
-        self.cursor_obj = _FakeCursor(rows)
 
-    def cursor(self):
-        return self.cursor_obj
+class _FakeConnection:
+    def __init__(self, engine):
+        self._engine = engine
 
-    def commit(self):
+    def execute(self, stmt, params=None):
+        sql = stmt.text if hasattr(stmt, "text") else str(stmt)
+        self._engine._executed.append((sql, params or {}))
+        return _FakeResult(self._engine._rows, self._engine._rowcount)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
         pass
 
-    def close(self):
-        return None
+
+class _FakeEngine:
+    """Minimal fake SQLAlchemy engine for testing."""
+    def __init__(self, rows, rowcount=None):
+        self._rows = rows
+        self._rowcount = rowcount if rowcount is not None else 0
+        self._executed = []
+
+    def connect(self):
+        return _FakeConnection(self)
+
+    def begin(self):
+        return _FakeConnection(self)
+
+    @property
+    def _last_sql(self):
+        return self._executed[-1][0] if self._executed else ""
+
+    @property
+    def _last_params(self):
+        return self._executed[-1][1] if self._executed else {}
+
+
+def _FakeConn(rows, rowcount=None):  # pylint: disable=invalid-name
+    """Compatibility shim — returns a _FakeEngine so tests read naturally."""
+    return _FakeEngine(rows, rowcount)
 
 def test_get_agencies_with_conn():
-    db = DBLayer(conn=_FakeConn([("CMS",), ("EPA",)]))
+    db = DBLayer(engine=_FakeConn([("CMS",), ("EPA",)]))
     assert db.get_agencies() == ["CMS", "EPA"]
 
 # --- _search_dockets_postgres filter tests ---
 
 def test_search_dockets_postgres_agency_filter():
     """Agency filter adds ILIKE clause and wraps value with wildcards"""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres("", agency=["CMS"])
-    sql, params = db.conn.cursor_obj.executed[0]
-    assert "agency_id ILIKE %s" in sql
-    assert params == ["%%", "%CMS%"]
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert "agency_id ILIKE :agency_" in sql
+    assert params.get("query") == "%%" and params.get("agency_0") == "%CMS%"
 
 def test_search_dockets_postgres_agency_multi_filter():
     """Multiple agencies produce OR'd ILIKE clauses"""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres("", agency=["CMS", "EPA"])
-    sql, params = db.conn.cursor_obj.executed[0]
-    assert sql.count("agency_id ILIKE %s") == 2
-    assert "%CMS%" in params
-    assert "%EPA%" in params
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert sql.count("agency_id ILIKE :agency_") == 2
+    assert "%CMS%" in params.values()
+    assert "%EPA%" in params.values()
 
 def test_search_dockets_postgres_docket_type_filter():
     """Docket type filter adds exact match clause"""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres("", docket_type_param="Rulemaking")
-    sql, params = db.conn.cursor_obj.executed[0]
-    assert "d.docket_type = %s" in sql
-    assert params == ["%%", "Rulemaking"]
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert "d.docket_type = :docket_type" in sql
+    assert params.get("query") == "%%" and params.get("docket_type") == "Rulemaking"
 
 def test_search_dockets_postgres_agency_and_docket_type_filter():
     """Both filters add their clauses and params in order"""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres("renal", docket_type_param="Rulemaking", agency=["CMS"])
-    sql, params = db.conn.cursor_obj.executed[0]
-    assert "d.docket_type = %s" in sql
-    assert "agency_id ILIKE %s" in sql
-    assert params == ["%renal%", "Rulemaking", "%CMS%"]
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert "d.docket_type = :docket_type" in sql
+    assert "agency_id ILIKE :agency_" in sql
+    assert params.get("query") == "%renal%"
+    assert params.get("docket_type") == "Rulemaking"
+    assert params.get("agency_0") == "%CMS%"
 
 def test_search_dockets_postgres_no_filter_no_extra_clauses():
     """Without filters, SQL has no extra AND clauses beyond docket_title"""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres("abc")
-    sql, params = db.conn.cursor_obj.executed[0]
-    assert "d.docket_type = %s" not in sql
-    assert "agency_id ILIKE %s" not in sql
-    assert params == ["%abc%"]
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert "d.docket_type = :docket_type" not in sql
+    assert "agency_id ILIKE :agency_" not in sql
+    assert params.get("query") == "%abc%"
 
 def test_search_dockets_postgres_cfr_filter_from_api_dict():
     """Dict CFR filter applies exact cfrPart = via EXISTS and exact FRD title+part EXISTS."""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres(
         "renal",
         cfr_part_param=[{"title": "42 CFR Parts 413 and 512", "part": "413"}],
     )
-    sql, params = db.conn.cursor_obj.executed[0]
-    assert "cp3.cfrPart = %s" in sql
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert "cp3.cfrPart = :cfr_" in sql
     assert "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum" in sql
     assert "JOIN cfrparts cp2 ON cp2.frdocnum = d2.frdocnum" in sql
-    assert "cp2.title = %s" in sql
-    assert "cp2.cfrPart = %s" in sql
-    assert params == ["%renal%", "413", "42 CFR Parts 413 and 512", "413"]
+    assert "cp2.title = :etitle_" in sql
+    assert "cp2.cfrPart = :epart_" in sql
+    assert params.get("query") == "%renal%"
+    assert params.get("cfr_0") == "413"
+    assert params.get("etitle_0") == "42 CFR Parts 413 and 512"
 
 def test_search_dockets_postgres_cfr_empty_dict_skips_cfr_clause():
     """Dict with empty part does not add CFR SQL (avoids bogus %%dict%% params)."""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres("x", cfr_part_param=[{"title": "t", "part": ""}])
-    sql, _params = db.conn.cursor_obj.executed[0]
+    sql, _params = (db.engine._executed[0][0], db.engine._executed[0][1])
     assert "cp.cfrPart ILIKE" not in sql
 
 def test_get_opensearch_connection_blank_port_no_crash(monkeypatch):
@@ -232,18 +254,18 @@ def test_get_opensearch_connection_port_out_of_range_defaults(monkeypatch):
     assert db_module.get_opensearch_connection() is not None
 
 def test_search_dockets_postgres_cfr_filter_plain_string():
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres("z", cfr_part_param=["413"])
-    sql, params = db.conn.cursor_obj.executed[0]
-    assert "cp3.cfrPart = %s" in sql
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert "cp3.cfrPart = :cfr_" in sql
     assert "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum" in sql
-    assert params == ["%z%", "413"]
+    assert params.get("query") == "%z%" and params.get("cfr_0") == "413"
 
 # --- _search_dockets_postgres tests ---
 
 def test_search_dockets_postgres_empty_results():
     """No rows returns an empty list"""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     results = db._search_dockets_postgres("anything")
     assert results == []
 
@@ -251,7 +273,7 @@ def test_search_dockets_postgres_single_docket_single_cfr():
     """Single row returns one docket with one cfr_ref"""
     rows = [("DOC-001", "Test Docket", "CMS", "Rulemaking",
              "2024-01-01", "Title 42", "42", "http://link")]
-    db = DBLayer(conn=_FakeConn(rows))
+    db = DBLayer(engine=_FakeConn(rows))
 
     results = db._search_dockets_postgres("test")
 
@@ -273,7 +295,7 @@ def test_search_dockets_postgres_multiple_cfr_parts_same_title():
         ("DOC-001", "Test Docket", "CMS", "Rulemaking",
          "2024-01-01", "Title 42", "43", "http://link"),
     ]
-    db = DBLayer(conn=_FakeConn(rows))
+    db = DBLayer(engine=_FakeConn(rows))
 
     results = db._search_dockets_postgres("test")
 
@@ -292,7 +314,7 @@ def test_search_dockets_postgres_multiple_titles_same_docket():
         ("DOC-001", "Test Docket", "CMS", "Rulemaking",
          "2024-01-01", "Title 45", "45", "http://link45"),
     ]
-    db = DBLayer(conn=_FakeConn(rows))
+    db = DBLayer(engine=_FakeConn(rows))
 
     results = db._search_dockets_postgres("test")
 
@@ -308,7 +330,7 @@ def test_search_dockets_postgres_multiple_dockets():
         ("DOC-002", "Second Docket", "EPA", "Rulemaking",
          "2024-02-01", "Title 40", "40", "http://b"),
     ]
-    db = DBLayer(conn=_FakeConn(rows))
+    db = DBLayer(engine=_FakeConn(rows))
 
     results = db._search_dockets_postgres("docket")
 
@@ -321,7 +343,7 @@ def test_search_dockets_postgres_none_cfr_fields_ignored():
     rows = [
         ("DOC-001", "Test Docket", "CMS", "Rulemaking", "2024-01-01", None, None, None),
     ]
-    db = DBLayer(conn=_FakeConn(rows))
+    db = DBLayer(engine=_FakeConn(rows))
 
     results = db._search_dockets_postgres("test")
 
@@ -336,7 +358,7 @@ def test_search_dockets_postgres_duplicate_cfr_part_not_repeated():
         ("DOC-001", "Test Docket", "CMS", "Rulemaking",
          "2024-01-01", "Title 42", "42", "http://link"),
     ]
-    db = DBLayer(conn=_FakeConn(rows))
+    db = DBLayer(engine=_FakeConn(rows))
 
     results = db._search_dockets_postgres("test")
 
@@ -344,17 +366,17 @@ def test_search_dockets_postgres_duplicate_cfr_part_not_repeated():
 
 def test_search_dockets_postgres_query_param_formatting():
     """Query string is wrapped with %...% wildcards in params"""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres("clean air")
-    _, params = db.conn.cursor_obj.executed[0]
-    assert params == ["%clean air%"]
+    _, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert params.get("query") == "%clean air%"
 
 def test_search_dockets_postgres_empty_query_uses_wildcard():
     """Empty query string results in a %% wildcard param"""
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db._search_dockets_postgres("")
-    _, params = db.conn.cursor_obj.executed[0]
-    assert params == ["%%"]
+    _, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert params.get("query") == "%%"
 
 # --- get_dockets_by_ids tests ---
 
@@ -362,17 +384,17 @@ def test_get_dockets_by_ids_no_conn_returns_empty():
     assert DBLayer().get_dockets_by_ids(["DOC-001"]) == []
 
 def test_get_dockets_by_ids_empty_ids_returns_empty():
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     assert db.get_dockets_by_ids([]) == []
 
 def test_get_dockets_by_ids_uses_any_and_reuses_row_shape():
     rows = [("DOC-002", "Other", "EPA", "Rulemaking",
              "2024-02-01", "Title 40", "40", "http://b")]
-    db = DBLayer(conn=_FakeConn(rows))
+    db = DBLayer(engine=_FakeConn(rows))
     results = db.get_dockets_by_ids(["DOC-002"])
-    sql, params = db.conn.cursor_obj.executed[0]
-    assert "d.docket_id = ANY(%s)" in sql
-    assert params == (["DOC-002"],)
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert "d.docket_id = ANY(:docket_ids)" in sql
+    assert params.get("docket_ids") == ["DOC-002"]
     assert len(results) == 1
     assert results[0]["docket_id"] == "DOC-002"
     assert results[0]["docket_title"] == "Other"
@@ -380,7 +402,7 @@ def test_get_dockets_by_ids_uses_any_and_reuses_row_shape():
 
 # --- Factory function tests ---
 
-def test_get_postgres_connection_uses_env_and_dotenv(monkeypatch):
+def test_get_engine_uses_env_and_dotenv(monkeypatch):
     called = {"dotenv": False}
 
     def fake_load():
@@ -388,33 +410,30 @@ def test_get_postgres_connection_uses_env_and_dotenv(monkeypatch):
 
     captured = {}
 
-    def fake_connect(**kwargs):
-        captured.update(kwargs)
-        return "conn"
+    def fake_build(dsn):
+        captured["dsn"] = dsn
+        return _FakeEngine([])
 
     monkeypatch.setattr(db_module, "LOAD_DOTENV", fake_load)
-    monkeypatch.setattr(db_module.psycopg2, "connect", fake_connect)
+    monkeypatch.setattr(db_module, "_build_engine", fake_build)
+    monkeypatch.setattr(db_module, "_ENGINE", None)
     monkeypatch.setenv("DB_HOST", "dbhost")
     monkeypatch.setenv("DB_PORT", "5433")
     monkeypatch.setenv("DB_NAME", "dbname")
     monkeypatch.setenv("DB_USER", "dbuser")
     monkeypatch.setenv("DB_PASSWORD", "dbpass")
 
-    db = db_module.get_postgres_connection()
+    db = get_db()
 
     assert isinstance(db, DBLayer)
-    assert db.conn == "conn"
     assert called["dotenv"] is True
-    assert captured == {
-        "host": "dbhost",
-        "port": "5433",
-        "database": "dbname",
-        "user": "dbuser",
-        "password": "dbpass",
-    }
+    assert "dbhost" in captured["dsn"]
+    assert "5433" in captured["dsn"]
+    assert "dbname" in captured["dsn"]
 
 
 def test_get_postgres_connection_uses_aws_secrets(monkeypatch):
+def test_get_engine_uses_aws_secrets(monkeypatch):  # pylint: disable=too-many-locals
     """USE_AWS_SECRETS=true uses boto3 to get credentials"""
     fake_creds = {
         "host": "aws-host",
@@ -432,22 +451,22 @@ def test_get_postgres_connection_uses_aws_secrets(monkeypatch):
             return {}
 
     fake_boto3 = type("boto3", (), {"client": staticmethod(lambda *a, **kw: FakeClient())})()
-    captured = {}
+    captured_dsn = {}
 
-    def fake_connect(**kwargs):
-        captured.update(kwargs)
-        return "aws-conn"
+    def fake_build(dsn):
+        captured_dsn["dsn"] = dsn
+        return _FakeEngine([])
 
     monkeypatch.setattr(db_module, "boto3", fake_boto3)
-    monkeypatch.setattr(db_module.psycopg2, "connect", fake_connect)
+    monkeypatch.setattr(db_module, "_build_engine", fake_build)
+    monkeypatch.setattr(db_module, "_ENGINE", None)
     monkeypatch.setenv("USE_AWS_SECRETS", "true")
 
-    db = db_module.get_postgres_connection()
+    db = get_db()
 
     assert isinstance(db, DBLayer)
-    assert db.conn == "aws-conn"
-    assert captured["host"] == "aws-host"
-    assert captured["database"] == "aws-db"
+    assert "aws-host" in captured_dsn["dsn"]
+    assert "aws-db" in captured_dsn["dsn"]
 
 def test_get_secrets_from_aws_raises_without_boto3(monkeypatch):
     """_get_secrets_from_aws raises ImportError when boto3 is None"""
@@ -457,12 +476,12 @@ def test_get_secrets_from_aws_raises_without_boto3(monkeypatch):
 
 
 def test_get_db_uses_postgres_when_env_set(monkeypatch):
-    sentinel = DBLayer(conn="conn")
-    monkeypatch.setattr(db_module, "get_postgres_connection", lambda: sentinel)
+    sentinel = DBLayer(engine="conn")
+    monkeypatch.setattr(db_module, "_get_engine", lambda: sentinel.engine)
 
     db = get_db()
 
-    assert db is sentinel
+    assert isinstance(db, DBLayer)
 
 
 def test_get_opensearch_connection(monkeypatch):
@@ -791,11 +810,11 @@ def test_is_admin_no_conn_returns_false():
     assert DBLayer().is_admin("professor@email.com") is False
 
 def test_is_admin_returns_true_when_found():
-    db = DBLayer(conn=_FakeConn([(1,)]))
+    db = DBLayer(engine=_FakeConn([(1,)]))
     assert db.is_admin("professor@email.com") is True
 
 def test_is_admin_returns_false_when_not_found():
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     assert db.is_admin("notadmin@email.com") is False
 
 
@@ -805,11 +824,11 @@ def test_is_authorized_user_no_conn_returns_false():
     assert DBLayer().is_authorized_user("user@email.com") is False
 
 def test_is_authorized_user_returns_true_when_found():
-    db = DBLayer(conn=_FakeConn([(1,)]))
+    db = DBLayer(engine=_FakeConn([(1,)]))
     assert db.is_authorized_user("user@email.com") is True
 
 def test_is_authorized_user_returns_false_when_not_found():
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     assert db.is_authorized_user("unknown@email.com") is False
 
 
@@ -819,12 +838,12 @@ def test_add_authorized_user_no_conn_returns_false():
     assert DBLayer().add_authorized_user("user@email.com", "Test User") is False
 
 def test_add_authorized_user_inserts_and_returns_true():
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     result = db.add_authorized_user("user@email.com", "Test User")
     assert result is True
-    sql, params = db.conn.cursor_obj.executed[0]
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
     assert "INSERT INTO authorized_users" in sql
-    assert params == ("user@email.com", "Test User")
+    assert params.get("email") == "user@email.com" and params.get("name") == "Test User"
 
 # --- remove_authorized_user tests ---
 
@@ -832,13 +851,13 @@ def test_remove_authorized_user_no_conn_returns_false():
     assert DBLayer().remove_authorized_user("user@email.com") is False
 
 def test_remove_authorized_user_returns_true_when_deleted():
-    db = DBLayer(conn=_FakeConn([]))
-    db.conn.cursor_obj.rowcount = 1
+    db = DBLayer(engine=_FakeConn([]))
+    db = DBLayer(engine=_FakeEngine([], rowcount=1))
     assert db.remove_authorized_user("user@email.com") is True
 
 def test_remove_authorized_user_returns_false_when_not_found():
-    db = DBLayer(conn=_FakeConn([]))
-    db.conn.cursor_obj.rowcount = 0
+    db = DBLayer(engine=_FakeConn([]))
+    db = DBLayer(engine=_FakeEngine([], rowcount=0))
     assert db.remove_authorized_user("nobody@email.com") is False
 
 
@@ -852,7 +871,7 @@ def test_get_authorized_users_returns_list():
         ("user1@email.com", "User One", "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
         ("user2@email.com", "User Two", "2026-01-02T00:00:00", "2026-01-02T00:00:00"),
     ]
-    db = DBLayer(conn=_FakeConn(rows))
+    db = DBLayer(engine=_FakeConn(rows))
     results = db.get_authorized_users()
     assert len(results) == 2
     assert results[0]["email"] == "user1@email.com"
@@ -861,8 +880,53 @@ def test_get_authorized_users_returns_list():
     assert results[1]["email"] == "user2@email.com"
 
 def test_get_authorized_users_empty_table_returns_empty():
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     assert db.get_authorized_users() == []
+
+def test_get_expired_download_jobs_no_conn():
+    assert DBLayer().get_expired_download_jobs() == []
+
+
+def test_get_expired_download_jobs_returns_list():
+    rows = [("job-1", "s3://bucket/downloads/job-1.zip")]
+    db = DBLayer(engine=_FakeConn(rows))
+    result = db.get_expired_download_jobs()
+    assert len(result) == 1
+    assert result[0]["job_id"] == "job-1"
+    assert result[0]["s3_path"] == "s3://bucket/downloads/job-1.zip"
+
+
+def test_get_expired_download_jobs_empty():
+    db = DBLayer(engine=_FakeConn([]))
+    assert db.get_expired_download_jobs() == []
+
+
+def test_get_download_s3_url_no_conn():
+    assert DBLayer().get_download_s3_url("job-1", "user@test.com") is None
+
+
+def test_get_download_s3_url_no_job():
+    db = DBLayer(engine=_FakeConn([]))
+    assert db.get_download_s3_url("nonexistent", "user@test.com") is None
+
+
+def test_get_download_s3_url_local_path():
+    rows = [("job-1", "user@test.com", ["CMS-2025-0240"], "raw",
+             False, "ready", "local:///tmp/job-1.zip", None, None, None)]
+    db = DBLayer(engine=_FakeConn(rows))
+    result = db.get_download_s3_url("job-1", "user@test.com")
+    assert result == "/tmp/job-1.zip"
+
+
+def test_presign_s3_url_invalid_path():
+    db = DBLayer()
+    assert db._presign_s3_url("not-an-s3-path") is None
+
+
+def test_presign_s3_url_missing_key():
+    db = DBLayer()
+    assert db._presign_s3_url("s3://bucket-only") is None
+
 
 # --- update_last_login tests ---
 
@@ -870,42 +934,42 @@ def test_update_last_login_no_conn_returns_none():
     assert DBLayer().update_last_login("user@email.com", "Test User") is None
 
 def test_update_last_login_executes_upsert():
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db.update_last_login("user@email.com", "Test User")
-    sql, params = db.conn.cursor_obj.executed[0]
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
     assert "INSERT INTO users" in sql
     assert "ON CONFLICT (email) DO UPDATE" in sql
     assert "last_login" in sql
-    assert params == ("user@email.com", "Test User")
+    assert params.get("email") == "user@email.com" and params.get("name") == "Test User"
 
 def test_update_last_login_commits():
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db.update_last_login("user@email.com", "Test User")
-    assert len(db.conn.cursor_obj.executed) == 1
+    assert len(db.engine._executed) == 1
 
 def test_update_last_login_sets_name_in_params():
-    db = DBLayer(conn=_FakeConn([]))
+    db = DBLayer(engine=_FakeConn([]))
     db.update_last_login("prof@moravian.edu", "Dr. Smith")
-    _, params = db.conn.cursor_obj.executed[0]
-    assert params[0] == "prof@moravian.edu"
-    assert params[1] == "Dr. Smith"
+    _, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert params.get("email") == "prof@moravian.edu"
+    assert params.get("name") == "Dr. Smith"
 
 def test_update_authorized_user_name_no_conn_returns_false():
     assert DBLayer().update_authorized_user_name("user@email.com", "New Name") is False
 
 def test_update_authorized_user_name_updates_and_returns_true():
-    db = DBLayer(conn=_FakeConn([]))
-    db.conn.cursor_obj.rowcount = 1
+    db = DBLayer(engine=_FakeConn([]))
+    db = DBLayer(engine=_FakeEngine([], rowcount=1))
     result = db.update_authorized_user_name("user@email.com", "New Name")
     assert result is True
-    sql, params = db.conn.cursor_obj.executed[0]
+    sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
     assert "UPDATE authorized_users" in sql
-    assert "SET name = %s" in sql
-    assert params == ("New Name", "user@email.com")
+    assert "SET name = :name" in sql
+    assert params.get("name") == "New Name" and params.get("email") == "user@email.com"
 
 def test_update_authorized_user_name_returns_false_when_not_found():
-    db = DBLayer(conn=_FakeConn([]))
-    db.conn.cursor_obj.rowcount = 0
+    db = DBLayer(engine=_FakeConn([]))
+    db = DBLayer(engine=_FakeEngine([], rowcount=0))
     assert db.update_authorized_user_name("nobody@email.com", "Name") is False
 
 # --- get_download_jobs tests ---
@@ -951,6 +1015,23 @@ def test_accumulate_counts_accumulates_multiple_buckets():
     DBLayer._accumulate_counts(docket_counts, buckets, "matching_docs", "document_match_count")
     assert docket_counts["D1"]["document_match_count"] == 3
     assert docket_counts["D2"]["document_match_count"] == 7
+    db = DBLayer(engine=_FakeConn(rows))
+    results = db.get_download_jobs("user@email.com")
+    assert len(results) == 2
+    assert results[0]["job_id"] == "job-uuid-1"
+    assert results[0]["user_email"] == "user@email.com"
+    assert results[0]["docket_ids"] == ["CMS-2025-0240"]
+    assert results[0]["format"] == "raw"
+    assert results[0]["include_binaries"] is False
+    assert results[0]["status"] == "pending"
+    assert results[0]["s3_path"] is None
+    assert results[1]["job_id"] == "job-uuid-2"
+    assert results[1]["status"] == "ready"
+    assert results[1]["s3_path"] == "s3://bucket/job-uuid-2.zip"
+
+def test_get_download_jobs_empty_table_returns_empty():
+    db = DBLayer(engine=_FakeConn([]))
+    assert db.get_download_jobs("user@email.com") == []
 
 
 # Lines 400-402: text_match_terms KeyError/AttributeError fallback
@@ -985,6 +1066,11 @@ def test_run_text_match_queries_document_counts():
     ids = {r["docket_id"]: r for r in results}
     assert ids["DOC-001"]["document_match_count"] == 4
     assert ids["DOC-002"]["document_match_count"] == 2
+    db = DBLayer(engine=_FakeConn(rows))
+    results = db.get_download_jobs("user@email.com")
+    assert isinstance(results[0]["created_at"], str)
+    assert isinstance(results[0]["updated_at"], str)
+    assert isinstance(results[0]["expires_at"], str)
 
 
 # Lines 485-498: _collect_matched_dockets and matched_comment_dockets set union
@@ -1149,3 +1235,22 @@ def test_get_opensearch_connection_aoss_host_uses_singleton(monkeypatch):
     assert client1 is client2
 
     monkeypatch.setattr(db_module, "_OPENSEARCH_CLIENT_SINGLETON", None)
+    db = DBLayer(engine=_FakeConn(rows))
+    results = db.get_download_jobs("user@email.com")
+    assert results[0]["created_at"] is None
+    assert results[0]["updated_at"] is None
+    assert results[0]["expires_at"] is None
+
+def test_get_download_jobs_queries_correct_user():
+    """Only jobs matching the given user_email are fetched."""
+    db = DBLayer(engine=_FakeConn([]))
+    db.get_download_jobs("specific@email.com")
+    _sql, params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert params.get("user_email") == "specific@email.com"
+
+def test_get_download_jobs_orders_by_created_at_desc():
+    """SQL should order results newest first."""
+    db = DBLayer(engine=_FakeConn([]))
+    db.get_download_jobs("user@email.com")
+    sql, _ = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert "ORDER BY created_at DESC" in sql

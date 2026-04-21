@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 from mock_db import MockDBLayer
 from mirrsearch.app import create_app
-from mirrsearch.db import get_postgres_connection, get_opensearch_connection
+from mirrsearch.db import get_db, get_opensearch_connection
 from mirrsearch.app import _make_oauth_handler
 
 # pylint: disable=duplicate-code
@@ -29,13 +29,19 @@ class MockOAuthHandler: # pylint: disable=too-many-lines
 
 
 @pytest.fixture
-def app(tmp_path):
+def mock_db():
+    """Shared MockDBLayer instance for tests that need to inspect it."""
+    return MockDBLayer()
+
+
+@pytest.fixture
+def app(tmp_path, mock_db):  # pylint: disable=redefined-outer-name
     """Create and configure a test app instance"""
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "index.html").write_text("<html></html>")
     test_app = create_app(
-        dist_dir=str(dist), db_layer=MockDBLayer(), oauth_handler=MockOAuthHandler()
+        dist_dir=str(dist), db_layer=mock_db, oauth_handler=MockOAuthHandler()
     )
     test_app.config['TESTING'] = True
     return test_app
@@ -549,11 +555,11 @@ def test_agencies_returns_list(client):  # pylint: disable=redefined-outer-name
     assert isinstance(data, list)
 
 
-@patch('mirrsearch.db.psycopg2.connect')
-def test_get_postgres_connection(mock_connect):
-    """Test postgres connection"""
-    mock_conn = MagicMock()
-    mock_connect.return_value = mock_conn
+@patch('mirrsearch.db._build_engine')
+def test_get_db_connection(mock_build_engine):
+    """Test get_db returns a DBLayer backed by a SQLAlchemy engine"""
+    mock_engine = MagicMock()
+    mock_build_engine.return_value = mock_engine
 
     with patch.dict(os.environ, {
         'DB_HOST': 'localhost',
@@ -562,9 +568,10 @@ def test_get_postgres_connection(mock_connect):
         'DB_USER': 'test',
         'DB_PASSWORD': 'test'
     }):
-        result = get_postgres_connection()
-        assert result.conn == mock_conn
-        mock_connect.assert_called_once()
+        with patch('mirrsearch.db._ENGINE', None):
+            result = get_db()
+            assert result.engine == mock_engine
+            mock_build_engine.assert_called_once()
 
 
 @patch('mirrsearch.db.OpenSearch')
@@ -695,6 +702,33 @@ def test_download_file_requires_auth(app):  # pylint: disable=redefined-outer-na
     """GET /download/<job_id> returns 401 without cookie"""
     response = app.test_client().get('/download/some-job-id')
     assert response.status_code == 401
+
+
+def test_download_file_redirects_to_s3_url(client, mock_db):  # pylint: disable=redefined-outer-name
+    """GET /download/<job_id> redirects to S3 URL when job is ready"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
+    mock_db.set_job_ready(job_id, "https://s3.example.com/test.zip")
+    response = client.get(f'/download/{job_id}')
+    assert response.status_code == 302
+    assert "s3.example.com" in response.headers["Location"]
+
+
+def test_download_file_no_s3_url_returns_404(client, mock_db):  # pylint: disable=redefined-outer-name
+    """GET /download/<job_id> returns 404 when job is ready but s3_url is missing"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
+    mock_db.update_download_job_status(job_id, "ready")
+    response = client.get(f'/download/{job_id}')
+    assert response.status_code == 404
 
 
 def test_search_with_date_filters(client): # pylint: disable=redefined-outer-name
