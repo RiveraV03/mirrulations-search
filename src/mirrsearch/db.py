@@ -97,10 +97,6 @@ def _opensearch_match_docket_bucket_size() -> int:
     return _parse_positive_int_env("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", 50000)
 
 
-def _opensearch_comment_id_terms_size() -> int:
-    """Max distinct commentId values per docket in nested terms aggregations."""
-    return _parse_positive_int_env("OPENSEARCH_COMMENT_ID_TERMS_SIZE", 65535)
-
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy engine — created once at module level, shared across all requests.
@@ -395,11 +391,20 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         """Build a docket-bucketed aggregation query with an inner filter."""
         return {
             "size": 0,
+            "track_total_hits": True,
+            "query": {
+                "bool": {
+                    "should": match_clauses,
+                    "minimum_should_match": 1
+                }
+            },
             "aggs": {
                 "by_docket": {
                     "terms": {
                         "field": "docketId.keyword",
                         "size": _opensearch_match_docket_bucket_size(),
+                        "shard_size": 55000,
+                        "order": {"_count": "desc"}
                     },
                     "aggs": {
                         agg_name: {
@@ -418,14 +423,23 @@ class DBLayer:  # pylint: disable=too-many-public-methods
     @staticmethod
     def _build_docket_agg_query_unique_comments(
             agg_name: str, match_clauses: List[Dict]) -> Dict:
-        """Like _build_docket_agg_query but counts unique commentId per docket."""
+        """Builds a docket-bucketed aggregation query with cardinality for unique comment counts"""
         return {
             "size": 0,
+            "track_total_hits": True,
+            "query": {
+                "bool": {
+                    "should": match_clauses,
+                    "minimum_should_match": 1
+                }
+            },
             "aggs": {
                 "by_docket": {
                     "terms": {
                         "field": "docketId.keyword",
                         "size": _opensearch_match_docket_bucket_size(),
+                        "shard_size": 55000,
+                        "order": {"_count": "desc"}
                     },
                     "aggs": {
                         agg_name: {
@@ -436,47 +450,18 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                                 }
                             },
                             "aggs": {
-                                "by_comment": {
-                                    "terms": {
+                                "unique_comments": {
+                                    "cardinality": {
                                         "field": "commentId.keyword",
-                                        "size": _opensearch_comment_id_terms_size(),
+                                        "precision_threshold": 3000
                                     }
                                 }
-                            },
+                            }
                         }
-                    },
+                    }
                 }
-            },
+            }
         }
-
-    @staticmethod
-    def _comment_ids_per_docket_from_agg(
-            resp: Dict, agg_name: str) -> Dict[str, Set[str]]:
-        """Parse by_docket -> filter agg -> terms on commentId."""
-        out: Dict[str, Set[str]] = {}
-        for bucket in resp.get("aggregations", {}).get("by_docket", {}).get("buckets", []):
-            did = str(bucket["key"])
-            inner = bucket.get(agg_name, {})
-            by_comment = inner.get("by_comment", {})
-            keys = {str(b["key"]) for b in by_comment.get("buckets", [])}
-            if keys:
-                out.setdefault(did, set()).update(keys)
-        return out
-
-    @staticmethod
-    def _merge_unique_comment_matches(
-            comments_resp: Dict, extracted_resp: Dict) -> Dict[str, int]:
-        """Union commentIds from comments and extracted-text index per docket."""
-        from_comments = DBLayer._comment_ids_per_docket_from_agg(
-            comments_resp, "matching_comments")
-        from_extracted = DBLayer._comment_ids_per_docket_from_agg(
-            extracted_resp, "matching_extracted")
-        counts: Dict[str, int] = {}
-        for did in set(from_comments) | set(from_extracted):
-            merged = set(from_comments.get(did, set())) | set(from_extracted.get(did, set()))
-            if merged:
-                counts[did] = len(merged)
-        return counts
 
     @staticmethod
     def _accumulate_counts(
@@ -485,7 +470,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         for bucket in buckets:
             match_count = bucket[agg_name]["doc_count"]
             if match_count > 0:
-                docket_id = bucket["key"]
+                docket_id = str(bucket["key"])
                 docket_counts.setdefault(
                     docket_id, {"document_match_count": 0, "comment_match_count": 0}
                 )
@@ -493,16 +478,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
     def text_match_terms(
             self, terms: List[str], opensearch_client=None) -> List[Dict[str, Any]]:
-        """
-        Search OpenSearch for dockets containing the given terms.
-
-        Searches:
-        - documents_text index: title and documentText fields
-        - comments index: commentText field
-        - comments_extracted_text index: extractedText field
-
-        Returns list of {docket_id, document_match_count, comment_match_count}.
-        """
+        """Search OpenSearch for dockets matching terms across all indexes."""
         if opensearch_client is None:
             opensearch_client = get_opensearch_connection()
         try:
@@ -514,9 +490,89 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             print(f"OpenSearch query failed (fallback to SQL): {e}")
             return []
 
+    def _run_text_match_queries(  # pylint: disable=too-many-locals
+            self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
+        """Execute all three OpenSearch queries and merge their results."""
+        def safe_search(index_name: str, body: Dict) -> Dict:
+            try:
+                return opensearch_client.search(index=index_name, body=body)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(f"OpenSearch index query failed for '{index_name}': {e}")
+                return {"aggregations": {"by_docket": {"buckets": []}}}
+
+        docket_counts: Dict = {}
+
+        doc_match_clauses = [
+            {"multi_match": {
+                "query": t,
+                "fields": ["title^2", "documentText"],
+                "type": "best_fields",
+                "tie_breaker": 0.3,
+                "operator": "or"
+            }}
+            for t in terms
+        ]
+        comment_match_clauses = [{"match": {"commentText": t}} for t in terms]
+        extracted_match_clauses = [{"match": {"extractedText": t}} for t in terms]
+
+        doc_resp = safe_search(
+            "documents_text",
+            self._build_docket_agg_query("matching_docs", doc_match_clauses)
+        )
+        self._accumulate_counts(
+            docket_counts,
+            doc_resp["aggregations"]["by_docket"]["buckets"],
+            "matching_docs",
+            "document_match_count"
+        )
+
+        comment_resp = safe_search(
+            "comments",
+            self._build_docket_agg_query_unique_comments(
+                "matching_comments", comment_match_clauses
+            )
+        )
+        extracted_resp = safe_search(
+            "comments_extracted_text",
+            self._build_docket_agg_query_unique_comments(
+                "matching_extracted", extracted_match_clauses
+            )
+        )
+
+        comment_counts = self._extract_cardinality_counts(
+            comment_resp, "matching_comments"
+        )
+        extracted_counts = self._extract_cardinality_counts(
+            extracted_resp, "matching_extracted"
+        )
+        for did in set(comment_counts) | set(extracted_counts):
+            docket_counts.setdefault(
+                did, {"document_match_count": 0, "comment_match_count": 0}
+            )
+            docket_counts[did]["comment_match_count"] = max(
+                comment_counts.get(did, 0),
+                extracted_counts.get(did, 0)
+            )
+
+        return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
+
+    @staticmethod
+    def _extract_cardinality_counts(resp: Dict, agg_name: str) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        buckets = (
+            resp.get("aggregations", {}).get("by_docket", {}).get("buckets", [])
+        )
+        for bucket in buckets:
+            inner = bucket.get(agg_name, {})
+            if inner.get("doc_count", 0) > 0:
+                value = inner.get("unique_comments", {}).get("value", 0)
+                if value > 0:
+                    counts[str(bucket["key"])] = value
+        return counts
+
     @staticmethod
     def _comment_total_query(docket_ids: List[str]) -> Dict:
-        """Aggregation: per docket, distinct commentId across all matching docs."""
+        """Aggregation: per docket, total comment count."""
         return {
             "size": 0,
             "query": {
@@ -533,7 +589,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                         "by_comment": {
                             "terms": {
                                 "field": "commentId.keyword",
-                                "size": _opensearch_comment_id_terms_size(),
+                                "size": 65535,
                             }
                         }
                     },
@@ -541,7 +597,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             },
         }
 
-    def get_docket_document_comment_totals(
+    def get_docket_document_comment_totals( # pylint: disable=unused-argument
             self,
             docket_ids: List[str],
             opensearch_client=None
@@ -549,95 +605,35 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         """Return per-docket totals for documents and comments."""
         if not docket_ids:
             return {}
-        if opensearch_client is None:
-            opensearch_client = get_opensearch_connection()
         try:
-            return self._fetch_docket_totals(opensearch_client, docket_ids)
+            return self._fetch_docket_totals(docket_ids)
         except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"OpenSearch totals query failed (fallback zeros): {e}")
+            print(f"Docket totals query failed: {e}")
             return {}
 
-    def _fetch_docket_totals(  # pylint: disable=too-many-locals
-            self, opensearch_client, docket_ids: List[str]) -> Dict[str, Dict[str, int]]:
-        """Document totals from RDS, comment totals from OpenSearch."""
+    def _fetch_docket_totals(
+            self, docket_ids: List[str]) -> Dict[str, Dict[str, int]]:
+        """Fetch document and comment total counts from Postgres."""
         totals: Dict[str, Dict[str, int]] = {}
-        if self.engine is not None:
-            rows = self._run(
-                "SELECT docket_id, COUNT(*) FROM documents "
-                "WHERE docket_id = ANY(:docket_ids) GROUP BY docket_id",
-                {"docket_ids": list(docket_ids)}
-            )
-            for docket_id, count in rows:
-                totals[docket_id] = {"document_total_count": count, "comment_total_count": 0}
-        comment_query = {
-            "size": 0,
-            "query": {"bool": {"filter": [{"terms": {"docketId.keyword": docket_ids}}]}},
-            "aggs": {"by_docket": {"terms": {"field": "docketId.keyword", "size": len(docket_ids)}}}
-        }
-        try:
-            resp = opensearch_client.search(index="comments", body=comment_query)
-            for bucket in resp["aggregations"]["by_docket"]["buckets"]:
-                docket_id = str(bucket["key"])
-                totals.setdefault(docket_id, {"document_total_count": 0, "comment_total_count": 0})
-                totals[docket_id]["comment_total_count"] = bucket["doc_count"]
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"Comment totals query failed: {e}")
+        if self.engine is None:
+            return totals
+        rows = self._run(
+            "SELECT docket_id, COUNT(*) FROM documents "
+            "WHERE docket_id = ANY(:docket_ids) GROUP BY docket_id",
+            {"docket_ids": list(docket_ids)}
+        )
+        for docket_id, count in rows:
+            totals[docket_id] = {"document_total_count": count, "comment_total_count": 0}
+        rows = self._run(
+            "SELECT docket_id, COUNT(*) FROM comments "
+            "WHERE docket_id = ANY(:docket_ids) GROUP BY docket_id",
+            {"docket_ids": list(docket_ids)}
+        )
+        for docket_id, count in rows:
+            totals.setdefault(docket_id, {"document_total_count": 0, "comment_total_count": 0})
+            totals[docket_id]["comment_total_count"] = count
         return totals
 
-    def _run_text_match_queries(  # pylint: disable=too-many-locals,too-many-statements
-            self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
-        """Execute all three OpenSearch queries and merge their results."""
-        def buckets(resp):
-            return resp["aggregations"]["by_docket"]["buckets"]
-
-        def safe_search(index: str, body: Dict) -> Dict:
-            try:
-                return opensearch_client.search(index=index, body=body)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"OpenSearch index query failed for '{index}': {e}")
-                return {"aggregations": {"by_docket": {"buckets": []}}}
-
-        docket_counts: Dict = {}
-        doc_resp = safe_search(
-            "documents_text",
-            self._build_docket_agg_query(
-                "matching_docs",
-                [{"multi_match": {"query": t, "fields": ["title", "documentText"]}}
-                 for t in terms],
-            ),
-        )
-        comment_resp = safe_search(
-            "comments",
-            self._build_docket_agg_query_unique_comments(
-                "matching_comments",
-                [{"match": {"commentText": t}} for t in terms],
-            ),
-        )
-        extracted_resp = safe_search(
-            "comments_extracted_text",
-            self._build_docket_agg_query_unique_comments(
-                "matching_extracted",
-                [{"match": {"extractedText": t}} for t in terms],
-            ),
-        )
-        self._accumulate_counts(
-            docket_counts, buckets(doc_resp), "matching_docs", "document_match_count"
-        )
-        comment_ids_by_docket = self._comment_ids_per_docket_from_agg(
-            comment_resp, "matching_comments"
-        )
-        extracted_ids_by_docket = self._comment_ids_per_docket_from_agg(
-            extracted_resp, "matching_extracted"
-        )
-        all_dockets = set(comment_ids_by_docket) | set(extracted_ids_by_docket)
-        for did in all_dockets:
-            merged = (set(comment_ids_by_docket.get(did, set()))
-                      | set(extracted_ids_by_docket.get(did, set())))
-            docket_counts.setdefault(
-                did, {"document_match_count": 0, "comment_match_count": 0}
-            )
-            docket_counts[did]["comment_match_count"] = len(merged)
-        return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
 
     def get_collections(self, user_email: str) -> List[Dict[str, Any]]:
         """Return all collections belonging to the given user."""
