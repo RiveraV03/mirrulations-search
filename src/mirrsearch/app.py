@@ -11,6 +11,47 @@ from mirrsearch.db import get_db
 
 logger = logging.getLogger(__name__)
 
+BETA_MESSAGE = (
+    "We're sorry, something went wrong. This app is currently in beta — "
+    "please try again later."
+)
+
+
+def _db_error_response(detail: str = None):
+    """Return a standard 503 JSON response for database/service errors."""
+    body = {"error": BETA_MESSAGE}
+    if detail:
+        logger.error("Service error: %s", detail)
+    return jsonify(body), 503
+
+def _error_response(message, status):
+    """Standard JSON error response."""
+    return jsonify({"error": message}), status
+
+
+def _validate_download_request(body):
+    """Validate bulk download request."""
+    docket_ids = body.get("docket_ids") or []
+    data_format = (body.get("format") or "").strip().lower()
+
+    if not docket_ids:
+        return "docket_ids is required", 400
+    if len(docket_ids) > 10:
+        return "Maximum of 10 dockets per download", 400
+    if data_format not in ("raw", "csv"):
+        return "format must be 'raw' or 'csv'", 400
+
+    return None, None
+
+
+def _validate_single_download_request(body):
+    """Validate single download request."""
+    data_format = (body.get("format") or "").strip().lower()
+
+    if data_format not in ("raw", "csv"):
+        return "format must be 'raw' or 'csv'", 400
+
+    return None, None
 
 def _get_search_params():
     """Extract and validate search parameters from the request."""
@@ -250,7 +291,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             return jsonify({"is_admin": False})
         if db_layer is None:
             return jsonify({"is_admin": False})
-        is_admin = db_layer.is_admin(user["email"])
+        try:
+            is_admin = db_layer.is_admin(user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         return jsonify({"is_admin": is_admin, "name": user["name"], "email": user["email"]})
 
     @flask_app.route("/api/authorized", methods=["GET"])
@@ -259,10 +303,13 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         user = _get_user_from_cookie(handler)
         if db_layer is None or not user or not db_layer.is_admin(user["email"]):
             return jsonify({"error": "Forbidden"}), 403
-        return jsonify(db_layer.get_authorized_users())
+        try:
+            return jsonify(db_layer.get_authorized_users())
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
 
     @flask_app.route("/api/authorized", methods=["POST"])
-    def add_authorized_user():
+    def add_authorized_user(): # pylint: disable=too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if db_layer is None or not user or not db_layer.is_admin(user["email"]):
@@ -272,22 +319,28 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         name = (body.get("name") or "").strip()
         if not email or not name:
             return jsonify({"error": "email and name are required"}), 400
-        db_layer.add_authorized_user(email, name)
+        try:
+            db_layer.add_authorized_user(email, name)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         return jsonify({"email": email, "name": name}), 201
 
     @flask_app.route("/api/authorized/<email>", methods=["DELETE"])
-    def remove_authorized_user(email):
+    def remove_authorized_user(email): # pylint: disable=too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if db_layer is None or not user or not db_layer.is_admin(user["email"]):
             return jsonify({"error": "Forbidden"}), 403
-        removed = db_layer.remove_authorized_user(email)
+        try:
+            removed = db_layer.remove_authorized_user(email)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         if not removed:
             return jsonify({"error": "User not found"}), 404
         return "", 204
 
     @flask_app.route("/api/authorized/<email>/update-name", methods=["POST"])
-    def update_authorized_user(email):
+    def update_authorized_user(email): # pylint: disable=too-many-return-statements
         """Update the display name of an authorized user."""
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
@@ -297,7 +350,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         name = (body.get("name") or "").strip()
         if not name:
             return jsonify({"error": "name is required"}), 400
-        updated = db_layer.update_authorized_user_name(email, name)
+        try:
+            updated = db_layer.update_authorized_user_name(email, name)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         if not updated:
             return jsonify({"error": "User not found"}), 404
         return jsonify({"email": email, "name": name})
@@ -308,7 +364,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return send_from_directory(dist_dir, "index.html")
 
     @flask_app.route("/api/user/last-login", methods=["GET"])
-    def get_user_last_login():
+    def get_user_last_login(): # pylint: disable=too-many-locals,too-many-return-statements
         """Return the current user's last login timestamp."""
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
@@ -316,7 +372,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             return jsonify({"error": "Unauthorized"}), 401
         if db_layer is None:
             return jsonify({"error": "Service unavailable"}), 503
-        last_login = db_layer.get_last_login(user["email"])
+        try:
+            last_login = db_layer.get_last_login(user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         if last_login is None:
             return jsonify({"email": user["email"], "last_login": None})
         last_login_str = last_login.isoformat() if isinstance(last_login, (date, datetime)) \
@@ -324,13 +383,16 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return jsonify({"email": user["email"], "last_login": last_login_str})
 
     @flask_app.route("/admin/users", methods=["GET"])
-    def admin_get_users_with_last_login():
+    def admin_get_users_with_last_login(): # pylint: disable=too-many-return-statements
         """Admin-only: return all authorized users including their last_login timestamps."""
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if db_layer is None or not user or not db_layer.is_admin(user["email"]):
             return jsonify({"error": "Forbidden"}), 403
-        users = db_layer.get_authorized_users()
+        try:
+            users = db_layer.get_authorized_users()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         # Serialize any datetime fields so JSON encoding never fails
         for u in users:
             for field in ("authorized_at", "last_login"):
@@ -348,24 +410,30 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         params = _get_search_params()
         page, page_size = _get_pagination_params()
 
-        logic = InternalLogic("sample_database", db_layer=db_layer)
-        result = logic.search(
-            params['search_input'],
-            params['docket_type'],
-            params['agency'],
-            params['cfr_part'],
-            params['start_date'],
-            params['end_date'],
-            page=page,
-            page_size=page_size,
-            sort_by=params['sort_by']
-        )
+        try:
+            logic = InternalLogic("sample_database", db_layer=db_layer)
+            result = logic.search(
+                params['search_input'],
+                params['docket_type'],
+                params['agency'],
+                params['cfr_part'],
+                params['start_date'],
+                params['end_date'],
+                page=page,
+                page_size=page_size,
+                sort_by=params['sort_by']
+            )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
 
         return _build_paginated_response(result['results'], result['pagination'])
 
     @flask_app.route("/agencies")
     def agencies():
-        result = InternalLogic("sample_database", db_layer=db_layer).get_agencies()
+        try:
+            result = InternalLogic("sample_database", db_layer=db_layer).get_agencies()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         return jsonify(result)
 
     @flask_app.route("/api/collections", methods=["GET"])
@@ -374,7 +442,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         user = _get_user_from_cookie(handler)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        result = db_layer.get_collections(user["email"])
+        try:
+            result = db_layer.get_collections(user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         return jsonify(result)
 
     @flask_app.route("/api/collections", methods=["POST"])
@@ -387,7 +458,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         name = (body.get("name") or "").strip()
         if not name:
             return jsonify({"error": "name is required"}), 400
-        collection_id = db_layer.create_collection(user["email"], name)
+        try:
+            collection_id = db_layer.create_collection(user["email"], name)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         return jsonify({"collection_id": collection_id}), 201
 
     @flask_app.route("/api/collections/<int:collection_id>", methods=["DELETE"])
@@ -396,28 +470,34 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         user = _get_user_from_cookie(handler)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        deleted = db_layer.delete_collection(collection_id, user["email"])
+        try:
+            deleted = db_layer.delete_collection(collection_id, user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         if not deleted:
             return jsonify({"error": "Collection not found"}), 404
         return "", 204
 
     @flask_app.route("/api/collections/<int:collection_id>/dockets", methods=["GET"])
-    def get_collection_dockets(collection_id):
+    def get_collection_dockets(collection_id): # pylint: disable=too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
         page, page_size = _get_pagination_params()
-        logic = InternalLogic("sample_database", db_layer=db_layer)
-        result = logic.get_collection_dockets(
-            collection_id, user["email"], page=page, page_size=page_size
-        )
+        try:
+            logic = InternalLogic("sample_database", db_layer=db_layer)
+            result = logic.get_collection_dockets(
+                collection_id, user["email"], page=page, page_size=page_size
+            )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         if result is None:
             return jsonify({"error": "Collection not found"}), 404
         return _build_paginated_response(result['results'], result['pagination'])
 
     @flask_app.route("/api/collections/<int:collection_id>/dockets", methods=["POST"])
-    def add_docket_to_collection(collection_id):
+    def add_docket_to_collection(collection_id): # pylint: disable=too-many-locals,too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
         if not user:
@@ -426,7 +506,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         docket_id = (body.get("docket_id") or "").strip()
         if not docket_id:
             return jsonify({"error": "docket_id is required"}), 400
-        added = db_layer.add_docket_to_collection(collection_id, docket_id, user["email"])
+        try:
+            added = db_layer.add_docket_to_collection(collection_id, docket_id, user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         if not added:
             return jsonify({"error": "Collection not found"}), 404
         return "", 204
@@ -437,50 +520,66 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         user = _get_user_from_cookie(handler)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        removed = db_layer.remove_docket_from_collection(collection_id, docket_id, user["email"])
+        try:
+            removed = db_layer.remove_docket_from_collection(
+                collection_id, docket_id, user["email"]
+            )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         if not removed:
             return jsonify({"error": "Collection not found"}), 404
         return "", 204
 
     @flask_app.route("/download/request", methods=["POST"])
-    def request_download():  # pylint: disable=too-many-return-statements
+    def request_download(): # pylint: disable=too-many-locals,too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
+
         if not user:
-            return jsonify({"error": "Unauthorized"}), 401
+            return _error_response("Unauthorized", 401)
 
         body = request.get_json(silent=True) or {}
-        docket_ids = body.get("docket_ids") or []
-        data_format = (body.get("format") or "").strip().lower()
+
+        error, status = _validate_download_request(body)
+        if error:
+            return _error_response(error, status)
+
+        docket_ids = body.get("docket_ids")
+        data_format = body.get("format").strip().lower()
         include_binaries = bool(body.get("include_binaries", False))
 
-        if not docket_ids:
-            return jsonify({"error": "docket_ids is required"}), 400
-        if len(docket_ids) > 10:
-            return jsonify({"error": "Maximum of 10 dockets per download"}), 400
-        if data_format not in ("raw", "csv"):
-            return jsonify({"error": "format must be 'raw' or 'csv'"}), 400
-
-        job_id = db_layer.create_download_job(
+        try:
+            job_id = db_layer.create_download_job(
             user["email"], docket_ids, data_format, include_binaries
         )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
+
         try:
-            _push_job_to_redis(job_id, user["email"], docket_ids, data_format, include_binaries)
+            _push_job_to_redis(
+                job_id, user["email"], docket_ids, data_format, include_binaries
+            )
         except Exception:  # pylint: disable=broad-except
             return _handle_redis_enqueue_failure(db_layer, job_id)
+
         return jsonify({"job_id": job_id, "status": "started"}), 202
 
 
     @flask_app.route("/download/status/<job_id>", methods=["GET"])
-    def download_status(job_id):  # pylint: disable=too-many-return-statements
+    def download_status(job_id):
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
-        if not user:
-            return jsonify({"error": "Unauthorized"}), 401
 
-        job = db_layer.get_download_job(job_id, user["email"])
+        if not user:
+            return _error_response("Unauthorized", 401)
+
+        try:
+            job = db_layer.get_download_job(job_id, user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
+
         if not job:
-            return jsonify({"error": "Job not found"}), 404
+            return _error_response("Job not found", 404)
 
         return jsonify({
             "job_id": job_id,
@@ -493,29 +592,41 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         })
 
     @flask_app.route("/download/<job_id>", methods=["GET"])
-    def download_file(job_id):  # pylint: disable=too-many-return-statements
+    def download_file(job_id): # pylint: disable=too-many-locals,too-many-return-statements, too-many-branches
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
+
         if not user:
-            return jsonify({"error": "Unauthorized"}), 401
+            return _error_response("Unauthorized", 401)
 
-        job = db_layer.get_download_job(job_id, user["email"])
+        try:
+            job = db_layer.get_download_job(job_id, user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
+
         if not job:
-            return jsonify({"error": "Job not found"}), 404
+            return _error_response("Job not found", 404)
+
         if job["status"] != "ready":
-            return jsonify({"error": "Download not ready yet"}), 202
+            return _error_response("Download not ready yet", 202)
 
-        s3_url = db_layer.get_download_s3_url(job_id, user["email"])
+        try:
+            s3_url = db_layer.get_download_s3_url(job_id, user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
+
         if not s3_url:
-            return jsonify({"error": "Download file not found"}), 404
+            return _error_response("Download file not found", 404)
 
-        if s3_url.startswith("/"):
-            return send_from_directory(
+        return (
+            send_from_directory(
                 os.path.dirname(s3_url),
                 os.path.basename(s3_url),
                 as_attachment=True
             )
-        return redirect(s3_url)
+            if s3_url.startswith("/")
+            else redirect(s3_url)
+        )
 
     @flask_app.route("/dockets", methods=["GET"])
     def get_dockets_by_ids():
@@ -525,7 +636,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         docket_ids = [v for v in request.args.getlist("docket_id") if v]
         if not docket_ids:
             return jsonify([])
-        results = db_layer.get_dockets_by_ids(docket_ids)
+        try:
+            results = db_layer.get_dockets_by_ids(docket_ids)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         for result in results:
             if "modify_date" in result and isinstance(result["modify_date"], (date, datetime)):
                 result["modify_date"] = result["modify_date"].isoformat()
@@ -533,25 +647,36 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return jsonify(results)
 
     @flask_app.route("/download/request/<docket_id>", methods=["POST"])
-    def request_single_download(docket_id):  # pylint: disable=too-many-return-statements
+    def request_single_download(docket_id): # pylint: disable=too-many-locals,too-many-return-statements
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
+
         if not user:
-            return jsonify({"error": "Unauthorized"}), 401
+            return _error_response("Unauthorized", 401)
+
         body = request.get_json(silent=True) or {}
+
+        error, status = _validate_single_download_request(body)
+        if error:
+            return _error_response(error, status)
+
         data_format = (body.get("format") or "").strip().lower()
-        include_binaries = bool(body.get("include_binaries", False))
+        include_binaries = bool(body.get("include_binaries"))
 
-        if data_format not in ("raw", "csv"):
-            return jsonify({"error": "format must be 'raw' or 'csv'"}), 400
-
-        job_id = db_layer.create_download_job(
-            user["email"], [docket_id], data_format, include_binaries
-        )
         try:
-            _push_job_to_redis(job_id, user["email"], [docket_id], data_format, include_binaries)
+            job_id = db_layer.create_download_job(
+                user["email"], [docket_id], data_format, include_binaries
+            )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
+
+        try:
+            _push_job_to_redis(
+                job_id, user["email"], [docket_id], data_format, include_binaries
+            )
         except Exception:  # pylint: disable=broad-except
             return _handle_redis_enqueue_failure(db_layer, job_id)
+
         return jsonify({"job_id": job_id, "status": "started"}), 202
 
     @flask_app.route("/collections")
@@ -564,7 +689,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         user = _get_user_from_cookie(handler)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        jobs = db_layer.get_download_jobs(user["email"])
+        try:
+            jobs = db_layer.get_download_jobs(user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
         return jsonify(jobs)
 
     return flask_app
