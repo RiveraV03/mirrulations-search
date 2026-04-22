@@ -944,7 +944,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             }
             for row in rows
         ]
-    
+
     def delete_download_job(self, job_id: str, user_email: str) -> bool:
         """Delete a download job owned by the user. Returns True if deleted."""
         if self.engine is None:
