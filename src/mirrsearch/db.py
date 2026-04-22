@@ -120,7 +120,7 @@ def _build_engine(dsn: str) -> Engine:
         max_overflow=5,
         connect_args={
             "connect_timeout": 5,
-            "options": "-c statement_timeout=30000",
+            "options": "-c statement_timeout=60000",
         },
     )
 
