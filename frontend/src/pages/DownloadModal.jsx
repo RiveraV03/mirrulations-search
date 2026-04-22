@@ -145,6 +145,24 @@ const handleDownload = async () => {
     return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
+
+      <div className="modal-header">
+        <button
+          onClick={onClose}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "#aaa",
+            fontSize: 20,
+            lineHeight: 1,
+            padding: "2px 4px",
+          }}
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
  
         <h2 className="modal-title">
           {isAll
@@ -158,7 +176,7 @@ const handleDownload = async () => {
         {/* ── Pending ───────────────────────────────── */}
         {status === "pending" && (
           <p className="modal-loading">
-            Package is being prepared — this may take a few minutes.
+            Package is being prepared — this may take a few minutes. Please click "Check Downloads" to see the status of your download!
           </p>
         )}
  
