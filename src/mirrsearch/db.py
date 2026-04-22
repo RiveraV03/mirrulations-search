@@ -1,5 +1,6 @@
 # pylint: disable=too-many-lines
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import List, Dict, Any, Set, Optional
 import os
@@ -492,15 +493,18 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
     def _run_text_match_queries(  # pylint: disable=too-many-locals
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
-        """Execute all three OpenSearch queries and merge their results."""
+        """Execute all three OpenSearch queries in parallel and merge their results.
+
+        All three index searches are fired simultaneously via a thread pool so
+        total wall-clock time is roughly the slowest single query rather than
+        the sum of all three.  Query bodies and result merging are unchanged.
+        """
         def safe_search(index_name: str, body: Dict) -> Dict:
             try:
                 return opensearch_client.search(index=index_name, body=body)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 print(f"OpenSearch index query failed for '{index_name}': {e}")
                 return {"aggregations": {"by_docket": {"buckets": []}}}
-
-        docket_counts: Dict = {}
 
         doc_match_clauses = [
             {"multi_match": {
@@ -515,28 +519,38 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         comment_match_clauses = [{"match": {"commentText": t}} for t in terms]
         extracted_match_clauses = [{"match": {"extractedText": t}} for t in terms]
 
-        doc_resp = safe_search(
-            "documents_text",
-            self._build_docket_agg_query("matching_docs", doc_match_clauses)
-        )
+        queries = [
+            ("documents_text",
+             self._build_docket_agg_query("matching_docs", doc_match_clauses)),
+            ("comments",
+             self._build_docket_agg_query_unique_comments(
+                 "matching_comments", comment_match_clauses)),
+            ("comments_extracted_text",
+             self._build_docket_agg_query_unique_comments(
+                 "matching_extracted", extracted_match_clauses)),
+        ]
+
+        # Fire all three queries in parallel; keyed by index name for deterministic merging.
+        responses: Dict[str, Dict] = {}
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {
+                pool.submit(safe_search, index_name, body): index_name
+                for index_name, body in queries
+            }
+            for future in futures:
+                index_name = futures[future]
+                responses[index_name] = future.result()
+
+        doc_resp = responses["documents_text"]
+        comment_resp = responses["comments"]
+        extracted_resp = responses["comments_extracted_text"]
+
+        docket_counts: Dict = {}
         self._accumulate_counts(
             docket_counts,
             doc_resp["aggregations"]["by_docket"]["buckets"],
             "matching_docs",
             "document_match_count"
-        )
-
-        comment_resp = safe_search(
-            "comments",
-            self._build_docket_agg_query_unique_comments(
-                "matching_comments", comment_match_clauses
-            )
-        )
-        extracted_resp = safe_search(
-            "comments_extracted_text",
-            self._build_docket_agg_query_unique_comments(
-                "matching_extracted", extracted_match_clauses
-            )
         )
 
         comment_counts = self._extract_cardinality_counts(

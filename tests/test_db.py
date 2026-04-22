@@ -581,15 +581,19 @@ class _FakeOpenSearch: #pylint: disable=too-few-public-methods
     """
     Fake OpenSearch client returning cardinality-style agg responses.
     Comment counts come from unique_comments.value, not by_comment buckets.
+    Thread-safe: searches list uses a lock so parallel calls don't interleave.
     """
     def __init__(self, doc_buckets, comment_buckets, extracted_buckets):
+        import threading  # pylint: disable=import-outside-toplevel
         self.doc_buckets = doc_buckets
         self.comment_buckets = comment_buckets
         self.extracted_buckets = extracted_buckets
         self.searches = []
+        self._lock = threading.Lock()
 
     def search(self, index, body):
-        self.searches.append((index, body))
+        with self._lock:
+            self.searches.append((index, body))
         if index == "documents_text":
             return {"aggregations": {"by_docket": {"buckets": self.doc_buckets}}}
         if index == "comments":
@@ -602,6 +606,7 @@ def test_text_match_terms_searches_comments_and_extracted():
     """
     text_match_terms searches all three indexes and returns correct comment count
     from OpenSearch cardinality (max of both comment indexes).
+    Queries run in parallel so index order in searches list is not guaranteed.
     """
     comment_buckets = [
         _fake_os_comment_agg_bucket(
@@ -618,9 +623,8 @@ def test_text_match_terms_searches_comments_and_extracted():
     results = db.text_match_terms(["medicare"], opensearch_client=fake_client)
 
     assert len(fake_client.searches) == 3
-    assert fake_client.searches[0][0] == "documents_text"
-    assert fake_client.searches[1][0] == "comments"
-    assert fake_client.searches[2][0] == "comments_extracted_text"
+    searched_indexes = {idx for idx, _ in fake_client.searches}
+    assert searched_indexes == {"documents_text", "comments", "comments_extracted_text"}
 
     assert len(results) == 1
     assert results[0]["docket_id"] == "CMS-2025-0240"
@@ -699,6 +703,7 @@ def test_text_match_terms_multiple_dockets_comments():
 def test_text_match_terms_uses_filtered_aggregations():
     """
     Verify the OpenSearch queries use cardinality agg (not by_comment terms agg).
+    Queries run in parallel so body lookup is by index name, not position.
     """
     fake_client = _FakeOpenSearch([], [], [])
     db = DBLayer()
@@ -706,12 +711,11 @@ def test_text_match_terms_uses_filtered_aggregations():
     db.text_match_terms(["medicare", "medicaid"], opensearch_client=fake_client)
 
     assert len(fake_client.searches) == 3
+    bodies_by_index = {idx: body for idx, body in fake_client.searches}
 
-    comment_index, comment_body = fake_client.searches[1]
-    assert comment_index == "comments"
+    comment_body = bodies_by_index["comments"]
     assert comment_body["size"] == 0
-    assert "aggs" in \
-        comment_body
+    assert "aggs" in comment_body
     assert "matching_comments" in \
         comment_body["aggs"]["by_docket"]["aggs"]
     assert "filter" in \
@@ -723,8 +727,7 @@ def test_text_match_terms_uses_filtered_aggregations():
     assert "by_comment" not in \
         comment_body["aggs"]["by_docket"]["aggs"]["matching_comments"].get("aggs", {})
 
-    extracted_index, extracted_body = fake_client.searches[2]
-    assert extracted_index == "comments_extracted_text"
+    extracted_body = bodies_by_index["comments_extracted_text"]
     assert "matching_extracted" in \
         extracted_body["aggs"]["by_docket"]["aggs"]
     assert "unique_comments" in \
@@ -802,6 +805,69 @@ def test_text_match_terms_malformed_response_returns_empty():
     db = DBLayer()
     assert db.text_match_terms(["x"], opensearch_client=BadClient()) == []
 
+
+# --- parallel query tests ---
+
+def test_text_match_terms_all_three_indexes_queried():
+    """All three indexes are always queried regardless of results."""
+    fake_client = _FakeOpenSearch([], [], [])
+    db = DBLayer()
+    db.text_match_terms(["term"], opensearch_client=fake_client)
+    searched = {idx for idx, _ in fake_client.searches}
+    assert searched == {"documents_text", "comments", "comments_extracted_text"}
+
+
+def test_text_match_terms_one_index_failure_does_not_affect_others():
+    """If one index throws, the other two still contribute results."""
+    import threading  # pylint: disable=import-outside-toplevel
+
+    class _PartiallyBrokenClient:
+        def __init__(self):
+            self._lock = threading.Lock()
+            self.searches = []
+
+        def search(self, index, body):  # pylint: disable=unused-argument
+            with self._lock:
+                self.searches.append(index)
+            if index == "comments":
+                raise RuntimeError("index unavailable")
+            if index == "documents_text":
+                return {"aggregations": {"by_docket": {"buckets": [
+                    {"key": "DOC-DOCKET", "matching_docs": {"doc_count": 3}}
+                ]}}}
+            return {"aggregations": {"by_docket": {"buckets": []}}}
+
+    db = DBLayer()
+    results = db.text_match_terms(["term"], opensearch_client=_PartiallyBrokenClient())
+    assert any(r["docket_id"] == "DOC-DOCKET" for r in results)
+    doc_result = next(r for r in results if r["docket_id"] == "DOC-DOCKET")
+    assert doc_result["document_match_count"] == 3
+
+
+def test_text_match_terms_results_identical_regardless_of_thread_scheduling():
+    """
+    Run the same query 5 times and confirm results are always identical.
+    Guards against race conditions in merging.
+    """
+    doc_buckets = [{"key": "D1", "matching_docs": {"doc_count": 2}}]
+    comment_buckets = [
+        _fake_os_comment_agg_bucket("D1", "matching_comments", "c1", "c2"),
+        _fake_os_comment_agg_bucket("D2", "matching_comments", "c3"),
+    ]
+    extracted_buckets = [
+        _fake_os_comment_agg_bucket("D2", "matching_extracted", "e1"),
+    ]
+
+    db = DBLayer()
+    all_results = []
+    for _ in range(5):
+        fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+        result = db.text_match_terms(["term"], opensearch_client=fake_client)
+        sorted_result = sorted(result, key=lambda r: r["docket_id"])
+        all_results.append(sorted_result)
+
+    for run in all_results[1:]:
+        assert run == all_results[0], "Results differed between runs — possible race condition"
 
 # --- is_admin tests ---
 
