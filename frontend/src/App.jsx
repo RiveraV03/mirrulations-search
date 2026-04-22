@@ -236,27 +236,69 @@ export default function App() {
                     hasSearched={hasSearched}
                     query={query}
                     unauthorized={unauthorized}
-                    totalResults={pagination?.totalResults-1}
+                    totalResults={pagination?.totalResults}
                   />
-                  <div className="pagination-div">
-                    <button
-                      className="page-button"
-                      disabled={!pagination?.hasPrev}
-                      onClick={() => runSearch(page - 1)}
-                    >
-                      <ArrowLeftIcon color="white" size={32} />
-                    </button>
-                    <span className="page-info">
-                      Page {pagination?.page} of {pagination?.totalPages}
-                    </span>
-                    <button
-                      className="page-button"
-                      disabled={!pagination?.hasNext}
-                      onClick={() => runSearch(page + 1)}
-                    >
-                      <ArrowRightIcon color="white" size={32} />
-                    </button>
-                  </div>
+                  {pagination?.totalPages > 0 && (
+                    <div className="pagination-div">
+                      <button
+                        className="page-btn"
+                        disabled={!pagination?.hasPrev}
+                        onClick={() => runSearch(1)}
+                        title="First page"
+                      >
+                        «
+                      </button>
+                      <button
+                        className="page-btn"
+                        disabled={!pagination?.hasPrev}
+                        onClick={() => runSearch(page - 1)}
+                        title="Previous page"
+                      >
+                        <ArrowLeftIcon weight="bold" size={16} />
+                      </button>
+                      <span className="page-info">
+                        Page{" "}
+                        <input
+                          type="number"
+                          className="page-input"
+                          min={1}
+                          max={pagination?.totalPages ?? 1}
+                          value={page}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
+                              runSearch(val);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const val = Number(e.target.value);
+                              if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
+                                runSearch(val);
+                              }
+                            }
+                          }}
+                        />{" "}
+                        of {pagination?.totalPages}
+                      </span>
+                      <button
+                        className="page-btn"
+                        disabled={!pagination?.hasNext}
+                        onClick={() => runSearch(page + 1)}
+                        title="Next page"
+                      >
+                        <ArrowRightIcon weight="bold" size={16} />
+                      </button>
+                      <button
+                        className="page-btn"
+                        disabled={!pagination?.hasNext}
+                        onClick={() => runSearch(pagination?.totalPages)}
+                        title="Last page"
+                      >
+                        »
+                      </button>
+                    </div>
+                  )}
                 </main>
               </div>
               {openDownloadStatus && (

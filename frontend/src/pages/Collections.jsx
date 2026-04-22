@@ -488,25 +488,67 @@ export default function Collections() {
                     </article>
                   ))}
                 </div>
-                <div className="pagination-div">
-                  <button
-                    className="page-button"
-                    disabled={!pagination?.hasPrev}
-                    onClick={() => setPage((p) => p - 1)}
-                  >
-                    <ArrowLeftIcon color="white" size={32} />
-                  </button>
-                  <span className="page-info">
-                    Page {pagination?.page} of {pagination?.totalPages}
-                  </span>
-                  <button
-                    className="page-button"
-                    disabled={!pagination?.hasNext}
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    <ArrowRightIcon color="white" size={32} />
-                  </button>
-                </div>
+                {pagination?.totalPages > 0 && (
+                  <div className="pagination-div">
+                    <button
+                      className="page-btn"
+                      disabled={!pagination?.hasPrev}
+                      onClick={() => setPage(1)}
+                      title="First page"
+                    >
+                      «
+                    </button>
+                    <button
+                      className="page-btn"
+                      disabled={!pagination?.hasPrev}
+                      onClick={() => setPage((p) => p - 1)}
+                      title="Previous page"
+                    >
+                      <ArrowLeftIcon weight="bold" size={16} />
+                    </button>
+                    <span className="page-info">
+                      Page{" "}
+                      <input
+                        type="number"
+                        className="page-input"
+                        min={1}
+                        max={pagination?.totalPages ?? 1}
+                        value={page}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
+                            setPage(val);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const val = Number(e.target.value);
+                            if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
+                              setPage(val);
+                            }
+                          }
+                        }}
+                      />{" "}
+                      of {pagination?.totalPages}
+                    </span>
+                    <button
+                      className="page-btn"
+                      disabled={!pagination?.hasNext}
+                      onClick={() => setPage((p) => p + 1)}
+                      title="Next page"
+                    >
+                      <ArrowRightIcon weight="bold" size={16} />
+                    </button>
+                    <button
+                      className="page-btn"
+                      disabled={!pagination?.hasNext}
+                      onClick={() => setPage(pagination?.totalPages)}
+                      title="Last page"
+                    >
+                      »
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </>
