@@ -29,6 +29,13 @@ if ! command -v node &>/dev/null; then
     sudo yum install -y nodejs
 fi
 
+# Install Redis if not present                                                  
+if ! command -v redis-cli &>/dev/null; then       
+    sudo dnf install redis6 -y
+    sudo systemctl enable redis6
+fi
+sudo systemctl start redis6
+
 if [ ! -d ".venv" ]; then
     python3 -m venv .venv
 fi

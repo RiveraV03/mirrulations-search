@@ -1,4 +1,5 @@
 """Flask application with pagination via HTTP headers"""
+import logging
 import os
 from datetime import date, datetime
 from flask import Flask, request, jsonify, send_from_directory, redirect, make_response
@@ -6,6 +7,9 @@ from mirrsearch.internal_logic import InternalLogic, _transform_cfr_refs
 from mirrsearch.oauth_handler import OAuthHandler, OAuthCodeError, OAuthVerificationError
 from mirrsearch.oauth_handler import TokenExpiredError, TokenInvalidError
 from mirrsearch.db import get_db
+
+
+logger = logging.getLogger(__name__)
 
 
 def _get_search_params():
@@ -114,6 +118,7 @@ def _push_job_to_redis(job_id, user_email, docket_ids, data_format, include_bina
 
 def _handle_redis_enqueue_failure(db_layer, job_id):
     """Mark the job failed after enqueue errors and return an API error response."""
+    logger.exception("Failed to enqueue download job %s", job_id)
     db_layer.update_download_job_status(job_id, "failed")
     return jsonify({"error": "Unable to queue download job"}), 503
 
@@ -504,6 +509,12 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         if not s3_url:
             return jsonify({"error": "Download file not found"}), 404
 
+        if s3_url.startswith("/"):
+            return send_from_directory(
+                os.path.dirname(s3_url),
+                os.path.basename(s3_url),
+                as_attachment=True
+            )
         return redirect(s3_url)
 
     @flask_app.route("/dockets", methods=["GET"])
