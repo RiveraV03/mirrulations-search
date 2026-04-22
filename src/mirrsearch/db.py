@@ -491,7 +491,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             print(f"OpenSearch query failed (fallback to SQL): {e}")
             return []
 
-    def _run_text_match_queries(  # pylint: disable=too-many-locals
+    def _run_text_match_queries(  # pylint: disable=too-many-locals,too-many-statements
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
         """Execute all three OpenSearch queries in parallel and merge their results.
 

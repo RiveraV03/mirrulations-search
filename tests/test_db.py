@@ -711,7 +711,7 @@ def test_text_match_terms_uses_filtered_aggregations():
     db.text_match_terms(["medicare", "medicaid"], opensearch_client=fake_client)
 
     assert len(fake_client.searches) == 3
-    bodies_by_index = {idx: body for idx, body in fake_client.searches}
+    bodies_by_index = dict(fake_client.searches)
 
     comment_body = bodies_by_index["comments"]
     assert comment_body["size"] == 0
@@ -837,6 +837,10 @@ def test_text_match_terms_one_index_failure_does_not_affect_others():
                 ]}}}
             return {"aggregations": {"by_docket": {"buckets": []}}}
 
+        def get_searches(self):
+            """Return recorded search calls."""
+            return list(self.searches)
+
     db = DBLayer()
     results = db.text_match_terms(["term"], opensearch_client=_PartiallyBrokenClient())
     assert any(r["docket_id"] == "DOC-DOCKET" for r in results)
@@ -857,19 +861,18 @@ def test_text_match_terms_results_identical_regardless_of_thread_scheduling():
     extracted_buckets = [
         _fake_os_comment_agg_bucket("D2", "matching_extracted", "e1"),
     ]
-
     db = DBLayer()
-    all_results = []
-    for _ in range(5):
-        fake_client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
-        result = db.text_match_terms(["term"], opensearch_client=fake_client)
-        sorted_result = sorted(result, key=lambda r: r["docket_id"])
-        all_results.append(sorted_result)
 
-    for run in all_results[1:]:
-        assert run == all_results[0], "Results differed between runs — possible race condition"
+    def _run_once():
+        client = _FakeOpenSearch(doc_buckets, comment_buckets, extracted_buckets)
+        return sorted(
+            db.text_match_terms(["term"], opensearch_client=client),
+            key=lambda r: r["docket_id"]
+        )
 
-# --- is_admin tests ---
+    baseline = _run_once()
+    for _ in range(4):
+        assert _run_once() == baseline, "Results differed between runs — possible race condition"
 
 def test_is_admin_no_conn_returns_false():
     assert DBLayer().is_admin("professor@email.com") is False
