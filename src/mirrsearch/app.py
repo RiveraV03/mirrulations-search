@@ -695,9 +695,25 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             return _db_error_response(str(exc))
         return jsonify(jobs)
 
+    @flask_app.route("/download/jobs/<job_id>", methods=["DELETE"])
+    def delete_download_job(job_id):
+        handler = oauth_handler or _make_oauth_handler()
+        user = _get_user_from_cookie(handler)
+
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        try:
+            deleted = db_layer.delete_download_job(job_id, user["email"])
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _db_error_response(str(exc))
+
+        if not deleted:
+            return jsonify({"error": "Job not found"}), 404
+
+        return "", 204
+
     return flask_app
-
-
 
 app = create_app(db_layer=get_db())
 
