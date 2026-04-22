@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 load_documents_s3.py — Bulk-load regulations.gov document JSON files directly
-from S3 into the documentswithfrdoc table in the Mirrulations PostgreSQL database.
+from S3 into the documents table in the Mirrulations PostgreSQL database.
 
 WHAT IT DOES:
     Paginates through all files in s3://mirrulations/raw-data/ matching the
@@ -28,22 +28,26 @@ HOW TO USE:
     3. Run the script:
 
         Without date filter:
-            nohup python3 load_documents.py > ~/load_s3_output.log 2>&1 &
+            nohup python3 load_documents_s3.py > ~/load_s3_output.log 2>&1 &
 
         With date filter (gap backfill):
-            nohup python3 load_documents.py --start-date 2025-03-20 --end-date 2025-04-20 > ~/load_s3_output.log 2>&1 &
+            nohup python3 load_documents_s3.py --start-date 2025-03-20 --end-date 2025-04-20 > ~/load_s3_output.log 2>&1 &
 
     To restart from scratch, delete the checkpoint file:
         rm ~/load_s3_checkpoint.txt
+
+    4. Check the output:
+        tail -f ~/load_s3_output.log
 """
 
 import os
 import json
 import logging
 import argparse
+import threading
 import boto3
 import psycopg2
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from datetime import datetime, timezone
 from psycopg2.extras import execute_values
 from pathlib import Path
@@ -70,8 +74,15 @@ DB_CONFIG = {
 S3_BUCKET       = os.environ.get("S3_BUCKET", "mirrulations")
 S3_PREFIX       = os.environ.get("S3_PREFIX", "raw-data/")
 CHECKPOINT_FILE = Path(os.environ.get("CHECKPOINT_FILE", os.path.expanduser("~/load_s3_checkpoint.txt")))
-BATCH_SIZE      = 2000   
-MAX_WORKERS     = 20     
+BATCH_SIZE      = 2000
+MAX_WORKERS     = 20
+MAX_IN_FLIGHT   = MAX_WORKERS * 4
+_thread_local = threading.local()
+
+def get_s3_client():
+    if not hasattr(_thread_local, "s3"):
+        _thread_local.s3 = boto3.client("s3")
+    return _thread_local.s3
 
 
 def load_checkpoint():
@@ -168,7 +179,7 @@ def map_document(raw, s3_key):
 def fetch_and_map(bucket, key):
     """Fetch a single S3 object and map it. Returns (doc, key) or (None, key)."""
     try:
-        s3       = boto3.client("s3")
+        s3       = get_s3_client()
         response = s3.get_object(Bucket=bucket, Key=key)
         raw      = json.load(response["Body"])
         doc      = map_document(raw, key)
@@ -227,13 +238,13 @@ COLUMNS = [
 ]
 
 INSERT_SQL = f"""
-    INSERT INTO documentswithfrdoc ({', '.join(COLUMNS)})
+    INSERT INTO documents ({', '.join(COLUMNS)})
     VALUES %s
     ON CONFLICT (document_id) DO UPDATE SET
         modify_date          = EXCLUDED.modify_date,
         is_open_for_comment  = EXCLUDED.is_open_for_comment,
         is_withdrawn         = EXCLUDED.is_withdrawn,
-        frdocnum             = COALESCE(EXCLUDED.frdocnum, documentswithfrdoc.frdocnum),
+        frdocnum             = COALESCE(EXCLUDED.frdocnum, documents.frdocnum),
         document_title       = EXCLUDED.document_title,
         topics               = EXCLUDED.topics,
         comment_end_date     = EXCLUDED.comment_end_date,
@@ -280,72 +291,74 @@ def main():
 
     batch           = []
     batch_keys      = []
+    skipped_keys    = []
     total_inserted  = 0
     total_skipped   = 0
-    total_processed = 0
 
     key_gen = list_eligible_keys(S3_BUCKET, S3_PREFIX, processed, start_date, end_date)
 
+    def flush_batch():
+        nonlocal total_inserted, total_skipped
+        if not batch:
+            return
+        try:
+            insert_batch(cursor, batch)
+            conn.commit()
+            save_checkpoint(batch_keys)
+            total_inserted += len(batch)
+            log.info("Inserted %d rows (total: %d)", len(batch), total_inserted)
+        except Exception as e:
+            conn.rollback()
+            log.error("Batch insert failed, rolling back: %s", e)
+            total_skipped += len(batch)
+        finally:
+            batch.clear()
+            batch_keys.clear()
+
     try:
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            chunk = []
+            pending = {}
+
             for key in key_gen:
-                chunk.append(key)
+                pending[executor.submit(fetch_and_map, S3_BUCKET, key)] = key
+                if len(pending) < MAX_IN_FLIGHT:
+                    continue
 
-                # Process in chunks to avoid overwhelming memory
-                if len(chunk) >= BATCH_SIZE * 2:
-                    futures = {executor.submit(fetch_and_map, S3_BUCKET, k): k for k in chunk}
-                    for future in as_completed(futures):
-                        doc, key = future.result()
-                        if doc:
-                            batch.append(doc)
-                            batch_keys.append(key)
-                            total_processed += 1
-
-                        if len(batch) >= BATCH_SIZE:
-                            try:
-                                insert_batch(cursor, batch)
-                                conn.commit()
-                                save_checkpoint(batch_keys)
-                                total_inserted += len(batch)
-                                log.info("Inserted %d rows (total: %d)", len(batch), total_inserted)
-                            except Exception as e:
-                                conn.rollback()
-                                log.error("Batch insert failed, rolling back: %s", e)
-                                total_skipped += len(batch)
-                            finally:
-                                batch.clear()
-                                batch_keys.clear()
-                    chunk.clear()
-
-            # Process remaining keys
-            if chunk:
-                futures = {executor.submit(fetch_and_map, S3_BUCKET, k): k for k in chunk}
-                for future in as_completed(futures):
-                    doc, key = future.result()
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for future in done:
+                    del pending[future]
+                    doc, fkey = future.result()
                     if doc:
                         batch.append(doc)
-                        batch_keys.append(key)
-                        total_processed += 1
+                        batch_keys.append(fkey)
+                    else:
+                        skipped_keys.append(fkey)
+                    if len(batch) >= BATCH_SIZE:
+                        flush_batch()
+                    if skipped_keys and len(skipped_keys) >= BATCH_SIZE:
+                        save_checkpoint(skipped_keys)
+                        skipped_keys.clear()
 
-        # Insert any remaining docs
-        if batch:
-            try:
-                insert_batch(cursor, batch)
-                conn.commit()
-                save_checkpoint(batch_keys)
-                total_inserted += len(batch)
-                log.info("Inserted final %d rows (total: %d)", len(batch), total_inserted)
-            except Exception as e:
-                conn.rollback()
-                log.error("Final batch insert failed: %s", e)
-                total_skipped += len(batch)
+            # Drain remaining in-flight futures
+            for future in as_completed(pending):
+                doc, fkey = future.result()
+                if doc:
+                    batch.append(doc)
+                    batch_keys.append(fkey)
+                else:
+                    skipped_keys.append(fkey)
+                if len(batch) >= BATCH_SIZE:
+                    flush_batch()
+
+        flush_batch()
+        if skipped_keys:
+            save_checkpoint(skipped_keys)
 
     finally:
         cursor.close()
         conn.close()
 
-    log.info("Done. Inserted: %d | Skipped: %d", total_inserted, total_skipped)
+    log.info("Done. Inserted: %d | Skipped/malformed: %d", total_inserted, total_skipped)
 
 
 if __name__ == "__main__":
