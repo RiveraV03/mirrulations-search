@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import "../styles/collections.css";
-import { getDownloadJobs } from "../api/collectionsApi";
+import { getDownloadJobs, deleteDownloadJob } from "../api/collectionsApi";
 
 const STATUS_STYLES = {
   pending:    { color: "#856404", background: "#fff8e1", border: "1px solid #ffe082" },
@@ -37,6 +37,15 @@ export default function DownloadStatusModal({ onClose }) {
     return () => clearInterval(pollId);
   }, [jobs]);
 
+  const handleRemove = async (jobId) => {
+    try {
+      await deleteDownloadJob(jobId);
+      setJobs((prev) => prev.filter((j) => j.job_id !== jobId));
+    } catch {
+      // silently ignore — job will still disappear on next poll or reload
+    }
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -68,6 +77,21 @@ export default function DownloadStatusModal({ onClose }) {
                     <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 99, fontWeight: 600, ...style }}>
                       {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
                     </span>
+                    <button
+                        onClick={() => handleRemove(job.job_id)}
+                        title="Remove"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "#aaa",
+                          fontSize: 16,
+                          lineHeight: 1,
+                          padding: "2px 4px",
+                        }}
+                      >
+                        ✕
+                      </button>
                   </div>
                   <div style={{ fontSize: 12, color: "#888" }}>
                     Format: {job.format.toUpperCase()} · Requested: {new Date(job.created_at).toLocaleString()}

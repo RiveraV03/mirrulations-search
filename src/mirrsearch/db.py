@@ -944,6 +944,16 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             }
             for row in rows
         ]
+    
+    def delete_download_job(self, job_id: str, user_email: str) -> bool:
+        """Delete a download job owned by the user. Returns True if deleted."""
+        if self.engine is None:
+            return False
+        rowcount = self._run_write(
+            "DELETE FROM download_jobs WHERE job_id = :job_id AND user_email = :email",
+            {"job_id": job_id, "email": user_email}
+        )
+        return rowcount > 0
 
 
 def _get_secrets_from_aws() -> Dict[str, str]:
