@@ -237,6 +237,11 @@ export default function App() {
                     query={query}
                     unauthorized={unauthorized}
                   />
+                  {pagination?.totalResults > 0 && (
+                    <p className="total-results-count">
+                      {pagination.totalResults.toLocaleString()} docket{pagination.totalResults === 1 ? "" : "s"} found
+                    </p>
+                  )}
                   <div className="pagination-div">
                     <button
                       className="page-button"

@@ -470,8 +470,15 @@ body {
     line-height: 1.5;
   }
 
+  .total-results-count {
+	text-align: center;
+	color: #888;
+	font-size: 14px;
+	margin: 16px 0 0;
+  }
+
   .pagination-div {
-	margin-top: 30px;
+	margin-top: 12px;
 	display: flex;
 	justify-content: center;
 	gap: 15px;
