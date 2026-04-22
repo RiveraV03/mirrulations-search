@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 BETA_MESSAGE = (
     "We're sorry, something went wrong. This app is currently in beta — "
-    "please try again later or contact support if the issue persists."
+    "please try again later."
 )
 
 
