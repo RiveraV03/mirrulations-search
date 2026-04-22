@@ -28,6 +28,7 @@ export default function App() {
   const [status, setStatus] = useState(new Set());
   const [selectedCfrParts, setSelectedCfrParts] = useState({});
   const [page, setPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -105,6 +106,7 @@ export default function App() {
       setResults(data.results);
       setPagination(data.pagination);
       setPage(newPage);
+      setPageInput(String(newPage));
     } catch (err) {
       if (err.message === "UNAUTHORIZED") {
         setUnauthorized(true);
@@ -263,19 +265,24 @@ export default function App() {
                           className="page-input"
                           min={1}
                           max={pagination?.totalPages ?? 1}
-                          value={page}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
-                              runSearch(val);
-                            }
-                          }}
+                          value={pageInput}
+                          onChange={(e) => setPageInput(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
-                              const val = Number(e.target.value);
+                              const val = Number(pageInput);
                               if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
                                 runSearch(val);
+                              } else {
+                                setPageInput(String(page));
                               }
+                            }
+                          }}
+                          onBlur={() => {
+                            const val = Number(pageInput);
+                            if (val >= 1 && val <= (pagination?.totalPages ?? 1) && val !== page) {
+                              runSearch(val);
+                            } else {
+                              setPageInput(String(page));
                             }
                           }}
                         />{" "}

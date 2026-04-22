@@ -29,6 +29,7 @@ export default function Collections() {
   const [dockets, setDockets] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
   const [docketsLoading, setDocketsLoading] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [sortMode, setSortMode] = useState(SORT_MODIFIED);
@@ -107,6 +108,10 @@ export default function Collections() {
     setPage(1);
     loadDockets(selectedCollectionId, 1, sortMode);
   }, [selectedCollectionId]);
+
+  useEffect(() => {
+    setPageInput(String(page));
+  }, [page]);
 
   useEffect(() => {
     if (!selectedCollectionId) return;
@@ -513,19 +518,24 @@ export default function Collections() {
                         className="page-input"
                         min={1}
                         max={pagination?.totalPages ?? 1}
-                        value={page}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
-                            setPage(val);
-                          }
-                        }}
+                        value={pageInput}
+                        onChange={(e) => setPageInput(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
-                            const val = Number(e.target.value);
+                            const val = Number(pageInput);
                             if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
                               setPage(val);
+                            } else {
+                              setPageInput(String(page));
                             }
+                          }
+                        }}
+                        onBlur={() => {
+                          const val = Number(pageInput);
+                          if (val >= 1 && val <= (pagination?.totalPages ?? 1) && val !== page) {
+                            setPage(val);
+                          } else {
+                            setPageInput(String(page));
                           }
                         }}
                       />{" "}
