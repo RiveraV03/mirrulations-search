@@ -133,6 +133,7 @@ def _make_oauth_handler_from_aws():
         jwt_secret=secret.get("jwt_secret", "dev-secret")
     )
 
+
 def _get_redis_client():
     """Create and return a Redis client from environment variables."""
     import redis  # pylint: disable=import-outside-toplevel
@@ -142,6 +143,41 @@ def _get_redis_client():
         db=int(os.getenv("REDIS_DB", "0")),
         decode_responses=True
     )
+
+
+def _is_worker_alive():
+    """Check if the worker is alive via its Redis heartbeat key."""
+    try:
+        r = _get_redis_client()
+        return r.exists("worker_heartbeat") == 1
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+
+def _get_demo_zip_path():
+    """Return path to the pre-zipped demo file."""
+    project_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), '..', '..')
+    )
+    return os.path.join(project_root, 'sample_download', 'sample_download.zip')
+
+
+def _handle_download_request(db_layer, user, docket_ids, data_format, include_binaries):
+    """Shared logic for single and bulk download requests."""
+    job_id = db_layer.create_download_job(
+        user["email"], docket_ids, data_format, include_binaries
+    )
+
+    if not _is_worker_alive():
+        db_layer.update_download_job_status(job_id, "demo")
+        return jsonify({"job_id": job_id, "status": "demo"}), 202
+
+    try:
+        _push_job_to_redis(job_id, user["email"], docket_ids, data_format, include_binaries)
+    except Exception:  # pylint: disable=broad-except
+        return _handle_redis_enqueue_failure(db_layer, job_id)
+
+    return jsonify({"job_id": job_id, "status": "started"}), 202
 
 
 def _push_job_to_redis(job_id, user_email, docket_ids, data_format, include_binaries):
@@ -177,7 +213,7 @@ def _get_user_from_cookie(oauth_handler):
         return None
 
 
-def _handle_oauth_callback(handler, db_layer_ref=None): # pylint: disable=too-many-locals,too-many-statements,too-many-branches,too-many-return-statements
+def _handle_oauth_callback(handler, db_layer_ref=None):  # pylint: disable=too-many-locals,too-many-statements,too-many-branches,too-many-return-statements
     """Exchange OAuth code for JWT cookie response. Returns response or None."""
     code = request.args.get("code")
     if not code:
@@ -548,22 +584,14 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         data_format = body.get("format").strip().lower()
         include_binaries = bool(body.get("include_binaries", False))
 
-        try:
-            job_id = db_layer.create_download_job(
-            user["email"], docket_ids, data_format, include_binaries
-        )
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            return _db_error_response(str(exc))
+        if not docket_ids:
+            return jsonify({"error": "docket_ids is required"}), 400
+        if len(docket_ids) > 10:
+            return jsonify({"error": "Maximum of 10 dockets per download"}), 400
+        if data_format not in ("raw", "csv"):
+            return jsonify({"error": "format must be 'raw' or 'csv'"}), 400
 
-        try:
-            _push_job_to_redis(
-                job_id, user["email"], docket_ids, data_format, include_binaries
-            )
-        except Exception:  # pylint: disable=broad-except
-            return _handle_redis_enqueue_failure(db_layer, job_id)
-
-        return jsonify({"job_id": job_id, "status": "started"}), 202
-
+        return _handle_download_request(db_layer, user, docket_ids, data_format, include_binaries)
 
     @flask_app.route("/download/status/<job_id>", methods=["GET"])
     def download_status(job_id):
@@ -581,15 +609,29 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         if not job:
             return _error_response("Job not found", 404)
 
-        return jsonify({
+        status = job["status"]
+        demo_note = None
+
+        if status == "demo":
+            import time  # pylint: disable=import-outside-toplevel
+            time.sleep(20)
+            db_layer.update_download_job_status(job_id, "ready")
+            status = "ready"
+            demo_note = "This is a temporary demo file. The real download worker is currently unavailable."
+
+        response_data = {
             "job_id": job_id,
-            "status": job["status"],
+            "status": status,
             "format": job["format"],
             "docket_ids": job["docket_ids"],
             "created_at": job["created_at"],
             "completed_at": job.get("completed_at"),
             "up_to_date": job.get("up_to_date", True)
-        })
+        }
+        if demo_note:
+            response_data["demo_note"] = demo_note
+
+        return jsonify(response_data)
 
     @flask_app.route("/download/<job_id>", methods=["GET"])
     def download_file(job_id): # pylint: disable=too-many-locals,too-many-return-statements, too-many-branches
@@ -615,8 +657,18 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         except Exception as exc:  # pylint: disable=broad-exception-caught
             return _db_error_response(str(exc))
 
+        s3_url = db_layer.get_download_s3_url(job_id, user["email"])
+
         if not s3_url:
-            return _error_response("Download file not found", 404)
+            demo_path = _get_demo_zip_path()
+            if os.path.isfile(demo_path):
+                return send_from_directory(
+                    os.path.dirname(demo_path),
+                    os.path.basename(demo_path),
+                    as_attachment=True,
+                    download_name="sample_download.zip"
+                )
+            return jsonify({"error": "Download file not found"}), 404
 
         return (
             send_from_directory(
@@ -663,21 +715,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         data_format = (body.get("format") or "").strip().lower()
         include_binaries = bool(body.get("include_binaries"))
 
-        try:
-            job_id = db_layer.create_download_job(
-                user["email"], [docket_id], data_format, include_binaries
-            )
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            return _db_error_response(str(exc))
+        if data_format not in ("raw", "csv"):
+            return jsonify({"error": "format must be 'raw' or 'csv'"}), 400
 
-        try:
-            _push_job_to_redis(
-                job_id, user["email"], [docket_id], data_format, include_binaries
-            )
-        except Exception:  # pylint: disable=broad-except
-            return _handle_redis_enqueue_failure(db_layer, job_id)
-
-        return jsonify({"job_id": job_id, "status": "started"}), 202
+        return _handle_download_request(db_layer, user, [docket_id], data_format, include_binaries)
 
     @flask_app.route("/collections")
     def collections_page():
@@ -714,6 +755,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return "", 204
 
     return flask_app
+
 
 app = create_app(db_layer=get_db())
 
