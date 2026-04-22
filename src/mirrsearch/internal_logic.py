@@ -182,23 +182,30 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
 
         # Enhance title rows with OpenSearch counts
         self._enhance_rows_with_os_counts(title_rows, os_counts_by_id)
-
-        # Get full text rows for new IDs
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        title_count = len(title_rows)
+        page_title_rows = title_rows[start_idx:end_idx]
+        ft_start = max(0, start_idx - title_count)
+        ft_end = max(0, end_idx - title_count)
+        page_ft_ids = new_ids_ordered[ft_start:ft_end]
         full_text_rows = self._get_full_text_rows(
-            new_ids_ordered, os_counts_by_id, docket_type_param, agency, cfr_part_param,
+            page_ft_ids, os_counts_by_id, docket_type_param, agency, cfr_part_param,
             start_date, end_date
         )
-
-        all_results = title_rows + full_text_rows
-
-        # Add totals and scores
-        self._add_totals_and_scores(all_results)
-
-        # Sort results
+        all_results = page_title_rows + full_text_rows
         self._sort_results(all_results, sort_by=sort_by)
+        self._add_totals_and_scores(all_results)
+        total_results = title_count + len(new_ids_ordered)
+        total_pages = (total_results + page_size - 1) // page_size
+        paginated = self._paginate_results(all_results, 1, page_size)
+        paginated['pagination']['total_results'] = total_results
+        paginated['pagination']['total_pages'] = total_pages
+        paginated['pagination']['page'] = page
+        paginated['pagination']['has_prev'] = page > 1
+        paginated['pagination']['has_next'] = page < total_pages
+        return paginated
 
-        # Paginate
-        return self._paginate_results(all_results, page, page_size)
 
     def _get_new_docket_ids(self, os_hits, title_ids):
         """Extract docket IDs from OpenSearch hits not already in title results."""
@@ -271,9 +278,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         else:
             rows.sort(
                 key=lambda r: (
-                    r.get("correlation_score", 0.0),
                     int(r.get("document_match_count", 0)) + int(r.get("comment_match_count", 0)),
-                    int(r.get("document_total_count", 0)) + int(r.get("comment_total_count", 0)),
                     r.get("docket_id", ""),
                 ),
                 reverse=True
