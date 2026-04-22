@@ -1644,3 +1644,84 @@ def test_admin_status_db_error_returns_503(tmp_path): # pylint: disable=redefine
 
     client = _make_client_for_db(tmp_path, db) # pylint: disable=redefined-outer-name
     _assert_beta_503(client.get("/admin/status")) # pylint: disable=redefined-outer-name
+
+def test_delete_download_job_success(client): # pylint: disable=redefined-outer-name
+    """DELETE /download/jobs/<job_id> deletes an existing job and returns 204"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
+    response = client.delete(f'/download/jobs/{job_id}')
+    assert response.status_code == 204
+    assert response.data == b''
+
+
+def test_delete_download_job_not_found(client): # pylint: disable=redefined-outer-name
+    """DELETE /download/jobs/<job_id> returns 404 for a nonexistent job"""
+    response = client.delete('/download/jobs/nonexistent-job-id')
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "Job not found"
+
+
+def test_delete_download_job_requires_auth(app): # pylint: disable=redefined-outer-name
+    """DELETE /download/jobs/<job_id> returns 401 without a cookie"""
+    response = app.test_client().delete('/download/jobs/some-job-id')
+    assert response.status_code == 401
+
+
+def test_delete_download_job_db_error_returns_503(tmp_path):
+    """DB failure in delete_download_job returns 503 with beta error message"""
+    client = _make_client_for_db(tmp_path, _make_broken_db("delete_download_job")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.delete("/download/jobs/some-job-id"))
+
+
+def test_delete_download_job_removes_from_job_list(client): # pylint: disable=redefined-outer-name
+    """Job deleted via DELETE /download/jobs/<job_id> no longer appears in GET /download/jobs"""
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
+    client.delete(f'/download/jobs/{job_id}') # pylint: disable=redefined-outer-name
+    jobs = client.get('/download/jobs').get_json() # pylint: disable=redefined-outer-name
+    assert all(j["job_id"] != job_id for j in jobs)
+
+
+def test_delete_download_job_cannot_delete_other_users_job(tmp_path): # pylint: disable=too-many-locals
+    """DELETE /download/jobs/<job_id> returns 404 when job belongs to a different user"""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>")
+    db = MockDBLayer()
+
+    class OtherUserOAuthHandler(MockOAuthHandler):
+        def validate_jwt_token(self, token):
+            return "Other User|other@example.com"
+
+    other_app = create_app(
+        dist_dir=str(dist), db_layer=db, oauth_handler=OtherUserOAuthHandler()
+    )
+    other_app.config['TESTING'] = True
+
+    # Create a job as the other user
+    other_client = other_app.test_client()
+    other_client.set_cookie("jwt_token", "mock-token")
+    with patch('mirrsearch.app._push_job_to_redis'):
+        job_id = other_client.post('/download/request', json={
+            "docket_ids": ["CMS-2025-0240"],
+            "format": "raw",
+            "include_binaries": False
+        }).get_json()["job_id"]
+
+    # Try to delete as test@example.com (the default MockOAuthHandler user)
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=db, oauth_handler=MockOAuthHandler()
+    )
+    test_app.config['TESTING'] = True
+    test_client = test_app.test_client()
+    test_client.set_cookie("jwt_token", "mock-token")
+    response = test_client.delete(f'/download/jobs/{job_id}')
+    assert response.status_code == 404

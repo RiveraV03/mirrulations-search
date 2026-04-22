@@ -323,6 +323,7 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods,protected-access
         job_id = f"mock-job-{len(self._jobs) + 1}"
         self._jobs[job_id] = {
             "job_id": job_id,
+            "user_email": user_email,
             "status": "pending",
             "format": data_format,
             "docket_ids": docket_ids,
@@ -362,3 +363,15 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods,protected-access
     def get_download_jobs(self, user_email):  # pylint: disable=unused-argument
         """Return all download jobs for a user."""
         return list(self._jobs.values())
+
+    def delete_download_job(self, job_id: str, user_email: str) -> bool:
+        """Delete a download job if it exists and belongs to the user."""
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+
+        if job.get("user_email") and job["user_email"] != user_email:
+            return False
+
+        del self._jobs[job_id]
+        return True
