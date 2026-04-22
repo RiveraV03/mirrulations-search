@@ -8,7 +8,7 @@ from datetime import datetime
 from unittest.mock import patch, MagicMock
 import pytest
 from mock_db import MockDBLayer
-from mirrsearch.app import create_app
+from mirrsearch.app import create_app, BETA_MESSAGE
 from mirrsearch.db import get_db, get_opensearch_connection
 from mirrsearch.app import _make_oauth_handler
 
@@ -1284,7 +1284,7 @@ def test_oauth_callback_exception_in_authorized_check(tmp_path):
 
 
 def test_get_user_last_login_service_unavailable(tmp_path):
-    """Test /api/user/last-login returns 503 when db_layer is None"""
+    """Test /api/user/last-login returns 503 when db_model is None"""
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "index.html").write_text("<html></html>")
@@ -1459,3 +1459,188 @@ def test_list_download_jobs_multiple(client):  # pylint: disable=redefined-outer
     data = response.get_json()
 
     assert len(data) >= 2
+
+def _make_broken_db(method_name): # pylint: disable=redefined-outer-name
+    """Return a MockDBLayer whose *method_name* always raises RuntimeError."""
+    db = MockDBLayer()
+    db.add_admin("test@example.com")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("DB connection lost")
+
+    setattr(db, method_name, _boom)
+    return db
+
+
+def _make_client_for_db(tmp_path, db): # pylint: disable=redefined-outer-name
+    """Build an authenticated test client backed by the given db_layer."""
+    dist = tmp_path / "dist"
+    dist.mkdir(exist_ok=True)
+    (dist / "index.html").write_text("<html></html>")
+    test_app = create_app(
+        dist_dir=str(dist), db_layer=db, oauth_handler=MockOAuthHandler()
+    )
+    test_app.config["TESTING"] = True
+    c = test_app.test_client()
+    c.set_cookie("jwt_token", "mock-token")
+    return c
+
+
+def _assert_beta_503(response): # pylint: disable=redefined-outer-name
+    """Assert the response is a 503 carrying the beta user-facing message."""
+    assert response.status_code == 503, (
+        f"Expected 503, got {response.status_code}: {response.get_data(as_text=True)}"
+    )
+    data = response.get_json()
+    assert data is not None
+    assert data.get("error") == BETA_MESSAGE
+
+
+def test_beta_message_mentions_beta(): # pylint: disable=redefined-outer-name
+    """BETA_MESSAGE explicitly mentions beta so users understand the app state."""
+    assert "beta" in BETA_MESSAGE.lower()
+
+
+def test_beta_message_suggests_retry(): # pylint: disable=redefined-outer-name
+    """BETA_MESSAGE tells the user to try again later."""
+    assert "try again" in BETA_MESSAGE.lower()
+
+
+def test_search_db_error_returns_503_with_beta_message(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure during search returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("search")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/search/?str=test"))
+
+
+def test_agencies_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in get_agencies returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("get_agencies")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/agencies"))
+
+
+def test_get_collections_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in get_collections returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("get_collections")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/api/collections"))
+
+
+def test_create_collection_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in create_collection returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("create_collection")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.post("/api/collections", json={"name": "My List"}))
+
+
+def test_delete_collection_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in delete_collection returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("delete_collection")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.delete("/api/collections/1"))
+
+
+def test_get_collection_dockets_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure while fetching collection dockets returns 503."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("get_collections")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/api/collections/1/dockets"))
+
+
+def test_add_docket_to_collection_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in add_docket_to_collection returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("add_docket_to_collection")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(
+        client.post("/api/collections/1/dockets", json={"docket_id": "CMS-2025-0240"})
+    )
+
+
+def test_remove_docket_from_collection_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in remove_docket_from_collection returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("remove_docket_from_collection")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.delete("/api/collections/1/dockets/CMS-2025-0240"))
+
+
+def test_request_download_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in create_download_job (bulk) returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("create_download_job")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.post("/download/request", json={
+        "docket_ids": ["CMS-2025-0240"], "format": "raw", "include_binaries": False
+    }))
+
+
+def test_request_single_download_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in create_download_job (single) returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("create_download_job")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.post("/download/request/CMS-2025-0240", json={
+        "format": "raw", "include_binaries": False
+    }))
+
+
+def test_download_status_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in get_download_job (status) returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("get_download_job")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/download/status/some-job-id"))
+
+
+def test_download_file_get_job_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in get_download_job (file fetch) returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("get_download_job")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/download/some-job-id"))
+
+
+def test_download_file_s3_url_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in get_download_s3_url on a ready job returns 503."""
+    db = MockDBLayer()
+    db.add_admin("test@example.com")
+    client = _make_client_for_db(tmp_path, db) # pylint: disable=redefined-outer-name
+
+    with patch('mirrsearch.app._push_job_to_redis'): # pylint: disable=redefined-outer-name
+        job_id = client.post('/download/request', json={ # pylint: disable=redefined-outer-name
+            "docket_ids": ["CMS-2025-0240"], "format": "raw", "include_binaries": False
+        }).get_json()["job_id"]
+    db.set_job_ready(job_id, "https://s3.example.com/file.zip")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("S3 presign failed")
+    db.get_download_s3_url = _boom
+
+    _assert_beta_503(client.get(f"/download/{job_id}"))
+
+
+def test_list_download_jobs_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in get_download_jobs returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("get_download_jobs")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/download/jobs"))
+
+
+def test_get_dockets_by_ids_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in get_dockets_by_ids returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("get_dockets_by_ids")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/dockets?docket_id=CMS-2025-0240"))
+
+
+def test_get_user_last_login_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB failure in get_last_login returns 503 with the beta error message."""
+    client = _make_client_for_db(tmp_path, _make_broken_db("get_last_login")) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/api/user/last-login"))
+
+
+def test_admin_get_users_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB error in get_authorized_users returns 503 with beta message for admin user."""
+    db = MockDBLayer()
+    db.add_admin("test@example.com")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("DB down")
+    db.get_authorized_users = _boom
+
+    client = _make_client_for_db(tmp_path, db) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/admin/users"))
+
+
+def test_admin_status_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
+    """DB error in is_admin on /admin/status returns 503 with beta message."""
+    db = MockDBLayer()
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("DB down")
+    db.is_admin = _boom
+
+    client = _make_client_for_db(tmp_path, db) # pylint: disable=redefined-outer-name
+    _assert_beta_503(client.get("/admin/status")) # pylint: disable=redefined-outer-name
