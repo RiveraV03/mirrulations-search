@@ -118,7 +118,7 @@ const handleDownload = async () => {
  
   const Checkbox = ({ checked, onChange }) => (
     <div
-      onClick={onChange}
+      onClick={(e) => { e.stopPropagation(); onChange(); }}
       style={{
         width: 18,
         height: 18,
