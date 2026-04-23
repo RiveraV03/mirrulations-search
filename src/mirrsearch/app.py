@@ -164,9 +164,12 @@ def _get_demo_zip_path():
 
 def _handle_download_request(db_layer, user, docket_ids, data_format, include_binaries):
     """Shared logic for single and bulk download requests."""
-    job_id = db_layer.create_download_job(
-        user["email"], docket_ids, data_format, include_binaries
-    )
+    try:
+        job_id = db_layer.create_download_job(
+            user["email"], docket_ids, data_format, include_binaries
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        return _db_error_response(str(exc))
 
     if not _is_worker_alive():
         db_layer.update_download_job_status(job_id, "demo")
@@ -594,7 +597,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         return _handle_download_request(db_layer, user, docket_ids, data_format, include_binaries)
 
     @flask_app.route("/download/status/<job_id>", methods=["GET"])
-    def download_status(job_id):
+    def download_status(job_id):  # pylint: disable=too-many-locals
         handler = oauth_handler or _make_oauth_handler()
         user = _get_user_from_cookie(handler)
 
@@ -617,7 +620,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             time.sleep(20)
             db_layer.update_download_job_status(job_id, "ready")
             status = "ready"
-            demo_note = "This is a temporary demo file. The real download worker is currently unavailable."
+            demo_note = (
+                "This is a temporary demo file. "
+                "The real download worker is currently unavailable."
+            )
 
         response_data = {
             "job_id": job_id,

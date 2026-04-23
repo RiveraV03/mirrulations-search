@@ -585,7 +585,8 @@ def test_get_opensearch_connection(mock_opensearch):
 
 def test_request_download_returns_job_id(client):  # pylint: disable=redefined-outer-name
     """POST /download/request returns job_id and started status"""
-    with patch('mirrsearch.app._push_job_to_redis'):
+    with patch('mirrsearch.app._push_job_to_redis'), \
+         patch('mirrsearch.app._is_worker_alive', return_value=True):
         response = client.post('/download/request', json={
             "docket_ids": ["CMS-2025-0240"],
             "format": "raw",
@@ -720,14 +721,16 @@ def test_download_file_redirects_to_s3_url(client, mock_db):  # pylint: disable=
 
 def test_download_file_no_s3_url_returns_404(client, mock_db):  # pylint: disable=redefined-outer-name
     """GET /download/<job_id> returns 404 when job is ready but s3_url is missing"""
-    with patch('mirrsearch.app._push_job_to_redis'):
+    with patch('mirrsearch.app._push_job_to_redis'), \
+         patch('mirrsearch.app._is_worker_alive', return_value=True), \
+         patch('mirrsearch.app._get_demo_zip_path', return_value='/nonexistent/path.zip'):
         job_id = client.post('/download/request', json={
             "docket_ids": ["CMS-2025-0240"],
             "format": "raw",
             "include_binaries": False
         }).get_json()["job_id"]
-    mock_db.update_download_job_status(job_id, "ready")
-    response = client.get(f'/download/{job_id}')
+        mock_db.update_download_job_status(job_id, "ready")
+        response = client.get(f'/download/{job_id}')
     assert response.status_code == 404
 
 
@@ -816,7 +819,8 @@ def test_internal_logic_error_handling(client): # pylint: disable=redefined-oute
 
 def test_request_single_download_returns_job_id(client):  # pylint: disable=redefined-outer-name
     """POST /download/request/<docket_id> returns job_id and started status"""
-    with patch('mirrsearch.app._push_job_to_redis'):
+    with patch('mirrsearch.app._push_job_to_redis'), \
+         patch('mirrsearch.app._is_worker_alive', return_value=True):
         response = client.post('/download/request/CMS-2025-0240', json={
             "format": "raw",
             "include_binaries": False
@@ -870,7 +874,8 @@ def test_request_single_download_status_checkable(client):  # pylint: disable=re
 
 def test_request_download_pushes_to_redis(client):  # pylint: disable=redefined-outer-name
     """POST /download/request pushes job to Redis queue"""
-    with patch('mirrsearch.app._push_job_to_redis') as mock_push:
+    with patch('mirrsearch.app._push_job_to_redis') as mock_push, \
+         patch('mirrsearch.app._is_worker_alive', return_value=True):
         response = client.post('/download/request', json={
             "docket_ids": ["CMS-2025-0240"],
             "format": "raw",
@@ -886,7 +891,8 @@ def test_request_download_pushes_to_redis(client):  # pylint: disable=redefined-
 
 def test_request_single_download_pushes_to_redis(client):  # pylint: disable=redefined-outer-name
     """POST /download/request/<docket_id> pushes job to Redis queue"""
-    with patch('mirrsearch.app._push_job_to_redis') as mock_push:
+    with patch('mirrsearch.app._push_job_to_redis') as mock_push, \
+         patch('mirrsearch.app._is_worker_alive', return_value=True):
         response = client.post('/download/request/CMS-2025-0240', json={
             "format": "raw",
             "include_binaries": False
@@ -899,7 +905,8 @@ def test_request_single_download_pushes_to_redis(client):  # pylint: disable=red
 
 def test_request_download_redis_failure_marks_job_failed(client):  # pylint: disable=redefined-outer-name
     """POST /download/request returns 503 and marks the job failed if Redis push fails"""
-    with patch('mirrsearch.app._push_job_to_redis', side_effect=Exception("Redis down")):
+    with patch('mirrsearch.app._push_job_to_redis', side_effect=Exception("Redis down")), \
+         patch('mirrsearch.app._is_worker_alive', return_value=True):
         response = client.post('/download/request', json={
             "docket_ids": ["CMS-2025-0240"],
             "format": "raw",
@@ -918,7 +925,8 @@ def test_request_download_redis_failure_marks_job_failed(client):  # pylint: dis
 def test_single_download_redis_failure_marks_job_failed(  # pylint: disable=redefined-outer-name
         client):
     """Single-docket download returns 503 and marks the job failed on Redis errors."""
-    with patch('mirrsearch.app._push_job_to_redis', side_effect=Exception("Redis down")):
+    with patch('mirrsearch.app._push_job_to_redis', side_effect=Exception("Redis down")), \
+         patch('mirrsearch.app._is_worker_alive', return_value=True):
         response = client.post('/download/request/CMS-2025-0240', json={
             "format": "raw",
             "include_binaries": False
@@ -1339,7 +1347,8 @@ def test_download_file_s3_url_not_found(tmp_path):
     test_app.config['TESTING'] = True
     c = test_app.test_client()
     c.set_cookie("jwt_token", "mock-token")
-    response = c.get('/download/mock-job-1')
+    with patch('mirrsearch.app._get_demo_zip_path', return_value='/nonexistent/path.zip'):
+        response = c.get('/download/mock-job-1')
     assert response.status_code == 404
     data = response.get_json()
     assert data["error"] == "Download file not found"
@@ -1559,17 +1568,19 @@ def test_remove_docket_from_collection_db_error_returns_503(tmp_path): # pylint:
 def test_request_download_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
     """DB failure in create_download_job (bulk) returns 503 with the beta error message."""
     client = _make_client_for_db(tmp_path, _make_broken_db("create_download_job")) # pylint: disable=redefined-outer-name
-    _assert_beta_503(client.post("/download/request", json={
-        "docket_ids": ["CMS-2025-0240"], "format": "raw", "include_binaries": False
-    }))
+    with patch('mirrsearch.app._is_worker_alive', return_value=True):
+        _assert_beta_503(client.post("/download/request", json={
+            "docket_ids": ["CMS-2025-0240"], "format": "raw", "include_binaries": False
+        }))
 
 
 def test_request_single_download_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
     """DB failure in create_download_job (single) returns 503 with the beta error message."""
     client = _make_client_for_db(tmp_path, _make_broken_db("create_download_job")) # pylint: disable=redefined-outer-name
-    _assert_beta_503(client.post("/download/request/CMS-2025-0240", json={
-        "format": "raw", "include_binaries": False
-    }))
+    with patch('mirrsearch.app._is_worker_alive', return_value=True):
+        _assert_beta_503(client.post("/download/request/CMS-2025-0240", json={
+            "format": "raw", "include_binaries": False
+        }))
 
 
 def test_download_status_db_error_returns_503(tmp_path): # pylint: disable=redefined-outer-name
