@@ -23,7 +23,7 @@ function scoreResult(item) {
 }
 
 
-export default function ResultsPanel({ results, loading, hasSearched, query, unauthorized, onOpenDownloadStatus }) {
+export default function ResultsPanel({ results, loading, hasSearched, query, unauthorized, error, onOpenDownloadStatus }) {
 
  const [modalDocketId, setModalDocketId] = useState(null);
  const [downloadDocketId, setDownloadDocketId] = useState(null)
@@ -50,6 +50,17 @@ export default function ResultsPanel({ results, loading, hasSearched, query, una
    );
  }
  if (!hasSearched) return null;
+
+ if (error) {
+  return (
+    <div className="results">
+      <p style={{ color: "red" }}>
+        {error}
+      </p>
+    </div>
+  );
+ }
+
  if (!results || results.length === 0) {
    return (
      <div className="results">
