@@ -149,7 +149,7 @@ export default function App() {
               <SiteNavbar theme="light" layout="app" onCheckDownloads={() => setOpenDownloadStatus(true)} />
               <div className="layout layout-single">
                 <main className="main">
-                  <Collections />
+                  <Collections onOpenDownloadStatus={() => setOpenDownloadStatus(true)}/>
                 </main>
               </div>
               {openDownloadStatus && (
@@ -236,6 +236,7 @@ export default function App() {
                     hasSearched={hasSearched}
                     query={query}
                     unauthorized={unauthorized}
+                    onOpenDownloadStatus={() => setOpenDownloadStatus(true)}
                   />
                   <div className="pagination-div">
                     <button

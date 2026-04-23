@@ -23,7 +23,7 @@ function scoreResult(item) {
 }
 
 
-export default function ResultsPanel({ results, loading, hasSearched, query, unauthorized }) {
+export default function ResultsPanel({ results, loading, hasSearched, query, unauthorized, onOpenDownloadStatus }) {
 
  const [modalDocketId, setModalDocketId] = useState(null);
  const [downloadDocketId, setDownloadDocketId] = useState(null)
@@ -77,6 +77,7 @@ export default function ResultsPanel({ results, loading, hasSearched, query, una
         collectionName={null}
         docketIds={[downloadDocketId]}
         onClose={() => setDownloadDocketId(null)}
+        onOpenDownloadStatus={onOpenDownloadStatus}
       />
     )}
 

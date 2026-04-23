@@ -29,7 +29,7 @@ const FORMAT_OPTIONS = [
   { id: "csv", label: "CSV" },
 ];
 
-export default function DownloadModal({ collectionName, docketIds, onClose }) {
+export default function DownloadModal({ collectionName, docketIds, onClose, onOpenDownloadStatus }) {
   const [selected, setSelected] = useState(new Set(["metadata"]));
   const [format, setFormat] = useState("raw");
   const [status, setStatus] = useState(null); // null | "pending" | "ready"
@@ -101,6 +101,9 @@ const handleDownload = async () => {
     const data = await response.json();
     setJobId(data.job_id);
     setStatus("pending");
+    onClose();
+    console.log("TYPE:", typeof onOpenDownloadStatus);
+    onOpenDownloadStatus();
   } catch (err) {
     if (err.message === "UNAUTHORIZED") {
       setError("Your session expired. Please log in again.");
