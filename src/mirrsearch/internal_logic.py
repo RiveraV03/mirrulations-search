@@ -236,7 +236,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             row["document_match_count"] = hit["document_match_count"] if hit else 0
             row["comment_match_count"] = hit["comment_match_count"] if hit else 0
 
-    def _filter_docket_ids(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def _filter_docket_ids(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
             self, docket_ids, docket_type_param, agency, cfr_part_param,
             start_date=None, end_date=None):
         """Return only the docket IDs that pass the advanced filters."""
