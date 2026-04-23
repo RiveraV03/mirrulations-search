@@ -102,7 +102,6 @@ const handleDownload = async () => {
     setJobId(data.job_id);
     setStatus("pending");
     onClose();
-    console.log("TYPE:", typeof onOpenDownloadStatus);
     onOpenDownloadStatus();
   } catch (err) {
     if (err.message === "UNAUTHORIZED") {
