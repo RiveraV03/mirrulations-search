@@ -182,6 +182,15 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
 
         # Enhance title rows with OpenSearch counts
         self._enhance_rows_with_os_counts(title_rows, os_counts_by_id)
+
+        # Filter OpenSearch-only IDs so the count is accurate when filters are active
+        if new_ids_ordered and any([docket_type_param, agency, cfr_part_param,
+                                    start_date, end_date]):
+            new_ids_ordered = self._filter_docket_ids(
+                new_ids_ordered, docket_type_param, agency, cfr_part_param,
+                start_date, end_date
+            )
+
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
         title_count = len(title_rows)
@@ -226,6 +235,22 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             hit = os_counts_by_id.get(did)
             row["document_match_count"] = hit["document_match_count"] if hit else 0
             row["comment_match_count"] = hit["comment_match_count"] if hit else 0
+
+    def _filter_docket_ids(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+            self, docket_ids, docket_type_param, agency, cfr_part_param,
+            start_date=None, end_date=None):
+        """Return only the docket IDs that pass the advanced filters."""
+        if not docket_ids:
+            return []
+        fetched = self.db_layer.get_dockets_by_ids(docket_ids)
+        by_id = {str(r["docket_id"]): r for r in fetched}
+        return [
+            did for did in docket_ids
+            if did in by_id and _row_matches_advanced_filters(
+                by_id[did], docket_type_param, agency, cfr_part_param,
+                start_date, end_date
+            )
+        ]
 
     def _get_full_text_rows(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
             self, docket_ids, os_counts_by_id,

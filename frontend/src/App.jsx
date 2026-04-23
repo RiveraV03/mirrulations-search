@@ -104,7 +104,15 @@ export default function App() {
       );
 
       setResults(data.results);
-      setPagination(data.pagination);
+      const pag = data.pagination;
+      if (pag && !pag.hasNext && pag.page > 0) {
+        const corrected = (pag.page - 1) * pag.pageSize + data.results.length;
+        if (corrected < pag.totalResults) {
+          pag.totalResults = corrected;
+          pag.totalPages = Math.max(1, Math.ceil(corrected / pag.pageSize));
+        }
+      }
+      setPagination(pag);
       setPage(newPage);
       setPageInput(String(newPage));
     } catch (err) {
