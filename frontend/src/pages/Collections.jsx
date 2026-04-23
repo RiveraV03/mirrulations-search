@@ -16,7 +16,7 @@ const MAX_DOCKETS = 10;
 const SORT_MODIFIED = "modified";
 const SORT_ALPHABETICAL = "alphabetical";
 
-export default function Collections() {
+export default function Collections({ onOpenDownloadStatus }) {
   const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -518,6 +518,7 @@ export default function Collections() {
           collectionName={selectedCollection?.name}
           docketIds={docketsForModal}
           onClose={() => setShowDownloadModal(false)}
+          onOpenDownloadStatus={onOpenDownloadStatus}
         />
       )}
     </section>
