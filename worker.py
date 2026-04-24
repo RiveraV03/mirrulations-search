@@ -50,6 +50,19 @@ def _get_redis():
 
 
 def _get_pg_conn():
+    use_aws = os.getenv("USE_AWS_SECRETS", "").lower() in {"1", "true", "yes", "on"}
+    if use_aws:
+        client = boto3.client("secretsmanager", region_name="us-east-1")
+        secret = json.loads(
+            client.get_secret_value(SecretId="mirrulationsdb/postgres/master")["SecretString"]
+        )
+        return psycopg2.connect(
+            host=secret["host"],
+            port=secret.get("port", 5432),
+            database=secret["db"],
+            user=secret["username"],
+            password=secret["password"],
+        )
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=os.getenv("DB_PORT", "5432"),
