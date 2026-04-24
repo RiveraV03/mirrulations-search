@@ -115,7 +115,7 @@ export default function DownloadStatusModal({ onClose }) {
                   <div style={{ fontSize: 12, color: "#888" }}>
                     Format: {job.format.toUpperCase()} · Requested: {new Date(job.created_at).toLocaleString()}
                   </div>
-                  {job.status === "ready" && (
+                  {(job.status === "ready" || job.status === "demo") && (
                     <button
                       className="modal-btn-add-small"
                       style={{ marginTop: 4 }}
