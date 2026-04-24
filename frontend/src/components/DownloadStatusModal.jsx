@@ -15,6 +15,34 @@ export default function DownloadStatusModal({ onClose }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    const hasActiveJobs = jobs.some(
+      (j) =>
+        j.status === "pending" ||
+        j.status === "processing" ||
+        j.status === "demo"
+    );
+  
+    if (!hasActiveJobs) return;
+  
+    const interval = setInterval(async () => {
+      const jobsToCheck = jobs.filter((j) =>
+        ["pending", "processing", "demo"].includes(j.status)
+      );
+  
+      await Promise.all(
+        jobsToCheck.map((j) =>
+          fetch(`/download/status/${j.job_id}`).catch(() => {})
+        )
+      );
+  
+      const updated = await getDownloadJobs();
+      setJobs(updated);
+    }, 5000);
+  
+    return () => clearInterval(interval);
+  }, [jobs.map(j => j.status).join(",")]);
+
+  useEffect(() => {
     let cancelled = false;
     getDownloadJobs()
       .then((data) => { if (!cancelled) setJobs(data); })
@@ -115,7 +143,7 @@ export default function DownloadStatusModal({ onClose }) {
                   <div style={{ fontSize: 12, color: "#888" }}>
                     Format: {job.format.toUpperCase()} · Requested: {new Date(job.created_at).toLocaleString()}
                   </div>
-                  {(job.status === "ready" || job.status === "demo") && (
+                  {(job.status === "ready") && (
                     <button
                       className="modal-btn-add-small"
                       style={{ marginTop: 4 }}

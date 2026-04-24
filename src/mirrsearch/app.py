@@ -1,4 +1,5 @@
 """Flask application with pagination via HTTP headers"""
+import time
 import logging
 import os
 from datetime import date, datetime
@@ -616,8 +617,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         demo_note = None
 
         if status == "demo":
-            import time  # pylint: disable=import-outside-toplevel
-            time.sleep(20)
+            time.sleep(5)
             db_layer.update_download_job_status(job_id, "ready")
             status = "ready"
             demo_note = (
