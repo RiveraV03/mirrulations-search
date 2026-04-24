@@ -179,7 +179,7 @@ def _zip_output(source_dir, zip_path):
     log.info("Zipped output to %s", zip_path)
 
 
-def _upload_to_s3(zip_path, job_id):
+def _upload_to_s3(zip_path, job_id, user_email):
     """Upload zip_path to S3 and return the s3:// URI.
     Falls back to saving locally if S3_BUCKET is not set."""
     bucket = os.getenv("S3_BUCKET", "")
@@ -190,10 +190,22 @@ def _upload_to_s3(zip_path, job_id):
         shutil.copy2(zip_path, dest)
         log.info("S3_BUCKET not set — saved locally to %s", dest)
         return f"local://{dest}"
+    
+    username = user_email.split("@")[0]  # e.g. "john.smith" from "john.smith@gmail.com"
+    date_str = time.strftime("%Y-%m-%d")  # e.g. "2026-04-23"
+    filename = f"{username}_{date_str}.zip"  # e.g. "john.smith_2026-04-23.zip"
+
     key = f"downloads/{job_id}.zip"
     s3 = boto3.client("s3")
     log.info("Uploading %s to s3://%s/%s", zip_path, bucket, key)
-    s3.upload_file(zip_path, bucket, key)
+    s3.upload_file(
+        zip_path,
+        bucket,
+        key,
+        ExtraArgs={
+            "ContentDisposition": f'attachment; filename="{filename}"'
+        }
+    )
     return f"s3://{bucket}/{key}"
 
 
@@ -221,25 +233,26 @@ def _parse_payload(payload_str):
         payload["docket_ids"],
         payload["format"],
         payload.get("include_binaries", False),
+        payload["user_email"],
     )
 
 
-def _process_job(payload_str):  # pylint: disable=too-many-locals
-    job_id, docket_ids, data_format, include_binaries = _parse_payload(payload_str)
+def _process_job(payload_str):
+    job_id, docket_ids, data_format, include_binaries, user_email = _parse_payload(payload_str)
     log.info("Processing job %s: format=%s dockets=%s", job_id, data_format, docket_ids)
     conn = _get_pg_conn()
     try:
         _update_job_status(conn, job_id, "processing")
         with tempfile.TemporaryDirectory() as work_dir:
             zip_path = _build_zip(job_id, docket_ids, data_format, include_binaries, work_dir)
-            s3_uri = _upload_to_s3(zip_path, job_id)
+            s3_uri = _upload_to_s3(zip_path, job_id, user_email)  # pass it here
         _update_job_status(conn, job_id, "ready", s3_uri)
         log.info("Job %s complete: %s", job_id, s3_uri)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         log.exception("Job %s failed: %s", job_id, exc)
         try:
             _update_job_status(conn, job_id, "failed")
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             log.exception("Could not update job %s to failed", job_id)
     finally:
         conn.close()
