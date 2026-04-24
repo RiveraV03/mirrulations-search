@@ -631,7 +631,7 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
             "format": job["format"],
             "docket_ids": job["docket_ids"],
             "created_at": job["created_at"],
-            "completed_at": job.get("completed_at"),
+            "completed_at": job.get("updated_at"),
             "up_to_date": job.get("up_to_date", True)
         }
         if demo_note:
@@ -663,8 +663,6 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         except Exception as exc:  # pylint: disable=broad-exception-caught
             return _db_error_response(str(exc))
 
-        s3_url = db_layer.get_download_s3_url(job_id, user["email"])
-
         if not s3_url:
             demo_path = _get_demo_zip_path()
             if os.path.isfile(demo_path):
@@ -676,15 +674,13 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
                 )
             return jsonify({"error": "Download file not found"}), 404
 
-        return (
-            send_from_directory(
+        if s3_url.startswith("/"):
+            return send_from_directory(
                 os.path.dirname(s3_url),
                 os.path.basename(s3_url),
-                as_attachment=True
+             as_attachment=True
             )
-            if s3_url.startswith("/")
-            else redirect(s3_url)
-        )
+        return redirect(s3_url)
 
     @flask_app.route("/dockets", methods=["GET"])
     def get_dockets_by_ids():
