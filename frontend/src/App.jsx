@@ -38,6 +38,7 @@ export default function App() {
   const [openDownloadStatus, setOpenDownloadStatus] = useState(null);
   /** Passed as GET /search/?sort_by= (empty = server default relevance) */
   const [searchSortBy, setSearchSortBy] = useState("");
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     getAuthStatus().then((data) => {
@@ -80,6 +81,7 @@ export default function App() {
     setLoading(true);
     setHasSearched(true);
     setUnauthorized(false);
+    setError(null);
 
     try {
       const selectedAgencyList = Array.from(selectedAgencies);
@@ -118,6 +120,8 @@ export default function App() {
     } catch (err) {
       if (err.message === "UNAUTHORIZED") {
         setUnauthorized(true);
+      } else {
+        setError(err.message);
       }
       console.error("Search failed:", err);
     } finally {
@@ -159,7 +163,7 @@ export default function App() {
               <SiteNavbar theme="light" layout="app" onCheckDownloads={() => setOpenDownloadStatus(true)} />
               <div className="layout layout-single">
                 <main className="main">
-                  <Collections />
+                  <Collections onOpenDownloadStatus={() => setOpenDownloadStatus(true)}/>
                 </main>
               </div>
               {openDownloadStatus && (
@@ -247,6 +251,8 @@ export default function App() {
                     query={query}
                     unauthorized={unauthorized}
                     totalResults={pagination?.totalResults}
+                    error={error}
+                    onOpenDownloadStatus={() => setOpenDownloadStatus(true)}
                   />
                   {pagination?.totalPages > 0 && (
                     <div className="pagination-div">
