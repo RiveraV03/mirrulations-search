@@ -54,7 +54,7 @@ export default function DownloadModal({ collectionName, docketIds, onClose, onOp
           throw new Error(`Polling failed: ${res.status}`);
         }
         const data = await res.json();
-        if (data.status === "ready") {
+        if (data.status === "ready" || data.status === "demo") {
           setStatus("ready");
           clearInterval(pollId);
         } else if (data.status === "failed") {

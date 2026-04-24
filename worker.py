@@ -255,6 +255,7 @@ def main():
 
     while True:
         try:
+            r.set("worker_heartbeat", "alive", ex=30)
             item = r.blpop(REDIS_QUEUE, timeout=POLL_TIMEOUT)
             if item is None:
                 continue
