@@ -357,7 +357,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             {**d, "cfr_refs": list(d["cfr_refs"].values())}
             for d in dockets.values()
         ]
-    def get_dockets_by_ids_filtered(self, docket_ids: List[str], docket_type_param: str = None,
+    def get_dockets_by_ids_filtered(self, docket_ids: List[str], docket_type_param: str = None,#pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, too-many-branches, too-many-statements
         agency: List[str] = None, cfr_part_param: List[str] = None, start_date: str = None,
         end_date: str = None, ) -> List[Dict[str, Any]]:
         if self.engine is None or not docket_ids:

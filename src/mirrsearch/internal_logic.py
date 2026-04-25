@@ -144,7 +144,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self.database = database
         self.db_layer = db_layer if db_layer is not None else get_db()
 
-    def search(self, query, docket_type_param=None, agency=None,
+    def search(self, query, docket_type_param=None, agency=None, #pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, too-many-branches, too-many-statements
            cfr_part_param=None, start_date=None, end_date=None, page=1, page_size=10,
            sort_by=None):
 
@@ -181,7 +181,6 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         has_filters = any([docket_type_param, agency, cfr_part_param, start_date, end_date])
 
         if has_filters:
-            # SQL filters out non-matching rows — fetch all IDs and let Postgres do the work
             full_text_rows = self._get_full_text_rows(
                 new_ids_ordered, os_counts_by_id, docket_type_param, agency, cfr_part_param,
                 start_date, end_date
@@ -190,30 +189,30 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             self._add_totals_and_scores(all_results)
             self._sort_results(all_results, sort_by=sort_by)
             return self._paginate_results(all_results, page, page_size)
-        else:
-            start_idx = (page - 1) * page_size
-            end_idx = start_idx + page_size
-            title_count = len(title_rows)
-            page_title_rows = title_rows[start_idx:end_idx]
-            ft_start = max(0, start_idx - title_count)
-            ft_end = max(0, end_idx - title_count)
-            page_ft_ids = new_ids_ordered[ft_start:ft_end]
-            full_text_rows = self._get_full_text_rows(
-                page_ft_ids, os_counts_by_id, None, None, None
-            )
-            all_results = page_title_rows + full_text_rows
-            self._add_totals_and_scores(all_results)
-            self._sort_results(all_results, sort_by=sort_by)
-            total_results = title_count + len(new_ids_ordered)
-            total_pages = (total_results + page_size - 1) // page_size
-            paginated = self._paginate_results(all_results, 1, page_size)
-            paginated['pagination']['total_results'] = total_results
-            paginated['pagination']['total_pages'] = total_pages
-            paginated['pagination']['page'] = page
-            paginated['pagination']['has_prev'] = page > 1
-            paginated['pagination']['has_next'] = page < total_pages
-            return paginated
 
+        # no else needed — de-indented
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        title_count = len(title_rows)
+        page_title_rows = title_rows[start_idx:end_idx]
+        ft_start = max(0, start_idx - title_count)
+        ft_end = max(0, end_idx - title_count)
+        page_ft_ids = new_ids_ordered[ft_start:ft_end]
+        full_text_rows = self._get_full_text_rows(
+            page_ft_ids, os_counts_by_id, None, None, None
+        )
+        all_results = page_title_rows + full_text_rows
+        self._add_totals_and_scores(all_results)
+        self._sort_results(all_results, sort_by=sort_by)
+        total_results = title_count + len(new_ids_ordered)
+        total_pages = (total_results + page_size - 1) // page_size
+        paginated = self._paginate_results(all_results, 1, page_size)
+        paginated['pagination']['total_results'] = total_results
+        paginated['pagination']['total_pages'] = total_pages
+        paginated['pagination']['page'] = page
+        paginated['pagination']['has_prev'] = page > 1
+        paginated['pagination']['has_next'] = page < total_pages
+        return paginated
 
     def _get_new_docket_ids(self, os_hits, title_ids):
         """Extract docket IDs from OpenSearch hits not already in title results."""
@@ -235,7 +234,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             row["document_match_count"] = hit["document_match_count"] if hit else 0
             row["comment_match_count"] = hit["comment_match_count"] if hit else 0
 
-    def _get_full_text_rows(self, docket_ids, os_counts_by_id,
+    def _get_full_text_rows(self, docket_ids, os_counts_by_id, #pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals
                         docket_type_param, agency, cfr_part_param,
                         start_date=None, end_date=None):
         if not docket_ids:
@@ -257,6 +256,9 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
 
         full_text_rows = []
         for row in fetched:
+            if has_filters and not _row_matches_advanced_filters(
+                    row, docket_type_param, agency, cfr_part_param, start_date, end_date):
+                continue
             did = str(row["docket_id"])
             h = os_counts_by_id.get(did, {})
             full_text_rows.append({
@@ -279,7 +281,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             row["comment_total_count"] = totals.get("comment_total_count", 0)
             row["correlation_score"] = _correlation_score(row)
 
-    def _sort_results(self, rows, sort_by=None):
+    def _sort_results(self, rows, sort_by=None): #pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, too-many-branches
         """Sort results by the requested field, defaulting to relevance."""
         if sort_by == "modify_date":
             rows.sort(key=lambda r: r.get("modify_date") or "", reverse=True)
@@ -337,7 +339,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
 
     def get_collection_dockets(self, collection_id: int, user_email: str,
                                page: int = 1, page_size: int = 10) -> dict:
-        # pylint: disable=too-many-locals
+        #pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, too-many-branches
         """
         Return paginated dockets belonging to a collection owned by the user.
 
