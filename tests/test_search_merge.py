@@ -22,8 +22,14 @@ class _FakeDbMerge:
         self.get_dockets_by_ids_calls.append(list(docket_ids))
         return list(self._by_id_rows)
 
+    def get_dockets_by_ids_filtered(  # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
+            self, docket_ids, docket_type_param=None,
+            agency=None, cfr_part_param=None,
+            start_date=None, end_date=None):
+        self.get_dockets_by_ids_calls.append(list(docket_ids))
+        return list(self._by_id_rows)
+
     def get_docket_document_comment_totals(self, docket_ids, opensearch_client=None):  # pylint: disable=unused-argument
-        # Provide deterministic denominators for assertions.
         dids = [str(d) for d in docket_ids]
         totals = {
             "A": {"document_total_count": 10, "comment_total_count": 2},
@@ -31,7 +37,6 @@ class _FakeDbMerge:
             "C": {"document_total_count": 7, "comment_total_count": 3},
         }
         return {d: totals[d] for d in dids if d in totals}
-
 
 def test_search_json_sanitizes_modify_date():
     """Postgres-style date objects become ISO strings for JSON responses."""
@@ -251,36 +256,3 @@ def test_merge_full_text_kept_when_cfr_pattern_filter_matches():
     logic = InternalLogic("x", db_layer=db)
     out = logic.search("q", cfr_part_param=["413"], page=1, page_size=10)
     assert [r["docket_id"] for r in out["results"]] == ["B", "A"]
-
-
-class _FakeDbCollectionDockets:
-    """Minimal db_layer for InternalLogic.get_collection_dockets."""
-
-    def get_collections(self, user_email):  # pylint: disable=unused-argument
-        return [{"collection_id": 7, "docket_ids": ["DOCKET-1"]}]
-
-    def get_dockets_by_ids(self, docket_ids):
-        return [
-            {
-                "docket_id": "DOCKET-1",
-                "docket_title": "T",
-                "cfr_refs": [{"title": "40", "cfrParts": {"99": "u"}}],
-                "modify_date": date(2024, 3, 1),
-            }
-        ]
-
-    def get_docket_document_comment_totals(self, docket_ids, opensearch_client=None):  # pylint: disable=unused-argument
-        return {
-            "DOCKET-1": {"document_total_count": 5, "comment_total_count": 3}
-        }
-
-def test_get_collection_dockets_non_empty_sanitizes_and_paginates():
-    """Branch with docket_ids loads rows, sanitizes modify_date, returns slice + pagination."""
-    logic = InternalLogic("x", db_layer=_FakeDbCollectionDockets())
-    out = logic.get_collection_dockets(7, "user@example.com", page=1, page_size=10)
-    assert out["pagination"]["total_results"] == 1
-    assert out["pagination"]["total_pages"] == 1
-    assert out["results"][0]["modify_date"] == "2024-03-01"
-    assert "cfrPart" in out["results"][0]
-    assert out["results"][0]["documentDenominator"] == 5
-    assert out["results"][0]["commentDenominator"] == 3

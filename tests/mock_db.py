@@ -375,3 +375,39 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods,protected-access
 
         del self._jobs[job_id]
         return True
+
+    def get_dockets_by_ids_filtered(  # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument, too-many-locals, too-many-branches, too-many-nested-blocks
+            self,
+            docket_ids: List[str],
+            docket_type_param: str = None,
+            agency: List[str] = None,
+            cfr_part_param: List[str] = None,
+            start_date: str = None,
+            end_date: str = None,
+    ) -> List[Dict[str, Any]]:
+        results = [item for item in self._items() if item["docket_id"] in docket_ids]
+
+        if docket_type_param:
+            results = [r for r in results
+                    if r.get("document_type", "").lower() == docket_type_param.lower()]
+
+        if agency:
+            results = [r for r in results
+                    if any(a.lower() in r.get("agency_id", "").lower() for a in agency)]
+
+        if cfr_part_param:
+            filtered = []
+            for r in results:
+                for c in cfr_part_param:
+                    if isinstance(c, dict):
+                        if (c.get("title", "").lower() in r.get("cfrPart", "").lower()
+                                and c.get("part", "").lower() in r.get("cfrPart", "").lower()):
+                            filtered.append(r)
+                            break
+                    else:
+                        if str(c).lower() in r.get("cfrPart", "").lower():
+                            filtered.append(r)
+                            break
+            results = filtered
+
+        return results
