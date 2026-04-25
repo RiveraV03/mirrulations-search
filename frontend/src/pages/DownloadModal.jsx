@@ -39,35 +39,6 @@ export default function DownloadModal({ collectionName, docketIds, onClose, onOp
   const [message, setMessage] = useState(null);
  
   const isAll = !docketIds || docketIds.length === 0;
- 
-  useEffect(() => {
-    if (status !== "pending" || !jobId) return;
-    const pollId = setInterval(async () => {
-      try {
-        const res = await fetch(`/download/status/${jobId}`);
-        if (res.status === 401) {
-          clearInterval(pollId);
-          setError("Your session expired. Please log in again.");
-          return;
-        }
-        if (!res.ok) {
-          throw new Error(`Polling failed: ${res.status}`);
-        }
-        const data = await res.json();
-        if (data.status === "ready" || data.status === "demo") {
-          setStatus("ready");
-          clearInterval(pollId);
-        } else if (data.status === "failed") {
-          setStatus(null);
-          setError("Failed to prepare download.");
-          clearInterval(pollId);
-        }
-      } catch (err) {
-        console.error("Polling error:", err);
-      }
-    }, 5000);
-    return () => clearInterval(pollId);
-  }, [status, jobId]);
 
   const toggleSelected = (id) => {
     setSelected((prev) => {
