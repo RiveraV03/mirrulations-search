@@ -279,11 +279,11 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 params[f"agency_{i}"] = f"%{a}%"
 
         if start_date:
-            sql += " AND d.modify_date::date >= :start_date::date"
+            sql += " AND CAST(d.modify_date AS date) >= CAST(:start_date AS date)"
             params["start_date"] = start_date
 
         if end_date:
-            sql += " AND d.modify_date::date <= :end_date::date"
+            sql += " AND CAST(d.modify_date AS date) <= CAST(:end_date AS date)"
             params["end_date"] = end_date
 
         cfr_patterns = cfr_part_filter_patterns(cfr_part_param)
