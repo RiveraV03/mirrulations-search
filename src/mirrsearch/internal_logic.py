@@ -186,11 +186,21 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
                 start_date, end_date
             )
             all_results = title_rows + full_text_rows
+
+            # Deduplicate — a docket can appear in both title_rows and full_text_rows
+            seen = set()
+            deduped = []
+            for row in all_results:
+                did = _row_docket_key(row)
+                if did not in seen:
+                    seen.add(did)
+                    deduped.append(row)
+            all_results = deduped
+
             self._add_totals_and_scores(all_results)
             self._sort_results(all_results, sort_by=sort_by)
             return self._paginate_results(all_results, page, page_size)
 
-        # no else needed — de-indented
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
         title_count = len(title_rows)
