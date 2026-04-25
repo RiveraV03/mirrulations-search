@@ -172,17 +172,25 @@ def test_internal_logic_pagination_metadata():
     assert result['pagination']['has_next'] is False
 
 
-def test_internal_logic_correct_results_slicing():
-    """Test that correct results are returned for each page"""
+def test_internal_logic_correct_results_slicing():  # pylint: disable=too-many-locals
+    """Pagination must cover every result exactly once across pages, with no
+    overlap or gaps. Order across pages is determined by the active sort, not
+    by the order MockDbLayer happens to return rows in.
+    """
     mock_db = MockDbLayer()
     logic = InternalLogic("test_db", db_layer=mock_db)
 
-    # Page 1 should have documents 1-10
-    result = logic.search("test", page=1, page_size=10)
-    assert result['results'][0]['id'] == 1
-    assert result['results'][9]['id'] == 10
+    page1 = logic.search("test", page=1, page_size=10)["results"]
+    page2 = logic.search("test", page=2, page_size=10)["results"]
+    page3 = logic.search("test", page=3, page_size=10)["results"]
 
-    # Page 2 should have documents 11-20
-    result = logic.search("test", page=2, page_size=10)
-    assert result['results'][0]['id'] == 11
-    assert result['results'][9]['id'] == 20
+    assert len(page1) == 10
+    assert len(page2) == 10
+    assert len(page3) == 5
+
+    page1_ids = [r["id"] for r in page1]
+    page2_ids = [r["id"] for r in page2]
+    page3_ids = [r["id"] for r in page3]
+    all_ids = page1_ids + page2_ids + page3_ids
+    assert len(set(all_ids)) == 25
+    assert set(all_ids) == set(range(1, 26))

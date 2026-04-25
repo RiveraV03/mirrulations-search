@@ -256,3 +256,114 @@ def test_merge_full_text_kept_when_cfr_pattern_filter_matches():
     logic = InternalLogic("x", db_layer=db)
     out = logic.search("q", cfr_part_param=["413"], page=1, page_size=10)
     assert [r["docket_id"] for r in out["results"]] == ["B", "A"]
+
+
+class _FakePagingDb:
+    """db_layer for testing page-2 ordering on the fast path.
+
+    Returns 25 OS-only hits with descending match counts so we can assert that
+    page 2 (size 10) returns the next 10 by match count, not an arbitrary slice.
+    """
+
+    def __init__(self):
+        self.fetch_calls = []
+        self._all_rows = {
+            f"D{i:02d}": {"docket_id": f"D{i:02d}", "docket_title": f"t{i}", "cfr_refs": []}
+            for i in range(25)
+        }
+
+    def search(self, *_a, **_kw):
+        return []
+
+    def text_match_terms(self, _terms, opensearch_client=None):  # pylint: disable=unused-argument
+        # Higher i → higher match count, so D24 ranks first, D00 last.
+        return [
+            {"docket_id": f"D{i:02d}", "document_match_count": i, "comment_match_count": 0}
+            for i in range(25)
+        ]
+
+    def get_dockets_by_ids(self, docket_ids):
+        self.fetch_calls.append(list(docket_ids))
+        return [self._all_rows[d] for d in docket_ids if d in self._all_rows]
+
+    def get_docket_document_comment_totals(self, docket_ids, opensearch_client=None):  # pylint: disable=unused-argument
+        return {str(d): {"document_total_count": 0, "comment_total_count": 0} for d in docket_ids}
+
+
+def test_pagination_page_two_returns_next_ten_by_match_count():
+    """Fast path: page 2 must contain the next 10 dockets by match count, not the
+    arbitrary slice of unsorted candidates that the original perf commit returned.
+    """
+    db = _FakePagingDb()
+    logic = InternalLogic("x", db_layer=db)
+
+    page1 = logic.search("q", page=1, page_size=10)
+    page2 = logic.search("q", page=2, page_size=10)
+
+    page1_ids = [r["docket_id"] for r in page1["results"]]
+    page2_ids = [r["docket_id"] for r in page2["results"]]
+
+    assert page1_ids == [f"D{i:02d}" for i in range(24, 14, -1)]
+    assert page2_ids == [f"D{i:02d}" for i in range(14, 4, -1)]
+    assert page1["pagination"]["total_results"] == 25
+    assert page1["pagination"]["total_pages"] == 3
+    # Fast path must only fetch RDS for the 10 IDs on the requested page.
+    assert all(len(call) == 10 for call in db.fetch_calls)
+
+
+def test_filtered_total_results_matches_filtered_set():
+    """Slow path: total_results reflects the filtered count, not the
+    pre-filter OpenSearch hit count."""
+    sql_rows = []
+    # 5 OS-only hits, but only 2 will survive the agency filter.
+    os_hits = [
+        {"docket_id": f"D{i}", "document_match_count": i, "comment_match_count": 0}
+        for i in range(5)
+    ]
+    by_id_rows = [
+        {"docket_id": "D0", "docket_title": "t", "cfr_refs": [], "agency_id": "EPA"},
+        {"docket_id": "D1", "docket_title": "t", "cfr_refs": [], "agency_id": "CMS"},
+        {"docket_id": "D2", "docket_title": "t", "cfr_refs": [], "agency_id": "EPA"},
+        {"docket_id": "D3", "docket_title": "t", "cfr_refs": [], "agency_id": "CMS"},
+        {"docket_id": "D4", "docket_title": "t", "cfr_refs": [], "agency_id": "EPA"},
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits, by_id_rows)
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("q", agency=["CMS"], page=1, page_size=10)
+
+    ids = [r["docket_id"] for r in out["results"]]
+    assert set(ids) == {"D1", "D3"}
+    assert out["pagination"]["total_results"] == 2
+    assert out["pagination"]["total_pages"] == 1
+
+
+class _FakeDbCollectionDockets:
+    """Minimal db_layer for InternalLogic.get_collection_dockets."""
+
+    def get_collections(self, user_email):  # pylint: disable=unused-argument
+        return [{"collection_id": 7, "docket_ids": ["DOCKET-1"]}]
+
+    def get_dockets_by_ids(self, docket_ids):  # pylint: disable=unused-argument
+        return [
+            {
+                "docket_id": "DOCKET-1",
+                "docket_title": "T",
+                "cfr_refs": [{"title": "40", "cfrParts": {"99": "u"}}],
+                "modify_date": date(2024, 3, 1),
+            }
+        ]
+
+    def get_docket_document_comment_totals(self, docket_ids, opensearch_client=None):  # pylint: disable=unused-argument
+        return {"DOCKET-1": {"document_total_count": 5, "comment_total_count": 3}}
+
+
+def test_get_collection_dockets_non_empty_sanitizes_and_paginates():
+    """Branch with docket_ids loads rows, sanitizes modify_date, returns slice + pagination."""
+    logic = InternalLogic("x", db_layer=_FakeDbCollectionDockets())
+    out = logic.get_collection_dockets(7, "user@example.com", page=1, page_size=10)
+    assert out["pagination"]["total_results"] == 1
+    assert out["pagination"]["total_pages"] == 1
+    assert out["results"][0]["modify_date"] == "2024-03-01"
+    assert "cfrPart" in out["results"][0]
+    assert out["results"][0]["documentDenominator"] == 5
+    assert out["results"][0]["commentDenominator"] == 3
