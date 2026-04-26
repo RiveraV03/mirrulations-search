@@ -1095,7 +1095,7 @@ def test_text_match_terms_per_index_failure_is_isolated():
             return {"aggregations": {"by_docket": {"buckets": []}}}
 
     db = DBLayer()
-    assert not db.text_match_terms(["xyz"], opensearch_client=PartiallyBrokenClient())
+    assert db.text_match_terms(["xyz"], opensearch_client=PartiallyBrokenClient()) == []
 
 
 def test_text_match_terms_429_retries_then_succeeds():
@@ -1132,59 +1132,6 @@ def test_text_match_terms_429_persistent_records_breaker():
     assert db_module._aoss_breaker_is_open() is True
 
 
-def test_text_match_terms_status_ok_when_all_indexes_succeed():
-    db_module._reset_aoss_breaker_for_tests()
-
-    class HappyClient:  # pylint: disable=too-few-public-methods
-        def search(self, index, body):  # pylint: disable=unused-argument
-            return {"aggregations": {"by_docket": {"buckets": []}}}
-
-    db = DBLayer()
-    result = db.text_match_terms(["xyz"], opensearch_client=HappyClient())
-    assert result.aoss_status == "ok"
-
-
-def test_text_match_terms_status_partial_when_one_index_fails():
-    db_module._reset_aoss_breaker_for_tests()
-
-    class PartiallyBrokenClient:  # pylint: disable=too-few-public-methods
-        def search(self, index, body):  # pylint: disable=unused-argument
-            if index == "comments_extracted_text":
-                raise RuntimeError("connection refused")
-            return {"aggregations": {"by_docket": {"buckets": []}}}
-
-    db = DBLayer()
-    result = db.text_match_terms(["xyz"], opensearch_client=PartiallyBrokenClient())
-    assert result.aoss_status == "partial"
-
-
-def test_text_match_terms_status_unavailable_when_all_indexes_fail():
-    db_module._reset_aoss_breaker_for_tests()
-
-    class AllBrokenClient:  # pylint: disable=too-few-public-methods
-        def search(self, index, body):  # pylint: disable=unused-argument
-            raise RuntimeError("connection refused")
-
-    db = DBLayer()
-    result = db.text_match_terms(["xyz"], opensearch_client=AllBrokenClient())
-    assert result.aoss_status == "unavailable"
-
-
-def test_text_match_terms_status_unavailable_when_breaker_open():
-    db_module._reset_aoss_breaker_for_tests()
-    for _ in range(_AOSS_FAIL_THRESHOLD):
-        db_module._record_aoss_429()
-
-    class ShouldNotBeCalled:  # pylint: disable=too-few-public-methods
-        def search(self, index, body):  # pylint: disable=unused-argument
-            raise AssertionError("breaker open path should skip AOSS")
-
-    db = DBLayer()
-    result = db.text_match_terms(["xyz"], opensearch_client=ShouldNotBeCalled())
-    assert result.aoss_status == "unavailable"
-    db_module._reset_aoss_breaker_for_tests()
-
-
 def test_text_match_terms_breaker_short_circuits():
     """When the breaker is open, AOSS isn't called at all."""
     db_module._reset_aoss_breaker_for_tests()
@@ -1197,7 +1144,7 @@ def test_text_match_terms_breaker_short_circuits():
             raise AssertionError("AOSS must not be called while breaker is open")
 
     db = DBLayer()
-    assert not db.text_match_terms(["xyz"], opensearch_client=ShouldNotBeCalled())
+    assert db.text_match_terms(["xyz"], opensearch_client=ShouldNotBeCalled()) == []
     db_module._reset_aoss_breaker_for_tests()
 
 

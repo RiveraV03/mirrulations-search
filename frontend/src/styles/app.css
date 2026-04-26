@@ -581,23 +581,10 @@ body {
   .calendar-div {
 	margin-top: 20px;
   }
-.aoss-banner {
-  margin: 0.5rem 0;
-  padding: 0.6rem 0.9rem;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  border: 1px solid;
-}
-
-.aoss-banner-partial {
-  background: #fff8e1;
-  color: #6b4f00;
-  border-color: #f0d165;
-}
-
-.aoss-banner-unavailable {
-  background: #fdecec;
-  color: #7a2222;
-  border-color: #e3a4a4;
+.search-disclaimer {
+  margin: 0.4rem 0 0.8rem;
+  font-size: 0.8rem;
+  color: #6b7280;
+  font-style: italic;
 }
 
