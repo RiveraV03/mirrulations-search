@@ -126,6 +126,21 @@ def _row_matches_advanced_filters(row, docket_type_param, agency, cfr_part_param
         and _modify_date_matches_filter(row, start_date, end_date)
     )
 
+def _mark_exact_id_match(result, query):
+    """Tag rows whose docket_id exactly matches the search query.
+
+    The frontend uses this flag to anchor the matched docket at the top
+    of the displayed list and render a visual highlight, so users who
+    searched for a specific docket id can find it immediately.
+    """
+    q = (query or "").strip().lower()
+    if not q:
+        return
+    for row in result.get("results", []):
+        if str(row.get("docket_id", "")).lower() == q:
+            row["isExactMatch"] = True
+
+
 def _dedupe_by_docket_id(rows):
     """Drop duplicate rows by docket id, preserving first-seen order."""
     seen = set()
@@ -196,15 +211,18 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         needs_rds_for_sort = sort_by in ("modify_date", "comment_count", "document_count")
 
         if has_filters or needs_rds_for_sort:
-            return self._search_full_fetch(
+            result = self._search_full_fetch(
                 title_rows, new_ids_ordered, os_counts_by_id,
                 docket_type_param, agency, cfr_part_param, start_date, end_date,
                 page, page_size, sort_by,
             )
+        else:
+            result = self._search_paginate_then_fetch(
+                title_rows, new_ids_ordered, os_counts_by_id, page, page_size,
+            )
 
-        return self._search_paginate_then_fetch(
-            title_rows, new_ids_ordered, os_counts_by_id, page, page_size,
-        )
+        _mark_exact_id_match(result, query)
+        return result
 
     def _search_full_fetch(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
             self, title_rows, new_ids_ordered, os_counts_by_id,
