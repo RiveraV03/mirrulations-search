@@ -126,6 +126,19 @@ def _row_matches_advanced_filters(row, docket_type_param, agency, cfr_part_param
         and _modify_date_matches_filter(row, start_date, end_date)
     )
 
+def _dedupe_by_docket_id(rows):
+    """Drop duplicate rows by docket id, preserving first-seen order."""
+    seen = set()
+    out = []
+    for r in rows:
+        did = _row_docket_key(r)
+        if did in seen:
+            continue
+        seen.add(did)
+        out.append(r)
+    return out
+
+
 def _transform_cfr_refs(result):
     """Convert raw cfr_refs into the cfrPart list format for API responses."""
     cfr_refs = result.pop("cfr_refs", None)
@@ -144,10 +157,9 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self.database = database
         self.db_layer = db_layer if db_layer is not None else get_db()
 
-    def search(self, query, docket_type_param=None, agency=None, #pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, too-many-branches, too-many-statements
-           cfr_part_param=None, start_date=None, end_date=None, page=1, page_size=10,
-           sort_by=None):
-
+    def search(self, query, docket_type_param=None, agency=None,  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+               cfr_part_param=None, start_date=None, end_date=None, page=1, page_size=10,
+               sort_by=None):
         """
         Search with pagination support.
 
@@ -160,14 +172,14 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             end_date: Filter by end date (YYYY-MM-DD)
             page: Page number (1-indexed)
             page_size: Number of results per page
+            sort_by: Sort key (modify_date, comment_count, document_count, default match_count)
 
         Returns:
             dict: Paginated response with metadata
         """
-
         sql_results = self.db_layer.search(
             query, docket_type_param, agency, cfr_part_param,
-            start_date=start_date, end_date=end_date
+            start_date=start_date, end_date=end_date,
         )
         title_rows = [{**r, "match_source": "title"} for r in sql_results]
         title_ids = {_row_docket_key(r) for r in sql_results}
@@ -179,49 +191,90 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self._enhance_rows_with_os_counts(title_rows, os_counts_by_id)
 
         has_filters = any([docket_type_param, agency, cfr_part_param, start_date, end_date])
+        # modify_date / comment_count / document_count need RDS data on every candidate,
+        # so global sort can't be done from AOSS counts alone.
+        needs_rds_for_sort = sort_by in ("modify_date", "comment_count", "document_count")
 
-        if has_filters:
-            full_text_rows = self._get_full_text_rows(
-                new_ids_ordered, os_counts_by_id, docket_type_param, agency, cfr_part_param,
-                start_date, end_date
+        if has_filters or needs_rds_for_sort:
+            return self._search_full_fetch(
+                title_rows, new_ids_ordered, os_counts_by_id,
+                docket_type_param, agency, cfr_part_param, start_date, end_date,
+                page, page_size, sort_by,
             )
-            all_results = title_rows + full_text_rows
 
-            # Deduplicate — a docket can appear in both title_rows and full_text_rows
-            seen = set()
-            deduped = []
-            for row in all_results:
-                did = _row_docket_key(row)
-                if did not in seen:
-                    seen.add(did)
-                    deduped.append(row)
-            all_results = deduped
-
-            self._add_totals_and_scores(all_results)
-            self._sort_results(all_results, sort_by=sort_by)
-            return self._paginate_results(all_results, page, page_size)
-
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-        title_count = len(title_rows)
-        page_title_rows = title_rows[start_idx:end_idx]
-        ft_start = max(0, start_idx - title_count)
-        ft_end = max(0, end_idx - title_count)
-        page_ft_ids = new_ids_ordered[ft_start:ft_end]
-        full_text_rows = self._get_full_text_rows(
-            page_ft_ids, os_counts_by_id, None, None, None
+        return self._search_paginate_then_fetch(
+            title_rows, new_ids_ordered, os_counts_by_id, page, page_size,
         )
-        all_results = page_title_rows + full_text_rows
+
+    def _search_full_fetch(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+            self, title_rows, new_ids_ordered, os_counts_by_id,
+            docket_type_param, agency, cfr_part_param, start_date, end_date,
+            page, page_size, sort_by):
+        """Slow-correct path: fetch every candidate from RDS, sort globally, paginate.
+
+        Used when filters are active or when sort key needs RDS data we don't have
+        for OS-only candidates (modify_date / totals).
+        """
+        full_text_rows = self._get_full_text_rows(
+            new_ids_ordered, os_counts_by_id,
+            docket_type_param, agency, cfr_part_param, start_date, end_date,
+        )
+        all_results = _dedupe_by_docket_id(title_rows + full_text_rows)
         self._add_totals_and_scores(all_results)
         self._sort_results(all_results, sort_by=sort_by)
-        total_results = title_count + len(new_ids_ordered)
+        return self._paginate_results(all_results, page, page_size)
+
+    def _search_paginate_then_fetch(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-branches,too-many-statements
+            self, title_rows, new_ids_ordered, os_counts_by_id, page, page_size):
+        """Fast path: default match-count sort with no filters.
+
+        AOSS already gives us match counts for every candidate, so we can sort
+        the full candidate list by match count, slice the requested page, then
+        hit RDS only for the OS-only IDs that landed on this page.
+        """
+        candidates = []
+        for r in title_rows:
+            match = (int(r.get("document_match_count", 0))
+                     + int(r.get("comment_match_count", 0)))
+            candidates.append((match, _row_docket_key(r), "title", r))
+        for did in new_ids_ordered:
+            h = os_counts_by_id.get(did, {})
+            match = (int(h.get("document_match_count", 0))
+                     + int(h.get("comment_match_count", 0)))
+            candidates.append((match, did, "full_text", None))
+
+        # Mirrors _sort_results default: (match_total, docket_id) descending.
+        candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
+
+        total_results = len(candidates)
         total_pages = (total_results + page_size - 1) // page_size
-        paginated = self._paginate_results(all_results, 1, page_size)
-        paginated['pagination']['total_results'] = total_results
-        paginated['pagination']['total_pages'] = total_pages
-        paginated['pagination']['page'] = page
-        paginated['pagination']['has_prev'] = page > 1
-        paginated['pagination']['has_next'] = page < total_pages
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        page_candidates = candidates[start_idx:end_idx]
+
+        page_ft_ids = [c[1] for c in page_candidates if c[2] == "full_text"]
+        full_text_rows = self._get_full_text_rows(
+            page_ft_ids, os_counts_by_id, None, None, None,
+        )
+        ft_by_id = {str(r["docket_id"]): r for r in full_text_rows}
+
+        page_rows = []
+        for _match, did, source, row in page_candidates:
+            if source == "title":
+                page_rows.append(row)
+            else:
+                r = ft_by_id.get(did)
+                if r is not None:
+                    page_rows.append(r)
+
+        self._add_totals_and_scores(page_rows)
+
+        paginated = self._paginate_results(page_rows, 1, page_size)
+        paginated["pagination"]["total_results"] = total_results
+        paginated["pagination"]["total_pages"] = total_pages
+        paginated["pagination"]["page"] = page
+        paginated["pagination"]["has_prev"] = page > 1
+        paginated["pagination"]["has_next"] = page < total_pages
         return paginated
 
     def _get_new_docket_ids(self, os_hits, title_ids):
@@ -291,7 +344,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             row["comment_total_count"] = totals.get("comment_total_count", 0)
             row["correlation_score"] = _correlation_score(row)
 
-    def _sort_results(self, rows, sort_by=None): #pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, too-many-branches
+    def _sort_results(self, rows, sort_by=None):
         """Sort results by the requested field, defaulting to relevance."""
         if sort_by == "modify_date":
             rows.sort(key=lambda r: r.get("modify_date") or "", reverse=True)

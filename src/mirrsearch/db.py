@@ -264,7 +264,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             JOIN documents doc ON doc.docket_id = d.docket_id
             LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
             LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
-            WHERE d.docket_title ILIKE :query
+            WHERE (d.docket_title ILIKE :query OR d.docket_id ILIKE :query)
         """
         params: Dict[str, Any] = {"query": f"%{(query or '').strip().lower()}%"}
 
@@ -392,11 +392,11 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 params[f"agency_{i}"] = f"%{a}%"
 
         if start_date:
-            sql += " AND d.modify_date::date >= :start_date::date"
+            sql += " AND CAST(d.modify_date AS date) >= CAST(:start_date AS date)"
             params["start_date"] = start_date
 
         if end_date:
-            sql += " AND d.modify_date::date <= :end_date::date"
+            sql += " AND CAST(d.modify_date AS date) <= CAST(:end_date AS date)"
             params["end_date"] = end_date
 
         cfr_patterns = cfr_part_filter_patterns(cfr_part_param)
@@ -431,7 +431,9 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 params[f"etitle_{i}"] = title
                 params[f"epart_{i}"] = part
 
-        sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart"
+        # Match LIMIT semantics of _search_dockets_postgres so a broad filtered
+        # query (e.g. medicare + agency=CMS) can't pull thousands of rows.
+        sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart LIMIT 50"
 
         rows = self._run(sql, params)
         dockets = {}

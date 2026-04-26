@@ -38,6 +38,10 @@ export default function App() {
   /** Passed as GET /search/?sort_by= (empty = server default relevance) */
   const [searchSortBy, setSearchSortBy] = useState("");
   const [error, setError] = useState(null);
+  // Snapshot of the params that produced the currently displayed results.
+  // Pagination clicks reuse this so typing in the search box without
+  // re-submitting can't silently change the search behind the user's back.
+  const [activeParams, setActiveParams] = useState(null);
 
   useEffect(() => {
     getAuthStatus().then((data) => {
@@ -75,38 +79,44 @@ export default function App() {
     status.size +
     Object.values(selectedCfrParts).reduce((sum, set) => sum + set.size, 0);
 
-  const runSearch = async (newPage = 1, sortByOverride) => {
-    const sortBy = sortByOverride !== undefined ? sortByOverride : searchSortBy;
+  const buildParamsFromState = (sortByOverride) => ({
+    query,
+    docType,
+    agencies: Array.from(selectedAgencies),
+    cfrParts: Object.entries(selectedCfrParts).flatMap(([title, parts]) =>
+      Array.from(parts).map((part) => ({
+        title: Number(title),
+        part,
+      }))
+    ),
+    yearFrom,
+    yearTo,
+    sortBy: sortByOverride !== undefined ? sortByOverride : searchSortBy,
+  });
+
+  const runSearch = async (newPage = 1, sortByOverride, paramsOverride) => {
+    const params = paramsOverride ?? buildParamsFromState(sortByOverride);
     setLoading(true);
     setHasSearched(true);
     setUnauthorized(false);
     setError(null);
 
     try {
-      const selectedAgencyList = Array.from(selectedAgencies);
-
-      const selectedCfrList = Object.entries(selectedCfrParts).flatMap(
-        ([title, parts]) =>
-          Array.from(parts).map((part) => ({
-            title: Number(title),
-            part,
-          }))
-      );
-
       const data = await searchDockets(
-        query,
-        docType,
-        selectedAgencyList,
-        selectedCfrList,
+        params.query,
+        params.docType,
+        params.agencies,
+        params.cfrParts,
         newPage,
-        yearFrom,
-        yearTo,
-        sortBy
+        params.yearFrom,
+        params.yearTo,
+        params.sortBy
       );
 
       setResults(data.results);
       setPagination(data.pagination);
       setPage(newPage);
+      setActiveParams(params);
     } catch (err) {
       if (err.message === "UNAUTHORIZED") {
         setUnauthorized(true);
@@ -247,7 +257,7 @@ export default function App() {
                     <button
                       className="page-button"
                       disabled={!pagination?.hasPrev}
-                      onClick={() => runSearch(page - 1)}
+                      onClick={() => runSearch(page - 1, undefined, activeParams)}
                     >
                       <ArrowLeftIcon color="white" size={32} />
                     </button>
@@ -257,7 +267,7 @@ export default function App() {
                     <button
                       className="page-button"
                       disabled={!pagination?.hasNext}
-                      onClick={() => runSearch(page + 1)}
+                      onClick={() => runSearch(page + 1, undefined, activeParams)}
                     >
                       <ArrowRightIcon color="white" size={32} />
                     </button>
