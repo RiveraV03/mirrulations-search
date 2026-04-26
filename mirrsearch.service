@@ -18,7 +18,7 @@ ExecStart=/home/ec2-user/mirrulations-search/.venv/bin/gunicorn \
     --keyfile /etc/letsencrypt/live/dev.mirrulations.org/privkey.pem \
     --bind 0.0.0.0:443 \
     --timeout 120 \
-    --worker-class gthread --workers 2 --threads 4 mirrsearch.app:app
+    --worker-class gthread --workers 1 --threads 8 mirrsearch.app:app
 Restart=always
 
 [Install]
