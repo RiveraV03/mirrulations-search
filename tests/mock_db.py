@@ -56,7 +56,8 @@ class MockDBLayer:  # pylint: disable=too-many-public-methods,protected-access
             agency: List[str] = None,
             cfr_part_param: List[str] = None,
             start_date: str = None,
-            end_date: str = None) \
+            end_date: str = None,
+            exact_docket_id: str = None) \
             -> List[Dict[str, Any]]:
         q = re.sub(r'[^\w\s-]', '', (query or "")).strip().lower()
         results = [

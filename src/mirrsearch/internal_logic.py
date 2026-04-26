@@ -203,11 +203,16 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         sql_results = self.db_layer.search(
             effective_query, docket_type_param, agency, cfr_part_param,
             start_date=start_date, end_date=end_date,
+            exact_docket_id=canonical_id,
         )
         title_rows = [{**r, "match_source": "title"} for r in sql_results]
         title_ids = {_row_docket_key(r) for r in sql_results}
 
-        os_hits = self.db_layer.text_match_terms([(effective_query or "").strip()])
+        # AOSS tokenizes on hyphens; "EPA-HQ-OPP-2009-0634" fans into 5 broad
+        # terms and 503s the aggregation. SQL already nails the exact docket.
+        os_hits = [] if canonical_id else self.db_layer.text_match_terms(
+            [(effective_query or "").strip()]
+        )
         os_counts_by_id = {str(hit["docket_id"]): hit for hit in os_hits}
 
         new_ids_ordered = self._get_new_docket_ids(os_hits, title_ids)
