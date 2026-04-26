@@ -467,6 +467,23 @@ body {
     color: #555;
   }
 
+  .cfr-toggle-btn {
+    border: 1px solid #d8dcee;
+    background: #fbfbfe;
+    color: #4a50da;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .cfr-toggle-btn:hover {
+    background: #eef0ff;
+    border-color: #bfc4f3;
+  }
+
   .result-card-body {
     display: block;
     width: 100%;
