@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from typing import List
 
 from mirrsearch.db import cfr_part_filter_patterns, _cfr_exact_title_part_pairs, get_db
+from mirrsearch.docket_id import normalize_docket_id
 
 
 def _correlation_score(row, support_k=10):
@@ -132,12 +133,19 @@ def _mark_exact_id_match(result, query):
     The frontend uses this flag to anchor the matched docket at the top
     of the displayed list and render a visual highlight, so users who
     searched for a specific docket id can find it immediately.
+
+    Compares canonical docket-id forms when the query parses as one, so
+    variants like "cms 9115 f" still anchor CMS-9115-F.
     """
     q = (query or "").strip().lower()
     if not q:
         return
+    q_canonical = normalize_docket_id(query)
     for row in result.get("results", []):
-        if str(row.get("docket_id", "")).lower() == q:
+        did = str(row.get("docket_id", ""))
+        if did.lower() == q:
+            row["isExactMatch"] = True
+        elif q_canonical and did.upper() == q_canonical:
             row["isExactMatch"] = True
 
 
@@ -192,14 +200,21 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         Returns:
             dict: Paginated response with metadata
         """
+        # If the query looks like a docket ID in any of the common formats
+        # (e.g. "cms 9115 f", "FAA_2026_0534"), canonicalize before hitting
+        # the DB so ILIKE / AOSS see the same hyphen-uppercase form the
+        # docket is stored under.
+        canonical_id = normalize_docket_id(query)
+        effective_query = canonical_id if canonical_id else query
+
         sql_results = self.db_layer.search(
-            query, docket_type_param, agency, cfr_part_param,
+            effective_query, docket_type_param, agency, cfr_part_param,
             start_date=start_date, end_date=end_date,
         )
         title_rows = [{**r, "match_source": "title"} for r in sql_results]
         title_ids = {_row_docket_key(r) for r in sql_results}
 
-        os_hits = self.db_layer.text_match_terms([(query or "").strip()])
+        os_hits = self.db_layer.text_match_terms([(effective_query or "").strip()])
         os_counts_by_id = {str(hit["docket_id"]): hit for hit in os_hits}
 
         new_ids_ordered = self._get_new_docket_ids(os_hits, title_ids)
