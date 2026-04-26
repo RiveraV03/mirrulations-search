@@ -1,6 +1,7 @@
 # pylint: disable=too-many-lines
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Dict, Any, Set, Optional
 import os
 from sqlalchemy import create_engine, text
@@ -264,7 +265,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             JOIN documents doc ON doc.docket_id = d.docket_id
             LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
             LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
-            WHERE d.docket_title ILIKE :query
+            WHERE (d.docket_title ILIKE :query OR d.docket_id ILIKE :query)
         """
         params: Dict[str, Any] = {"query": f"%{(query or '').strip().lower()}%"}
 
@@ -279,11 +280,11 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 params[f"agency_{i}"] = f"%{a}%"
 
         if start_date:
-            sql += " AND d.modify_date::date >= :start_date::date"
+            sql += " AND CAST(d.modify_date AS date) >= CAST(:start_date AS date)"
             params["start_date"] = start_date
 
         if end_date:
-            sql += " AND d.modify_date::date <= :end_date::date"
+            sql += " AND CAST(d.modify_date AS date) <= CAST(:end_date AS date)"
             params["end_date"] = end_date
 
         cfr_patterns = cfr_part_filter_patterns(cfr_part_param)
@@ -350,6 +351,92 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart
         """
         rows = self._run(sql, {"docket_ids": list(docket_ids)})
+        dockets = {}
+        for row in rows:
+            self._process_docket_row(dockets, row)
+        return [
+            {**d, "cfr_refs": list(d["cfr_refs"].values())}
+            for d in dockets.values()
+        ]
+    def get_dockets_by_ids_filtered(self, docket_ids: List[str], docket_type_param: str = None,#pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, too-many-branches, too-many-statements
+        agency: List[str] = None, cfr_part_param: List[str] = None, start_date: str = None,
+        end_date: str = None, ) -> List[Dict[str, Any]]:
+        if self.engine is None or not docket_ids:
+            return []
+
+        sql = """
+            SELECT DISTINCT
+                d.docket_id,
+                d.docket_title,
+                d.agency_id,
+                d.docket_type,
+                d.modify_date,
+                cp.title,
+                cp.cfrPart,
+                l.link
+            FROM dockets d
+            JOIN documents doc ON doc.docket_id = d.docket_id
+            LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
+            LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
+            WHERE d.docket_id = ANY(:docket_ids)
+        """
+        params: Dict[str, Any] = {"docket_ids": list(docket_ids)}
+
+        if docket_type_param:
+            sql += " AND d.docket_type = :docket_type"
+            params["docket_type"] = docket_type_param
+
+        if agency:
+            clauses = " OR ".join(f"d.agency_id ILIKE :agency_{i}" for i in range(len(agency)))
+            sql += f" AND ({clauses})"
+            for i, a in enumerate(agency):
+                params[f"agency_{i}"] = f"%{a}%"
+
+        if start_date:
+            sql += " AND CAST(d.modify_date AS date) >= CAST(:start_date AS date)"
+            params["start_date"] = start_date
+
+        if end_date:
+            sql += " AND CAST(d.modify_date AS date) <= CAST(:end_date AS date)"
+            params["end_date"] = end_date
+
+        cfr_patterns = cfr_part_filter_patterns(cfr_part_param)
+        if cfr_patterns:
+            clauses = " OR ".join(f"cp3.cfrPart = :cfr_{i}" for i in range(len(cfr_patterns)))
+            sql += (
+                " AND EXISTS ("
+                "SELECT 1 FROM documents d3 "
+                "JOIN cfrparts cp3 ON cp3.frdocnum = d3.frdocnum "
+                "WHERE d3.docket_id = d.docket_id "
+                f"AND ({clauses})"
+                ")"
+            )
+            for i, p in enumerate(cfr_patterns):
+                params[f"cfr_{i}"] = p
+
+        exact_pairs = _cfr_exact_title_part_pairs(cfr_part_param)
+        if exact_pairs:
+            exact_clauses = " OR ".join(
+                f"(cp2.title = :etitle_{i} AND cp2.cfrPart = :epart_{i})"
+                for i in range(len(exact_pairs))
+            )
+            sql += (
+                " AND EXISTS ("
+                "SELECT 1 FROM documents d2 "
+                "JOIN cfrparts cp2 ON cp2.frdocnum = d2.frdocnum "
+                "WHERE d2.docket_id = d.docket_id "
+                f"AND ({exact_clauses})"
+                ")"
+            )
+            for i, (title, part) in enumerate(exact_pairs):
+                params[f"etitle_{i}"] = title
+                params[f"epart_{i}"] = part
+
+        # Match LIMIT semantics of _search_dockets_postgres so a broad filtered
+        # query (e.g. medicare + agency=CMS) can't pull thousands of rows.
+        sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart LIMIT 50"
+
+        rows = self._run(sql, params)
         dockets = {}
         for row in rows:
             self._process_docket_row(dockets, row)
@@ -477,28 +564,32 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
     def text_match_terms(
             self, terms: List[str], opensearch_client=None) -> List[Dict[str, Any]]:
-        """Search OpenSearch for dockets matching terms across all indexes."""
-        if opensearch_client is None:
-            opensearch_client = get_opensearch_connection()
-        try:
+        """Search OpenSearch for dockets matching terms across all indexes.
+
+        When the caller doesn't pass an opensearch_client (i.e. real requests),
+        results are cached so pagination clicks for the same query return an
+        identical hit list. Without this, per-call AOSS variance (one of the
+        three aggregation queries occasionally erroring or timing out) caused
+        total_results to drift between page navigations.
+        """
+        if opensearch_client is not None:
             return self._run_text_match_queries(opensearch_client, terms)
-        except (KeyError, AttributeError) as e:
-            print(f"OpenSearch query failed: {e}")
-            return []
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"OpenSearch query failed (fallback to SQL): {e}")
-            return []
+        return self._cached_text_match_terms(tuple(terms))
+
+    @lru_cache(maxsize=128)
+    def _cached_text_match_terms(self, terms_tuple):
+        return self._run_text_match_queries(
+            get_opensearch_connection(), list(terms_tuple)
+        )
 
     def _run_text_match_queries(  # pylint: disable=too-many-locals
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
-        """Execute all three OpenSearch queries and merge their results."""
-        def safe_search(index_name: str, body: Dict) -> Dict:
-            try:
-                return opensearch_client.search(index=index_name, body=body)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"OpenSearch index query failed for '{index_name}': {e}")
-                return {"aggregations": {"by_docket": {"buckets": []}}}
+        """Execute all three OpenSearch queries and merge their results.
 
+        Errors from individual index queries propagate to the caller (the
+        Flask route) so flaky AOSS surfaces as a 503 the user can retry,
+        rather than a silent drop that gives different totals each call.
+        """
         docket_counts: Dict = {}
 
         doc_match_clauses = [
@@ -514,9 +605,9 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         comment_match_clauses = [{"match": {"commentText": t}} for t in terms]
         extracted_match_clauses = [{"match": {"extractedText": t}} for t in terms]
 
-        doc_resp = safe_search(
-            "documents_text",
-            self._build_docket_agg_query("matching_docs", doc_match_clauses)
+        doc_resp = opensearch_client.search(
+            index="documents_text",
+            body=self._build_docket_agg_query("matching_docs", doc_match_clauses),
         )
         self._accumulate_counts(
             docket_counts,
@@ -525,17 +616,17 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             "document_match_count"
         )
 
-        comment_resp = safe_search(
-            "comments",
-            self._build_docket_agg_query_unique_comments(
+        comment_resp = opensearch_client.search(
+            index="comments",
+            body=self._build_docket_agg_query_unique_comments(
                 "matching_comments", comment_match_clauses
-            )
+            ),
         )
-        extracted_resp = safe_search(
-            "comments_extracted_text",
-            self._build_docket_agg_query_unique_comments(
+        extracted_resp = opensearch_client.search(
+            index="comments_extracted_text",
+            body=self._build_docket_agg_query_unique_comments(
                 "matching_extracted", extracted_match_clauses
-            )
+            ),
         )
 
         comment_counts = self._extract_cardinality_counts(
