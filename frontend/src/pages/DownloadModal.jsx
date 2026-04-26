@@ -25,40 +25,20 @@ const PACKAGE_OPTIONS = [
 ];
 
 const FORMAT_OPTIONS = [
-  { id: "Raw", label: "RAW" },
+  { id: "raw", label: "RAW" },
   { id: "csv", label: "CSV" },
 ];
 
-export default function DownloadModal({ collectionName, docketIds, onClose }) {
+export default function DownloadModal({ collectionName, docketIds, onClose, onOpenDownloadStatus }) {
   const [selected, setSelected] = useState(new Set(["metadata"]));
   const [format, setFormat] = useState("raw");
   const [status, setStatus] = useState(null); // null | "pending" | "ready"
   const [jobId, setJobId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [message, setMessage] = useState(null);
  
   const isAll = !docketIds || docketIds.length === 0;
- 
-  useEffect(() => {
-    if (status !== "pending" || !jobId) return;
-    const pollId = setInterval(async () => {
-      try {
-        const res = await fetch(`/download/status/${jobId}`);
-        if (res.status === 401) {
-          clearInterval(pollId);
-          return;
-        }
-        const data = await res.json();
-        if (data.status === "ready") {
-          setStatus("ready");
-          clearInterval(pollId);
-        }
-      } catch (err) {
-        console.error("Polling error:", err);
-      }
-    }, 5000);
-    return () => clearInterval(pollId);
-  }, [status, jobId]);
 
   const toggleSelected = (id) => {
     setSelected((prev) => {
@@ -72,6 +52,8 @@ const handleDownload = async () => {
   if (selected.size === 0) return;
   setError(null);
   setSubmitting(true);
+  setMessage(null);
+
   try {
     const response = await fetch("/download/request", {
       method: "POST",
@@ -79,16 +61,25 @@ const handleDownload = async () => {
       body: JSON.stringify({
         docket_ids: docketIds,
         format,
-        include_binaries: selected.has("attachments"),
+        include_binaries: selected.has("extracted_text"),
       }),
     });
     if (response.status === 401) throw new Error("UNAUTHORIZED");
-    if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `Request failed: ${response.status}`);
+    }
     const data = await response.json();
     setJobId(data.job_id);
     setStatus("pending");
+    onClose();
+    onOpenDownloadStatus();
   } catch (err) {
-    setError("Failed to request download. Please try again.");
+    if (err.message === "UNAUTHORIZED") {
+      setError("Your session expired. Please log in again.");
+    } else {
+      setError(err.message || "Failed to request download.");
+    }
   } finally {
     setSubmitting(false);
   }
@@ -100,7 +91,7 @@ const handleDownload = async () => {
  
   const Checkbox = ({ checked, onChange }) => (
     <div
-      onClick={onChange}
+      onClick={(e) => { e.stopPropagation(); onChange(); }}
       style={{
         width: 18,
         height: 18,
@@ -127,6 +118,24 @@ const handleDownload = async () => {
     return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
+
+      <div className="modal-header">
+        <button
+          onClick={onClose}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "#aaa",
+            fontSize: 20,
+            lineHeight: 1,
+            padding: "2px 4px",
+          }}
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
  
         <h2 className="modal-title">
           {isAll
@@ -134,12 +143,13 @@ const handleDownload = async () => {
             : `Download ${docketIds.length} selected docket${docketIds.length !== 1 ? "s" : ""}`}
         </h2>
  
-        {error && <p className="modal-error">{error}</p>}
+        {message && <p className="modal-message">{message}</p>}
+        {error && <p className="modal-message">{error}</p>}
  
         {/* ── Pending ───────────────────────────────── */}
         {status === "pending" && (
           <p className="modal-loading">
-            Package is being prepared — this may take a few minutes.
+            Package is being prepared — this may take a few minutes. Please click "Check Downloads" to see the status of your download!
           </p>
         )}
  

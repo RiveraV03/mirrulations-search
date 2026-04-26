@@ -1,0 +1,35 @@
+[Unit]
+Description=Mirrulations Download Worker
+After=network.target redis6.service postgresql.service
+Wants=redis6.service
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user/mirrulations-search
+
+EnvironmentFile=-/home/ec2-user/mirrulations-search/.env
+Environment="PATH=/home/ec2-user/mirrulations-search/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/home/ec2-user/mirrulations-search/src"
+
+Environment=REDIS_HOST=localhost
+Environment=REDIS_PORT=6379
+Environment=REDIS_DB=0
+Environment=FETCH_REPO_DIR=/home/ec2-user/mirrulations-fetch
+Environment=CSV_REPO_DIR=/home/ec2-user/mirrulations-csv
+
+ExecStart=/home/ec2-user/mirrulations-search/.venv/bin/python \
+    /home/ec2-user/mirrulations-search/worker.py
+
+Restart=always
+RestartSec=5
+
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mirrulations-worker
+
+[Install]
+WantedBy=multi-user.target

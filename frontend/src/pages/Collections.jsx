@@ -16,7 +16,7 @@ const MAX_DOCKETS = 10;
 const SORT_MODIFIED = "modified";
 const SORT_ALPHABETICAL = "alphabetical";
 
-export default function Collections() {
+export default function Collections({ onOpenDownloadStatus }) {
   const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -29,10 +29,12 @@ export default function Collections() {
   const [dockets, setDockets] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
   const [docketsLoading, setDocketsLoading] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [sortMode, setSortMode] = useState(SORT_MODIFIED);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [checkedDockets, setCheckedDockets] = useState(new Set());
   const sortMenuRef = useRef(null);
 
   useEffect(() => {
@@ -48,6 +50,10 @@ export default function Collections() {
       document.removeEventListener("touchstart", handlePointerDown);
     };
   }, []);
+
+    useEffect(() => {
+    setCheckedDockets(new Set());
+  }, [selectedCollectionId]);
 
   const loadCollections = async () => {
     setLoading(true);
@@ -102,6 +108,10 @@ export default function Collections() {
     setPage(1);
     loadDockets(selectedCollectionId, 1, sortMode);
   }, [selectedCollectionId]);
+
+  useEffect(() => {
+    setPageInput(String(page));
+  }, [page]);
 
   useEffect(() => {
     if (!selectedCollectionId) return;
@@ -160,10 +170,17 @@ export default function Collections() {
     }
   };
 
+  
   const handleRemoveDocket = async (collectionId, docketId) => {
     setError("");
     try {
       await removeDocketFromCollection(collectionId, docketId);
+      // Also uncheck it if it was checked
+      setCheckedDockets((prev) => {
+        const next = new Set(prev);
+        next.delete(docketId);
+        return next;
+      });
       loadDockets(collectionId, page, sortMode);
     } catch (err) {
       if (err.message === "UNAUTHORIZED") {
@@ -172,6 +189,22 @@ export default function Collections() {
         setError("Failed to remove docket from collection.");
       }
     }
+  };
+ 
+  const toggleCheckedDocket = (docketId) => {
+    setCheckedDockets((prev) => {
+      // If already checked, always allow unchecking
+      if (prev.has(docketId)) {
+        const next = new Set(prev);
+        next.delete(docketId);
+        return next;
+      }
+      // Block checking if already at limit
+      if (prev.size >= MAX_DOCKETS) return prev;
+      const next = new Set(prev);
+      next.add(docketId);
+      return next;
+    });
   };
 
   if (unauthorized) {
@@ -186,33 +219,68 @@ export default function Collections() {
   const selectedCollection = collections.find(
     (collection) => collection.collection_id === selectedCollectionId
   );
-  const selectedDocketIds = selectedCollection?.docket_ids || [];
-  const overLimit = selectedDocketIds.length > MAX_DOCKETS;
-  const sortLabel = sortMode === SORT_ALPHABETICAL ? "Alphabetical" : "Last modified";
-
+ 
+  const checkedCount = checkedDockets.size;
+  const atLimit = checkedCount >= MAX_DOCKETS;
+ 
+  // If dockets are checked use those, otherwise use all docket IDs in the collection
+  const docketsForModal = checkedCount > 0
+    ? Array.from(checkedDockets)
+    : (selectedCollection?.docket_ids || []);
+ 
+  const downloadDisabled = !pagination?.totalResults ||
+    (checkedCount === 0 && (pagination?.totalResults ?? 0) > MAX_DOCKETS);
+ 
   const handleDownloadAll = () => {
-    if (!selectedCollection || overLimit) return;
+    if (!selectedCollection || downloadDisabled) return;
     setShowDownloadModal(true);
   };
-
-
+ 
+  const sortLabel = sortMode === SORT_ALPHABETICAL ? "Alphabetical" : "Last modified";
+ 
   const sortedDockets = useMemo(() => {
     const arr = [...dockets];
-  
     if (sortMode === SORT_ALPHABETICAL) {
       arr.sort((a, b) =>
-        (a.docket_title || "").localeCompare(b.docket_title || "", undefined, {
-          sensitivity: "base",
-        })
+        (a.docket_title || "").localeCompare(b.docket_title || "", undefined, { sensitivity: "base" })
       );
     } else {
-      arr.sort((a, b) =>
-        new Date(b.modify_date) - new Date(a.modify_date)
-      );
+      arr.sort((a, b) => new Date(b.modify_date) - new Date(a.modify_date));
     }
-  
     return arr;
   }, [dockets, sortMode]);
+ 
+  // Custom checkbox to avoid collections.css toggle override
+  const DocketCheckbox = ({ docketId }) => {
+    const checked = checkedDockets.has(docketId);
+    const blocked = !checked && atLimit;
+    return(       
+      <div
+        onClick={() => !blocked && toggleCheckedDocket(docketId)}
+        title={blocked ? `Max ${MAX_DOCKETS} dockets at a time` : ""}
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 4,
+          border: `2px solid ${checked ? "#6b63d4" : blocked ? "#e0e0e0" : "#ccc"}`,
+          background: checked ? "#6b63d4" : "white",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          cursor: blocked ? "not-allowed" : "pointer",
+          transition: "all 0.15s",
+          opacity: blocked ? 0.45 : 1,
+        }}
+      >
+        {checked && (
+          <svg width="11" height="9" viewBox="0 0 10 8" fill="none">
+            <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </div>
+    );
+  };
 
   return (
     <section className="collections-page collections-layout">
@@ -286,7 +354,7 @@ export default function Collections() {
               <p className="collections-summary">
                 Showing dockets in "{selectedCollection.name}" • {pagination?.totalResults ?? 0}{" "}
                 docket{(pagination?.totalResults ?? 0) === 1 ? "" : "s"} found
-                {overLimit && (
+                {atLimit && (
                   <span style={{ color: "#c0392b", marginLeft: 8, fontWeight: 600 }}>
                     · Limit of {MAX_DOCKETS} reached — remove dockets to download
                   </span>
@@ -352,10 +420,10 @@ export default function Collections() {
                     type="button"
                     className="collections-action-btn"
                     onClick={handleDownloadAll}
-                    disabled={!pagination?.totalResults || overLimit}
-                    title={overLimit ? `Collections are limited to ${MAX_DOCKETS} dockets for download` : ""}
+                    disabled={downloadDisabled}
+                    title={downloadDisabled ? `Select up to ${MAX_DOCKETS} dockets to download` : ""}
                   >
-                    Download All
+                    {checkedCount > 0 ? `Download (${checkedCount})` : "Download All"}
                   </button>
                   {editMode && (
                     <button
@@ -380,63 +448,117 @@ export default function Collections() {
               <>
                 <div className="collection-results">
                   {sortedDockets.map((item) => (
-                    <article key={item.docket_id} className="result-card">
-                      <h3 className="result-title">{item.docket_title}</h3>
-                      <div className="result-meta">
-                        <p><strong>Agency:</strong> {item.agency_id}</p>
-                        <p><strong>Docket-ID:</strong> {item.docket_id}</p>
-                        <p><strong>Docket type:</strong> {item.docket_type}</p>
-                        <p>
-                          <strong>CFR:</strong>{" "}
-                          {item.cfrPart && item.cfrPart.length > 0 ? (
-                            item.cfrPart.map((p, idx) => (
-                              <span key={idx}>
-                                <a href={p.link} target="_blank" rel="noopener noreferrer">
-                                  {p.title != null ? `${p.title} Part ${p.part}` : p.part}
-                                </a>
-                                {idx < item.cfrPart.length - 1 && ", "}
-                              </span>
-                            ))
-                          ) : (
-                            <a href={ECFR_URL} target="_blank" rel="noopener noreferrer">None</a>
-                          )}
-                        </p>
-                        <p><strong>Last modified date:</strong> {item.modify_date}</p>
-                        <p><strong>Documents:</strong> {item.documentDenominator ?? 0}</p>
-                        <p><strong>Comments:</strong> {item.commentDenominator ?? 0}</p>
+                    <article
+                      key={item.docket_id}
+                      className="result-card"
+                      style={{ display: "flex", alignItems: "flex-start", gap: 12 }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <h3 className="result-title">{item.docket_title}</h3>
+                        <div className="result-meta">
+                          <p><strong>Agency:</strong> {item.agency_id}</p>
+                          <p><strong>Docket-ID:</strong> {item.docket_id}</p>
+                          <p><strong>Docket type:</strong> {item.docket_type}</p>
+                          <p>
+                            <strong>CFR:</strong>{" "}
+                            {item.cfrPart && item.cfrPart.length > 0 ? (
+                              item.cfrPart.map((p, idx) => (
+                                <span key={idx}>
+                                  <a href={p.link} target="_blank" rel="noopener noreferrer">
+                                    {p.title != null ? `${p.title} Part ${p.part}` : p.part}
+                                  </a>
+                                  {idx < item.cfrPart.length - 1 && ", "}
+                                </span>
+                              ))
+                            ) : (
+                              <a href={ECFR_URL} target="_blank" rel="noopener noreferrer">None</a>
+                            )}
+                          </p>
+                          <p><strong>Last modified date:</strong> {item.modify_date}</p>
+                          <p><strong>Documents:</strong> {item.documentDenominator ?? 0}</p>
+                          <p><strong>Comments:</strong> {item.commentDenominator ?? 0}</p>
+                        </div>
+                        {editMode && (
+                          <button
+                            className="collection-remove-docket"
+                            onClick={() =>
+                              handleRemoveDocket(selectedCollection.collection_id, item.docket_id)
+                            }
+                          >
+                            Remove from Collection
+                          </button>
+                        )}
                       </div>
-                      {editMode && (
-                        <button
-                          className="collection-remove-docket"
-                          onClick={() =>
-                            handleRemoveDocket(selectedCollection.collection_id, item.docket_id)
-                          }
-                        >
-                          Remove from Collection
-                        </button>
-                      )}
+                      <DocketCheckbox docketId={item.docket_id} />
                     </article>
                   ))}
                 </div>
-                <div className="pagination-div">
-                  <button
-                    className="page-button"
-                    disabled={!pagination?.hasPrev}
-                    onClick={() => setPage((p) => p - 1)}
-                  >
-                    <ArrowLeftIcon color="white" size={32} />
-                  </button>
-                  <span className="page-info">
-                    Page {pagination?.page} of {pagination?.totalPages}
-                  </span>
-                  <button
-                    className="page-button"
-                    disabled={!pagination?.hasNext}
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    <ArrowRightIcon color="white" size={32} />
-                  </button>
-                </div>
+                {pagination?.totalPages > 0 && (
+                  <div className="pagination-div">
+                    <button
+                      className="page-btn"
+                      disabled={!pagination?.hasPrev}
+                      onClick={() => setPage(1)}
+                      title="First page"
+                    >
+                      «
+                    </button>
+                    <button
+                      className="page-btn"
+                      disabled={!pagination?.hasPrev}
+                      onClick={() => setPage((p) => p - 1)}
+                      title="Previous page"
+                    >
+                      <ArrowLeftIcon weight="bold" size={16} />
+                    </button>
+                    <span className="page-info">
+                      Page{" "}
+                      <input
+                        type="number"
+                        className="page-input"
+                        min={1}
+                        max={pagination?.totalPages ?? 1}
+                        value={pageInput}
+                        onChange={(e) => setPageInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const val = Number(pageInput);
+                            if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
+                              setPage(val);
+                            } else {
+                              setPageInput(String(page));
+                            }
+                          }
+                        }}
+                        onBlur={() => {
+                          const val = Number(pageInput);
+                          if (val >= 1 && val <= (pagination?.totalPages ?? 1) && val !== page) {
+                            setPage(val);
+                          } else {
+                            setPageInput(String(page));
+                          }
+                        }}
+                      />{" "}
+                      of {pagination?.totalPages}
+                    </span>
+                    <button
+                      className="page-btn"
+                      disabled={!pagination?.hasNext}
+                      onClick={() => setPage((p) => p + 1)}
+                      title="Next page"
+                    >
+                      <ArrowRightIcon weight="bold" size={16} />
+                    </button>
+                    <button
+                      className="page-btn"
+                      disabled={!pagination?.hasNext}
+                      onClick={() => setPage(pagination?.totalPages)}
+                      title="Last page"
+                    >
+                      »
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </>
@@ -446,8 +568,9 @@ export default function Collections() {
       {showDownloadModal && (
         <DownloadModal
           collectionName={selectedCollection?.name}
-          docketIds={selectedDocketIds}
+          docketIds={docketsForModal}
           onClose={() => setShowDownloadModal(false)}
+          onOpenDownloadStatus={onOpenDownloadStatus}
         />
       )}
     </section>
