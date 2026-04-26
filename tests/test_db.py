@@ -11,6 +11,7 @@ from datetime import datetime
 import pytest
 import mirrsearch.db as db_module
 from mirrsearch.db import DBLayer, cfr_part_filter_patterns, get_db
+from mirrsearch.db import _AOSS_FAIL_THRESHOLD  # pylint: disable=protected-access
 
 
 # --- DBLayer instantiation ---
@@ -1082,25 +1083,69 @@ def test_get_download_jobs_empty_table_returns_empty():
     assert db.get_download_jobs("user@email.com") == []
 
 
-def test_text_match_terms_keyerror_propagates():
-    """AOSS errors are no longer silently swallowed — they raise so the route
-    returns a 503 the user can retry, instead of producing inconsistent totals."""
-    class KeyErrorClient: #pylint: disable=too-few-public-methods
-        def search(self, index, body):
-            raise KeyError("aggregations")
+def test_text_match_terms_per_index_failure_is_isolated():
+    """One failing AOSS index logs and is dropped; the search still returns
+    results from the indexes that did respond, instead of 503-ing the user."""
+    db_module._reset_aoss_breaker_for_tests()
+
+    class PartiallyBrokenClient:  # pylint: disable=too-few-public-methods
+        def search(self, index, body):  # pylint: disable=unused-argument
+            if index == "comments_extracted_text":
+                raise RuntimeError("connection refused")
+            return {"aggregations": {"by_docket": {"buckets": []}}}
+
     db = DBLayer()
-    with pytest.raises(KeyError):
-        db.text_match_terms(["xyz"], opensearch_client=KeyErrorClient())
+    assert db.text_match_terms(["xyz"], opensearch_client=PartiallyBrokenClient()) == []
 
 
-def test_text_match_terms_exception_propagates():
-    """A generic AOSS exception now propagates instead of returning []."""
-    class BrokenClient: #pylint: disable=too-few-public-methods
-        def search(self, index, body):
-            raise RuntimeError("connection refused")
+def test_text_match_terms_429_retries_then_succeeds():
+    """A transient 429 retries once after backoff and succeeds — no 503."""
+    db_module._reset_aoss_breaker_for_tests()
+
+    calls = {"comments_extracted_text": 0}
+
+    class FlakyClient:  # pylint: disable=too-few-public-methods
+        def search(self, index, body):  # pylint: disable=unused-argument
+            if index == "comments_extracted_text":
+                calls["comments_extracted_text"] += 1
+                if calls["comments_extracted_text"] == 1:
+                    raise RuntimeError("429 Too Many Requests")
+            return {"aggregations": {"by_docket": {"buckets": []}}}
+
     db = DBLayer()
-    with pytest.raises(RuntimeError):
-        db.text_match_terms(["xyz"], opensearch_client=BrokenClient())
+    db.text_match_terms(["xyz"], opensearch_client=FlakyClient())
+    assert calls["comments_extracted_text"] == 2
+
+
+def test_text_match_terms_429_persistent_records_breaker():
+    """Persistent 429s on multiple calls open the breaker so subsequent
+    searches skip AOSS entirely and serve SQL results immediately."""
+    db_module._reset_aoss_breaker_for_tests()
+
+    class Always429:  # pylint: disable=too-few-public-methods
+        def search(self, index, body):  # pylint: disable=unused-argument
+            raise RuntimeError("429 Too Many Requests")
+
+    db = DBLayer()
+    for _ in range(3):
+        db.text_match_terms(["xyz"], opensearch_client=Always429())
+    assert db_module._aoss_breaker_is_open() is True
+
+
+def test_text_match_terms_breaker_short_circuits():
+    """When the breaker is open, AOSS isn't called at all."""
+    db_module._reset_aoss_breaker_for_tests()
+    # Force breaker open
+    for _ in range(_AOSS_FAIL_THRESHOLD):
+        db_module._record_aoss_429()
+
+    class ShouldNotBeCalled:  # pylint: disable=too-few-public-methods
+        def search(self, index, body):  # pylint: disable=unused-argument
+            raise AssertionError("AOSS must not be called while breaker is open")
+
+    db = DBLayer()
+    assert db.text_match_terms(["xyz"], opensearch_client=ShouldNotBeCalled()) == []
+    db_module._reset_aoss_breaker_for_tests()
 
 
 def test_text_match_terms_short_query_skips_aoss():

@@ -1,5 +1,8 @@
 # pylint: disable=too-many-lines
 import json
+import logging
+import time
+from collections import deque
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import List, Dict, Any, Set, Optional
@@ -7,6 +10,8 @@ import os
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from opensearchpy import OpenSearch
+
+log = logging.getLogger(__name__)
 
 try:
     import requests
@@ -96,6 +101,41 @@ def _parse_positive_int_env(var_name: str, default: int) -> int:
 def _opensearch_match_docket_bucket_size() -> int:
     """How many docket buckets to request for corpus-wide match aggregations."""
     return _parse_positive_int_env("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", 1000)
+
+
+# AOSS 429 resilience: track recent throttle events and short-circuit AOSS
+# when the same query stream keeps overwhelming OCU capacity.
+_AOSS_FAIL_WINDOW_SEC = 30.0
+_AOSS_FAIL_THRESHOLD = 2
+_AOSS_BREAKER_COOLDOWN_SEC = 30.0
+_AOSS_RETRY_BACKOFF_SEC = 0.25
+
+_aoss_failures: "deque[float]" = deque(maxlen=_AOSS_FAIL_THRESHOLD)
+_aoss_breaker_open_until: float = 0.0  # pylint: disable=invalid-name
+
+
+def _is_429(exc: BaseException) -> bool:
+    msg = str(exc)
+    return "429" in msg or "Too Many Requests" in msg
+
+
+def _aoss_breaker_is_open() -> bool:
+    return time.monotonic() < _aoss_breaker_open_until
+
+
+def _record_aoss_429() -> None:
+    global _aoss_breaker_open_until  # pylint: disable=global-statement
+    now = time.monotonic()
+    _aoss_failures.append(now)
+    recent = [t for t in _aoss_failures if now - t <= _AOSS_FAIL_WINDOW_SEC]
+    if len(recent) >= _AOSS_FAIL_THRESHOLD:
+        _aoss_breaker_open_until = now + _AOSS_BREAKER_COOLDOWN_SEC
+
+
+def _reset_aoss_breaker_for_tests() -> None:
+    global _aoss_breaker_open_until  # pylint: disable=global-statement
+    _aoss_failures.clear()
+    _aoss_breaker_open_until = 0.0
 
 
 
@@ -598,6 +638,8 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         """
         if any(len((t or "").strip()) < 2 for t in terms):
             return []
+        if _aoss_breaker_is_open():
+            return []
         if opensearch_client is not None:
             return self._run_text_match_queries(opensearch_client, terms)
         return self._cached_text_match_terms(tuple(terms))
@@ -608,13 +650,36 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             get_opensearch_connection(), list(terms_tuple)
         )
 
+    @staticmethod
+    def _aoss_search(opensearch_client, index: str, body: Dict) -> Optional[Dict]:
+        """Run an AOSS search; one 250ms retry on 429, isolate failures per index.
+
+        Returns None when the index errors after retry. Records 429s for the
+        circuit breaker so a sustained throttle stops piling on AOSS.
+        """
+        try:
+            return opensearch_client.search(index=index, body=body)
+        except Exception as exc:  # pylint: disable=broad-except
+            if _is_429(exc):
+                time.sleep(_AOSS_RETRY_BACKOFF_SEC)
+                try:
+                    return opensearch_client.search(index=index, body=body)
+                except Exception as retry_exc:  # pylint: disable=broad-except
+                    if _is_429(retry_exc):
+                        _record_aoss_429()
+                    log.warning("AOSS index %s failed after retry: %s", index, retry_exc)
+                    return None
+            log.warning("AOSS index %s failed: %s", index, exc)
+            return None
+
     def _run_text_match_queries(  # pylint: disable=too-many-locals
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
-        """Execute all three OpenSearch queries and merge their results.
+        """Execute the three OpenSearch queries and merge what came back.
 
-        Errors from individual index queries propagate to the caller (the
-        Flask route) so flaky AOSS surfaces as a 503 the user can retry,
-        rather than a silent drop that gives different totals each call.
+        Per-index isolation: a failure on one index logs and drops that
+        index's contribution rather than 503-ing the whole search. The
+        cache key is the query terms, so a partial result is stable across
+        pagination clicks for the duration of the cache window.
         """
         docket_counts: Dict = {}
 
@@ -631,35 +696,41 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         comment_match_clauses = [{"match": {"commentText": t}} for t in terms]
         extracted_match_clauses = [{"match": {"extractedText": t}} for t in terms]
 
-        doc_resp = opensearch_client.search(
-            index="documents_text",
-            body=self._build_docket_agg_query("matching_docs", doc_match_clauses),
+        doc_resp = self._aoss_search(
+            opensearch_client,
+            "documents_text",
+            self._build_docket_agg_query("matching_docs", doc_match_clauses),
         )
-        self._accumulate_counts(
-            docket_counts,
-            doc_resp["aggregations"]["by_docket"]["buckets"],
-            "matching_docs",
-            "document_match_count"
-        )
+        if doc_resp is not None:
+            self._accumulate_counts(
+                docket_counts,
+                doc_resp["aggregations"]["by_docket"]["buckets"],
+                "matching_docs",
+                "document_match_count"
+            )
 
-        comment_resp = opensearch_client.search(
-            index="comments",
-            body=self._build_docket_agg_query_unique_comments(
+        comment_resp = self._aoss_search(
+            opensearch_client,
+            "comments",
+            self._build_docket_agg_query_unique_comments(
                 "matching_comments", comment_match_clauses
             ),
         )
-        extracted_resp = opensearch_client.search(
-            index="comments_extracted_text",
-            body=self._build_docket_agg_query_unique_comments(
+        extracted_resp = self._aoss_search(
+            opensearch_client,
+            "comments_extracted_text",
+            self._build_docket_agg_query_unique_comments(
                 "matching_extracted", extracted_match_clauses
             ),
         )
 
-        comment_counts = self._extract_cardinality_counts(
-            comment_resp, "matching_comments"
+        comment_counts = (
+            self._extract_cardinality_counts(comment_resp, "matching_comments")
+            if comment_resp is not None else {}
         )
-        extracted_counts = self._extract_cardinality_counts(
-            extracted_resp, "matching_extracted"
+        extracted_counts = (
+            self._extract_cardinality_counts(extracted_resp, "matching_extracted")
+            if extracted_resp is not None else {}
         )
         for did in set(comment_counts) | set(extracted_counts):
             docket_counts.setdefault(
