@@ -211,12 +211,14 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             agency: List[str] = None,
             cfr_part_param: List[str] = None,
             start_date: str = None,
-            end_date: str = None) \
+            end_date: str = None,
+            exact_docket_id: str = None) \
             -> List[Dict[str, Any]]:
         if self.engine is None:
             return []
         results = self._search_dockets_postgres(
-            query, docket_type_param, agency, cfr_part_param, start_date, end_date
+            query, docket_type_param, agency, cfr_part_param, start_date, end_date,
+            exact_docket_id=exact_docket_id,
         )
         exact_pairs = _cfr_exact_title_part_pairs(cfr_part_param)
         if not exact_pairs:
@@ -250,8 +252,21 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             agency: List[str] = None,
             cfr_part_param: List[str] = None,
             start_date: str = None,
-            end_date: str = None) -> List[Dict[str, Any]]:
-        sql = """
+            end_date: str = None,
+            exact_docket_id: str = None) -> List[Dict[str, Any]]:
+        # Agency rule codes like CMS-1849-P aren't stored in dockets at all;
+        # they live in federal_register_documents.docket_ids and the regs.gov
+        # docket sits in document_id with a trailing -NNNN we strip off.
+        fr_clause = ""
+        if exact_docket_id:
+            fr_clause = (
+                " OR d.docket_id IN ("
+                "SELECT regexp_replace(fr.document_id, '-[0-9]+$', '') "
+                "FROM federal_register_documents fr "
+                "WHERE EXISTS (SELECT 1 FROM unnest(fr.docket_ids) e "
+                "WHERE e ILIKE :exact_pattern))"
+            )
+        sql = f"""
             SELECT DISTINCT
                 d.docket_id,
                 d.docket_title,
@@ -265,9 +280,11 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             JOIN documents doc ON doc.docket_id = d.docket_id
             LEFT JOIN cfrparts cp ON cp.frdocnum = doc.frdocnum
             LEFT JOIN links l ON l.title = cp.title AND l.cfrPart = cp.cfrPart
-            WHERE (d.docket_title ILIKE :query OR d.docket_id ILIKE :query)
+            WHERE (d.docket_title ILIKE :query OR d.docket_id ILIKE :query{fr_clause})
         """
         params: Dict[str, Any] = {"query": f"%{(query or '').strip().lower()}%"}
+        if exact_docket_id:
+            params["exact_pattern"] = f"{exact_docket_id}%"
 
         if docket_type_param:
             sql += " AND d.docket_type = :docket_type"

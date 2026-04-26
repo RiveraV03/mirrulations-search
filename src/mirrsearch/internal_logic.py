@@ -203,6 +203,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         sql_results = self.db_layer.search(
             effective_query, docket_type_param, agency, cfr_part_param,
             start_date=start_date, end_date=end_date,
+            exact_docket_id=canonical_id,
         )
         title_rows = [{**r, "match_source": "title"} for r in sql_results]
         title_ids = {_row_docket_key(r) for r in sql_results}

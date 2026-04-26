@@ -1,5 +1,5 @@
 from mirrsearch.docket_id import normalize_docket_id, looks_like_docket_id
-from mirrsearch.internal_logic import _mark_exact_id_match
+from mirrsearch.internal_logic import _mark_exact_id_match, InternalLogic
 
 
 # ---- regulations.gov family ----
@@ -111,8 +111,6 @@ def test_exact_match_does_not_set_flag_for_unrelated_query():
 
 def test_search_skips_aoss_for_docket_id_query():
     """Docket-ID queries shouldn't fan out into broad AOSS aggregations."""
-    from mirrsearch.internal_logic import InternalLogic
-
     class StubDB:
         def __init__(self):
             self.text_match_called = False
@@ -135,9 +133,50 @@ def test_search_skips_aoss_for_docket_id_query():
     assert stub.text_match_called is False
 
 
-def test_search_still_calls_aoss_for_freetext_query():
-    from mirrsearch.internal_logic import InternalLogic
+def test_search_passes_canonical_id_as_exact_docket_id():
+    """Rule-code queries need to flow through to db.search so the FR-side lookup fires."""
+    captured = {}
 
+    class StubDB:
+        def search(self, *_a, **kw):
+            captured.update(kw)
+            return []
+
+        def text_match_terms(self, *_a, **_kw):
+            return []
+
+        def get_dockets_by_ids(self, *_a, **_kw):
+            return []
+
+        def get_docket_document_comment_totals(self, *_a, **_kw):
+            return {}
+
+    InternalLogic("db", db_layer=StubDB()).search("cms 1849 p")
+    assert captured.get("exact_docket_id") == "CMS-1849-P"
+
+
+def test_search_does_not_pass_exact_docket_id_for_freetext():
+    captured = {}
+
+    class StubDB:
+        def search(self, *_a, **kw):
+            captured.update(kw)
+            return []
+
+        def text_match_terms(self, *_a, **_kw):
+            return []
+
+        def get_dockets_by_ids(self, *_a, **_kw):
+            return []
+
+        def get_docket_document_comment_totals(self, *_a, **_kw):
+            return {}
+
+    InternalLogic("db", db_layer=StubDB()).search("medicare")
+    assert captured.get("exact_docket_id") is None
+
+
+def test_search_still_calls_aoss_for_freetext_query():
     class StubDB:
         def __init__(self):
             self.text_match_called = False
