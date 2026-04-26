@@ -663,7 +663,7 @@ def test_text_match_terms_same_comment_id_body_and_extracted_counts_once():
 
     db = DBLayer()
 
-    results = db.text_match_terms(["x"], opensearch_client=fake_client)
+    results = db.text_match_terms(["xyz"], opensearch_client=fake_client)
 
     assert len(results) == 1
     assert results[0]["docket_id"] == "D1"
@@ -804,7 +804,7 @@ def test_text_match_terms_malformed_response_propagates():
 
     db = DBLayer()
     with pytest.raises((KeyError, TypeError)):
-        db.text_match_terms(["x"], opensearch_client=BadClient())
+        db.text_match_terms(["xyz"], opensearch_client=BadClient())
 
 
 # --- is_admin tests ---
@@ -1090,7 +1090,7 @@ def test_text_match_terms_keyerror_propagates():
             raise KeyError("aggregations")
     db = DBLayer()
     with pytest.raises(KeyError):
-        db.text_match_terms(["x"], opensearch_client=KeyErrorClient())
+        db.text_match_terms(["xyz"], opensearch_client=KeyErrorClient())
 
 
 def test_text_match_terms_exception_propagates():
@@ -1100,7 +1100,20 @@ def test_text_match_terms_exception_propagates():
             raise RuntimeError("connection refused")
     db = DBLayer()
     with pytest.raises(RuntimeError):
-        db.text_match_terms(["x"], opensearch_client=BrokenClient())
+        db.text_match_terms(["xyz"], opensearch_client=BrokenClient())
+
+
+def test_text_match_terms_short_query_skips_aoss():
+    """Single-character queries (e.g. "a") match too much of the corpus and
+    time out the bucket aggregation. Skip AOSS entirely so the SQL title
+    search can still serve a useful response."""
+    class ShouldNotBeCalled: #pylint: disable=too-few-public-methods
+        def search(self, index, body):
+            raise AssertionError("AOSS must not be called for short queries")
+    db = DBLayer()
+    assert db.text_match_terms(["a"], opensearch_client=ShouldNotBeCalled()) == []
+    assert db.text_match_terms([""], opensearch_client=ShouldNotBeCalled()) == []
+    assert db.text_match_terms(["  "], opensearch_client=ShouldNotBeCalled()) == []
 
 
 # Lines 465-472: _run_text_match_queries document match accumulation
@@ -1129,7 +1142,7 @@ def test_collect_matched_dockets_unions_both_indexes():
     ]
     fake_client = _FakeOpenSearch([], comment_buckets, extracted_buckets)
     db = DBLayer()
-    results = db.text_match_terms(["x"], opensearch_client=fake_client)
+    results = db.text_match_terms(["xyz"], opensearch_client=fake_client)
     docket_ids = {r["docket_id"] for r in results}
     assert "D1" in docket_ids
     assert "D2" in docket_ids

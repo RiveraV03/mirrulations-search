@@ -566,12 +566,21 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             self, terms: List[str], opensearch_client=None) -> List[Dict[str, Any]]:
         """Search OpenSearch for dockets matching terms across all indexes.
 
+        Single-character terms (e.g. "a") match essentially every comment in
+        the corpus and reliably time out the bucket aggregation, returning a
+        503 to the user. For those, skip AOSS entirely — the SQL title search
+        still runs and returns useful results. The 2-char threshold can be
+        revisited if legitimately-short tokens like "AI" or "5G" become a
+        common search.
+
         When the caller doesn't pass an opensearch_client (i.e. real requests),
         results are cached so pagination clicks for the same query return an
         identical hit list. Without this, per-call AOSS variance (one of the
         three aggregation queries occasionally erroring or timing out) caused
         total_results to drift between page navigations.
         """
+        if any(len((t or "").strip()) < 2 for t in terms):
+            return []
         if opensearch_client is not None:
             return self._run_text_match_queries(opensearch_client, terms)
         return self._cached_text_match_terms(tuple(terms))
@@ -1117,7 +1126,9 @@ class _AossClient:  # pylint: disable=too-few-public-methods
 
     def search(self, index, body):
         url = f"{self.base_url}/{index}/_search"
-        resp = self.session.post(url, json=body, timeout=30)
+        # Bumped from 30s — broad bucket aggregations on large corpora can
+        # need more headroom. Gunicorn worker timeout is 120s.
+        resp = self.session.post(url, json=body, timeout=60)
         resp.raise_for_status()
         return resp.json()
 
