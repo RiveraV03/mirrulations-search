@@ -105,3 +105,56 @@ def test_exact_match_does_not_set_flag_for_unrelated_query():
     result = {"results": [{"docket_id": "CMS-2025-0240"}]}
     _mark_exact_id_match(result, "ESRD")
     assert "isExactMatch" not in result["results"][0]
+
+
+# ---- AOSS is skipped when query is a docket id ----
+
+def test_search_skips_aoss_for_docket_id_query():
+    """Docket-ID queries shouldn't fan out into broad AOSS aggregations."""
+    from mirrsearch.internal_logic import InternalLogic
+
+    class StubDB:
+        def __init__(self):
+            self.text_match_called = False
+
+        def search(self, *_a, **_kw):
+            return []
+
+        def text_match_terms(self, *_a, **_kw):
+            self.text_match_called = True
+            return []
+
+        def get_dockets_by_ids(self, *_a, **_kw):
+            return []
+
+        def get_docket_document_comment_totals(self, *_a, **_kw):
+            return {}
+
+    stub = StubDB()
+    InternalLogic("db", db_layer=stub).search("EPA-HQ-OPP-2009-0634")
+    assert stub.text_match_called is False
+
+
+def test_search_still_calls_aoss_for_freetext_query():
+    from mirrsearch.internal_logic import InternalLogic
+
+    class StubDB:
+        def __init__(self):
+            self.text_match_called = False
+
+        def search(self, *_a, **_kw):
+            return []
+
+        def text_match_terms(self, *_a, **_kw):
+            self.text_match_called = True
+            return []
+
+        def get_dockets_by_ids(self, *_a, **_kw):
+            return []
+
+        def get_docket_document_comment_totals(self, *_a, **_kw):
+            return {}
+
+    stub = StubDB()
+    InternalLogic("db", db_layer=stub).search("medicare")
+    assert stub.text_match_called is True
