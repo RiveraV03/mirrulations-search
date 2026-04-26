@@ -15,6 +15,7 @@ import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import SiteNavbar from "./components/SiteNavbar";
 import DownloadStatusModal from "./components/DownloadStatusModal";
 
+/**Test */
 
 export default function App() {
   const [query, setQuery] = useState("");
@@ -28,6 +29,7 @@ export default function App() {
   const [status, setStatus] = useState(new Set());
   const [selectedCfrParts, setSelectedCfrParts] = useState({});
   const [page, setPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -114,8 +116,17 @@ export default function App() {
       );
 
       setResults(data.results);
-      setPagination(data.pagination);
+      const pag = data.pagination;
+      if (pag && !pag.hasNext && pag.page > 0) {
+        const corrected = (pag.page - 1) * pag.pageSize + data.results.length;
+        if (corrected < pag.totalResults) {
+          pag.totalResults = corrected;
+          pag.totalPages = Math.max(1, Math.ceil(corrected / pag.pageSize));
+        }
+      }
+      setPagination(pag);
       setPage(newPage);
+      setPageInput(String(newPage));
       setActiveParams(params);
     } catch (err) {
       if (err.message === "UNAUTHORIZED") {
@@ -250,28 +261,76 @@ export default function App() {
                     hasSearched={hasSearched}
                     query={query}
                     unauthorized={unauthorized}
+                    totalResults={pagination?.totalResults}
                     error={error}
                     onOpenDownloadStatus={() => setOpenDownloadStatus(true)}
                   />
-                  <div className="pagination-div">
-                    <button
-                      className="page-button"
-                      disabled={!pagination?.hasPrev}
-                      onClick={() => runSearch(page - 1, undefined, activeParams)}
-                    >
-                      <ArrowLeftIcon color="white" size={32} />
-                    </button>
-                    <span className="page-info">
-                      Page {pagination?.page} of {pagination?.totalPages}
-                    </span>
-                    <button
-                      className="page-button"
-                      disabled={!pagination?.hasNext}
-                      onClick={() => runSearch(page + 1, undefined, activeParams)}
-                    >
-                      <ArrowRightIcon color="white" size={32} />
-                    </button>
-                  </div>
+                  {pagination?.totalPages > 0 && (
+                    <div className="pagination-div">
+                      <button
+                        className="page-btn"
+                        disabled={!pagination?.hasPrev}
+                        onClick={() => runSearch(1, undefined, activeParams)}
+                        title="First page"
+                      >
+                        «
+                      </button>
+                      <button
+                        className="page-btn"
+                        disabled={!pagination?.hasPrev}
+                        onClick={() => runSearch(page - 1, undefined, activeParams)}
+                        title="Previous page"
+                      >
+                        <ArrowLeftIcon weight="bold" size={16} />
+                      </button>
+                      <span className="page-info">
+                        Page{" "}
+                        <input
+                          type="number"
+                          className="page-input"
+                          min={1}
+                          max={pagination?.totalPages ?? 1}
+                          value={pageInput}
+                          onChange={(e) => setPageInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const val = Number(pageInput);
+                              if (val >= 1 && val <= (pagination?.totalPages ?? 1)) {
+                                runSearch(val, undefined, activeParams);
+                              } else {
+                                setPageInput(String(page));
+                              }
+                            }
+                          }}
+                          onBlur={() => {
+                            const val = Number(pageInput);
+                            if (val >= 1 && val <= (pagination?.totalPages ?? 1) && val !== page) {
+                              runSearch(val, undefined, activeParams);
+                            } else {
+                              setPageInput(String(page));
+                            }
+                          }}
+                        />{" "}
+                        of {pagination?.totalPages}
+                      </span>
+                      <button
+                        className="page-btn"
+                        disabled={!pagination?.hasNext}
+                        onClick={() => runSearch(page + 1, undefined, activeParams)}
+                        title="Next page"
+                      >
+                        <ArrowRightIcon weight="bold" size={16} />
+                      </button>
+                      <button
+                        className="page-btn"
+                        disabled={!pagination?.hasNext}
+                        onClick={() => runSearch(pagination?.totalPages, undefined, activeParams)}
+                        title="Last page"
+                      >
+                        »
+                      </button>
+                    </div>
+                  )}
                 </main>
               </div>
               {openDownloadStatus && (

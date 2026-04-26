@@ -23,7 +23,7 @@ function scoreResult(item) {
 }
 
 
-export default function ResultsPanel({ results, loading, hasSearched, query, unauthorized, error, onOpenDownloadStatus }) {
+export default function ResultsPanel({ results, loading, hasSearched, query, unauthorized, totalResults, error, onOpenDownloadStatus }) {
 
  const [modalDocketId, setModalDocketId] = useState(null);
  const [downloadDocketId, setDownloadDocketId] = useState(null)
@@ -93,7 +93,7 @@ export default function ResultsPanel({ results, loading, hasSearched, query, una
     )}
 
      <p className="results-summary">
-       Showing results for "<strong>{query}</strong>" • {results.length} docket{results.length !== 1 ? "s" : ""} found
+       Showing results for "<strong>{query}</strong>" • {(totalResults ?? results.length).toLocaleString()} docket{(totalResults ?? results.length) !== 1 ? "s" : ""} found
      </p>
      {sortedResults.map((item, index) => (
        <div key={item.docket_id || index} className="result-card">

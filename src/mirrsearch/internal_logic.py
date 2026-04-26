@@ -304,6 +304,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
     def _get_full_text_rows(self, docket_ids, os_counts_by_id, #pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals
                         docket_type_param, agency, cfr_part_param,
                         start_date=None, end_date=None):
+        """Fetch and filter full text rows for docket IDs not in SQL results."""
         if not docket_ids:
             return []
 
