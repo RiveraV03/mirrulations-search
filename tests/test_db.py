@@ -794,13 +794,17 @@ def test_text_match_terms_docket_only_in_comments():
     assert results[0]["docket_id"] == "COMMENT-ONLY"
     assert results[0]["comment_match_count"] == 10
 
-def test_text_match_terms_malformed_response_returns_empty():
+def test_text_match_terms_malformed_response_propagates():
+    """A malformed AOSS response (missing aggregations) raises so the Flask
+    route returns a real 503 instead of silently dropping hits — silent drops
+    cause total_results to drift between pagination clicks."""
     class BadClient:  # pylint: disable=too-few-public-methods
         def search(self, index, body):  # pylint: disable=unused-argument
             return {}
 
     db = DBLayer()
-    assert db.text_match_terms(["x"], opensearch_client=BadClient()) == []
+    with pytest.raises((KeyError, TypeError)):
+        db.text_match_terms(["x"], opensearch_client=BadClient())
 
 
 # --- is_admin tests ---
@@ -1078,23 +1082,25 @@ def test_get_download_jobs_empty_table_returns_empty():
     assert db.get_download_jobs("user@email.com") == []
 
 
-# Lines 400-402: text_match_terms KeyError/AttributeError fallback
-def test_text_match_terms_keyerror_returns_empty():
-    """KeyError in _run_text_match_queries returns empty list."""
+def test_text_match_terms_keyerror_propagates():
+    """AOSS errors are no longer silently swallowed — they raise so the route
+    returns a 503 the user can retry, instead of producing inconsistent totals."""
     class KeyErrorClient: #pylint: disable=too-few-public-methods
         def search(self, index, body):
             raise KeyError("aggregations")
     db = DBLayer()
-    assert db.text_match_terms(["x"], opensearch_client=KeyErrorClient()) == []
+    with pytest.raises(KeyError):
+        db.text_match_terms(["x"], opensearch_client=KeyErrorClient())
 
 
-def test_text_match_terms_exception_returns_empty():
-    """Generic exception in _run_text_match_queries returns empty list."""
+def test_text_match_terms_exception_propagates():
+    """A generic AOSS exception now propagates instead of returning []."""
     class BrokenClient: #pylint: disable=too-few-public-methods
         def search(self, index, body):
             raise RuntimeError("connection refused")
     db = DBLayer()
-    assert db.text_match_terms(["x"], opensearch_client=BrokenClient()) == []
+    with pytest.raises(RuntimeError):
+        db.text_match_terms(["x"], opensearch_client=BrokenClient())
 
 
 # Lines 465-472: _run_text_match_queries document match accumulation

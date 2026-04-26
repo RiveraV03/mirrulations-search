@@ -243,8 +243,12 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
                      + int(h.get("comment_match_count", 0)))
             candidates.append((match, did, "full_text", None))
 
-        # Mirrors _sort_results default: (match_total, docket_id) descending.
-        candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
+        # Mirrors _sort_results default: title matches outrank FT-only,
+        # then (match_total, docket_id) descending within each tier.
+        candidates.sort(
+            key=lambda c: (1 if c[2] == "title" else 0, c[0], c[1]),
+            reverse=True,
+        )
 
         total_results = len(candidates)
         total_pages = (total_results + page_size - 1) // page_size
@@ -345,7 +349,12 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             row["correlation_score"] = _correlation_score(row)
 
     def _sort_results(self, rows, sort_by=None):
-        """Sort results by the requested field, defaulting to relevance."""
+        """Sort results by the requested field, defaulting to relevance.
+
+        Default relevance ranks title/docket-id matches above OS-only hits.
+        Otherwise an exact-ID search like FAA-2024-2435 gets buried under
+        unrelated dockets whose comments happen to quote that ID.
+        """
         if sort_by == "modify_date":
             rows.sort(key=lambda r: r.get("modify_date") or "", reverse=True)
         elif sort_by == "comment_count":
@@ -355,6 +364,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         else:
             rows.sort(
                 key=lambda r: (
+                    1 if r.get("match_source") == "title" else 0,
                     int(r.get("document_match_count", 0)) + int(r.get("comment_match_count", 0)),
                     r.get("docket_id", ""),
                 ),

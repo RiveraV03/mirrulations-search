@@ -162,8 +162,9 @@ def test_merge_full_text_kept_when_agency_filter_matches():
     db = _FakeDbMerge(sql_rows, os_hits, by_id_rows)
     logic = InternalLogic("x", db_layer=db)
     out = logic.search("q", agency=["CMS"], page=1, page_size=10)
-    # B ranks above A (higher match counts vs totals from _FakeDbMerge).
-    assert [r["docket_id"] for r in out["results"]] == ["B", "A"]
+    # A is a title/docket-id match, B is OpenSearch-only — title matches now
+    # rank above FT-only hits regardless of comment-text match count.
+    assert [r["docket_id"] for r in out["results"]] == ["A", "B"]
 
 
 def test_merge_full_text_dropped_when_docket_type_filter_no_match():
@@ -255,7 +256,8 @@ def test_merge_full_text_kept_when_cfr_pattern_filter_matches():
     db = _FakeDbMerge(sql_rows, os_hits, by_id_rows)
     logic = InternalLogic("x", db_layer=db)
     out = logic.search("q", cfr_part_param=["413"], page=1, page_size=10)
-    assert [r["docket_id"] for r in out["results"]] == ["B", "A"]
+    # Title match A outranks FT-only B even though B has higher AOSS counts.
+    assert [r["docket_id"] for r in out["results"]] == ["A", "B"]
 
 
 class _FakePagingDb:

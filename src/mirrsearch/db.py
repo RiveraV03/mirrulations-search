@@ -1,6 +1,7 @@
 # pylint: disable=too-many-lines
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Dict, Any, Set, Optional
 import os
 from sqlalchemy import create_engine, text
@@ -563,28 +564,32 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
     def text_match_terms(
             self, terms: List[str], opensearch_client=None) -> List[Dict[str, Any]]:
-        """Search OpenSearch for dockets matching terms across all indexes."""
-        if opensearch_client is None:
-            opensearch_client = get_opensearch_connection()
-        try:
+        """Search OpenSearch for dockets matching terms across all indexes.
+
+        When the caller doesn't pass an opensearch_client (i.e. real requests),
+        results are cached so pagination clicks for the same query return an
+        identical hit list. Without this, per-call AOSS variance (one of the
+        three aggregation queries occasionally erroring or timing out) caused
+        total_results to drift between page navigations.
+        """
+        if opensearch_client is not None:
             return self._run_text_match_queries(opensearch_client, terms)
-        except (KeyError, AttributeError) as e:
-            print(f"OpenSearch query failed: {e}")
-            return []
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"OpenSearch query failed (fallback to SQL): {e}")
-            return []
+        return self._cached_text_match_terms(tuple(terms))
+
+    @lru_cache(maxsize=128)
+    def _cached_text_match_terms(self, terms_tuple):
+        return self._run_text_match_queries(
+            get_opensearch_connection(), list(terms_tuple)
+        )
 
     def _run_text_match_queries(  # pylint: disable=too-many-locals
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
-        """Execute all three OpenSearch queries and merge their results."""
-        def safe_search(index_name: str, body: Dict) -> Dict:
-            try:
-                return opensearch_client.search(index=index_name, body=body)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"OpenSearch index query failed for '{index_name}': {e}")
-                return {"aggregations": {"by_docket": {"buckets": []}}}
+        """Execute all three OpenSearch queries and merge their results.
 
+        Errors from individual index queries propagate to the caller (the
+        Flask route) so flaky AOSS surfaces as a 503 the user can retry,
+        rather than a silent drop that gives different totals each call.
+        """
         docket_counts: Dict = {}
 
         doc_match_clauses = [
@@ -600,9 +605,9 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         comment_match_clauses = [{"match": {"commentText": t}} for t in terms]
         extracted_match_clauses = [{"match": {"extractedText": t}} for t in terms]
 
-        doc_resp = safe_search(
-            "documents_text",
-            self._build_docket_agg_query("matching_docs", doc_match_clauses)
+        doc_resp = opensearch_client.search(
+            index="documents_text",
+            body=self._build_docket_agg_query("matching_docs", doc_match_clauses),
         )
         self._accumulate_counts(
             docket_counts,
@@ -611,17 +616,17 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             "document_match_count"
         )
 
-        comment_resp = safe_search(
-            "comments",
-            self._build_docket_agg_query_unique_comments(
+        comment_resp = opensearch_client.search(
+            index="comments",
+            body=self._build_docket_agg_query_unique_comments(
                 "matching_comments", comment_match_clauses
-            )
+            ),
         )
-        extracted_resp = safe_search(
-            "comments_extracted_text",
-            self._build_docket_agg_query_unique_comments(
+        extracted_resp = opensearch_client.search(
+            index="comments_extracted_text",
+            body=self._build_docket_agg_query_unique_comments(
                 "matching_extracted", extracted_match_clauses
-            )
+            ),
         )
 
         comment_counts = self._extract_cardinality_counts(
