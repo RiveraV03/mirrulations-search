@@ -359,6 +359,36 @@ class _FakeDbCollectionDockets:
         return {"DOCKET-1": {"document_total_count": 5, "comment_total_count": 3}}
 
 
+def test_search_marks_exact_docket_id_match():
+    """Row whose docket_id matches the query (case-insensitive) gets the
+    isExactMatch flag — the frontend uses this to anchor and highlight it."""
+    sql_rows = [
+        {"docket_id": "CMS-2025-0050", "docket_title": "ESRD PPS", "cfr_refs": []},
+        {"docket_id": "CMS-2025-0099", "docket_title": "Other CMS rule", "cfr_refs": []},
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits=[], by_id_rows=[])
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("cms-2025-0050", page=1, page_size=10)
+
+    matched = [r for r in out["results"] if r.get("isExactMatch")]
+    assert len(matched) == 1
+    assert matched[0]["docket_id"] == "CMS-2025-0050"
+    other = next(r for r in out["results"] if r["docket_id"] == "CMS-2025-0099")
+    assert "isExactMatch" not in other
+
+
+def test_search_no_exact_match_when_query_does_not_match_id():
+    """Free-text queries that aren't a docket-id don't tag any row."""
+    sql_rows = [
+        {"docket_id": "CMS-2025-0050", "docket_title": "ESRD PPS", "cfr_refs": []},
+    ]
+    db = _FakeDbMerge(sql_rows, os_hits=[], by_id_rows=[])
+    logic = InternalLogic("x", db_layer=db)
+    out = logic.search("medicare", page=1, page_size=10)
+
+    assert all("isExactMatch" not in r for r in out["results"])
+
+
 def test_get_collection_dockets_non_empty_sanitizes_and_paginates():
     """Branch with docket_ids loads rows, sanitizes modify_date, returns slice + pagination."""
     logic = InternalLogic("x", db_layer=_FakeDbCollectionDockets())

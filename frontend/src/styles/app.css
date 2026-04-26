@@ -433,6 +433,26 @@ body {
 	margin-top: 10px;
 	box-shadow: 0 4px 12px rgba(0,0,0,0.06);
 	width: 100%;
+	position: relative;
+  }
+
+  .result-card--exact-match {
+	border: 2px solid #f59e0b;
+	border-left-width: 6px;
+	box-shadow: 0 4px 14px rgba(245, 158, 11, 0.18);
+  }
+
+  .result-card-exact-badge {
+	position: absolute;
+	top: -10px;
+	right: 14px;
+	background: #f59e0b;
+	color: white;
+	font-size: 12px;
+	font-weight: 600;
+	padding: 3px 10px;
+	border-radius: 999px;
+	letter-spacing: 0.02em;
   }
 
  .result-title {

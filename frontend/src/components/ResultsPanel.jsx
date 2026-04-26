@@ -70,7 +70,13 @@ export default function ResultsPanel({ results, loading, hasSearched, query, una
  }
 
 
- const sortedResults = [...results].sort((a, b) => scoreResult(b) - scoreResult(a));
+ // Always anchor an exact docket-id match at the top, regardless of score —
+ // otherwise scoreResult below buries it under high-AOSS-count chatter dockets.
+ const sortedResults = [...results].sort((a, b) => {
+   if (a.isExactMatch && !b.isExactMatch) return -1;
+   if (b.isExactMatch && !a.isExactMatch) return 1;
+   return scoreResult(b) - scoreResult(a);
+ });
 
 
  return (
@@ -96,7 +102,13 @@ export default function ResultsPanel({ results, loading, hasSearched, query, una
        Showing results for "<strong>{query}</strong>" • {results.length} docket{results.length !== 1 ? "s" : ""} found
      </p>
      {sortedResults.map((item, index) => (
-       <div key={item.docket_id || index} className="result-card">
+       <div
+         key={item.docket_id || index}
+         className={`result-card${item.isExactMatch ? " result-card--exact-match" : ""}`}
+       >
+         {item.isExactMatch && (
+           <span className="result-card-exact-badge">Exact match</span>
+         )}
          <div className="result-card-body">
             <div className="result-card-info">
                <h3 className="result-title">{item.docket_title}</h3>
