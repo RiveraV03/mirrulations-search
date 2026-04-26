@@ -133,9 +133,6 @@ def _mark_exact_id_match(result, query):
     The frontend uses this flag to anchor the matched docket at the top
     of the displayed list and render a visual highlight, so users who
     searched for a specific docket id can find it immediately.
-
-    Compares canonical docket-id forms when the query parses as one, so
-    variants like "cms 9115 f" still anchor CMS-9115-F.
     """
     q = (query or "").strip().lower()
     if not q:
@@ -200,10 +197,6 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         Returns:
             dict: Paginated response with metadata
         """
-        # If the query looks like a docket ID in any of the common formats
-        # (e.g. "cms 9115 f", "FAA_2026_0534"), canonicalize before hitting
-        # the DB so ILIKE / AOSS see the same hyphen-uppercase form the
-        # docket is stored under.
         canonical_id = normalize_docket_id(query)
         effective_query = canonical_id if canonical_id else query
 
