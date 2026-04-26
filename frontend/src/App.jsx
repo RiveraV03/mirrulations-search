@@ -40,6 +40,7 @@ export default function App() {
   /** Passed as GET /search/?sort_by= (empty = server default relevance) */
   const [searchSortBy, setSearchSortBy] = useState("");
   const [error, setError] = useState(null);
+  const [aossStatus, setAossStatus] = useState("ok");
   // Snapshot of the params that produced the currently displayed results.
   // Pagination clicks reuse this so typing in the search box without
   // re-submitting can't silently change the search behind the user's back.
@@ -116,6 +117,7 @@ export default function App() {
       );
 
       setResults(data.results);
+      setAossStatus(data.aossStatus || "ok");
       const pag = data.pagination;
       if (pag && !pag.hasNext && pag.page > 0) {
         const corrected = (pag.page - 1) * pag.pageSize + data.results.length;
@@ -254,6 +256,16 @@ export default function App() {
                       <option value="modify_date">Last modified date</option>
                     </select>
                   </div>
+                  {hasSearched && !loading && aossStatus === "partial" && (
+                    <div className="aoss-banner aoss-banner-partial" role="status">
+                      Some full-text matches may be missing. Refresh in a few seconds for complete results.
+                    </div>
+                  )}
+                  {hasSearched && !loading && aossStatus === "unavailable" && (
+                    <div className="aoss-banner aoss-banner-unavailable" role="status">
+                      Full-text search is temporarily limited. Showing matches by title and docket ID only.
+                    </div>
+                  )}
                   <ResultsPanel
                     advancedPayload={advancedPayload}
                     results={results}

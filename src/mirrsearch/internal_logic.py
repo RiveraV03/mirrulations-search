@@ -177,7 +177,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
         self.database = database
         self.db_layer = db_layer if db_layer is not None else get_db()
 
-    def search(self, query, docket_type_param=None, agency=None,  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    def search(self, query, docket_type_param=None, agency=None,  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-statements
                cfr_part_param=None, start_date=None, end_date=None, page=1, page_size=10,
                sort_by=None):
         """
@@ -210,9 +210,14 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
 
         # AOSS tokenizes on hyphens; "EPA-HQ-OPP-2009-0634" fans into 5 broad
         # terms and 503s the aggregation. SQL already nails the exact docket.
-        os_hits = [] if canonical_id else self.db_layer.text_match_terms(
-            [(effective_query or "").strip()]
-        )
+        if canonical_id:
+            os_hits = []
+            aoss_status = "ok"
+        else:
+            os_hits = self.db_layer.text_match_terms(
+                [(effective_query or "").strip()]
+            )
+            aoss_status = getattr(os_hits, "aoss_status", "ok")
         os_counts_by_id = {str(hit["docket_id"]): hit for hit in os_hits}
 
         new_ids_ordered = self._get_new_docket_ids(os_hits, title_ids)
@@ -235,6 +240,7 @@ class InternalLogic:  # pylint: disable=too-few-public-methods
             )
 
         _mark_exact_id_match(result, query)
+        result["aoss_status"] = aoss_status
         return result
 
     def _search_full_fetch(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals

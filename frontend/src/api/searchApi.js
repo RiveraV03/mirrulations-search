@@ -73,7 +73,9 @@ export async function searchDockets(query, docket_type = '', agency = [], cfr_pa
 		hasPrev: response.headers.get("X-Has-Prev") === "true",
 	  }
 
-	return { results, pagination }
+	const aossStatus = response.headers.get("X-AOSS-Status") || "ok"
+
+	return { results, pagination, aossStatus }
 }
 
 export async function getAuthStatus() {

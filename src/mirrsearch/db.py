@@ -138,6 +138,20 @@ def _reset_aoss_breaker_for_tests() -> None:
     _aoss_breaker_open_until = 0.0
 
 
+class TextMatchResult(list):
+    """List of AOSS hits plus an aoss_status describing AOSS health for this call.
+
+    Behaves as a normal list so existing callers iterating hits keep working;
+    new callers read .aoss_status to surface a banner to the user.
+    Status values: "ok" (all indexes returned), "partial" (some failed),
+    "unavailable" (no AOSS data — breaker open or all indexes failed).
+    """
+
+    def __init__(self, hits=None, aoss_status: str = "ok"):
+        super().__init__(hits or [])
+        self.aoss_status = aoss_status
+
+
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy engine — created once at module level, shared across all requests.
@@ -637,9 +651,9 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         total_results to drift between page navigations.
         """
         if any(len((t or "").strip()) < 2 for t in terms):
-            return []
+            return TextMatchResult([], "ok")
         if _aoss_breaker_is_open():
-            return []
+            return TextMatchResult([], "unavailable")
         if opensearch_client is not None:
             return self._run_text_match_queries(opensearch_client, terms)
         return self._cached_text_match_terms(tuple(terms))
@@ -672,7 +686,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
             log.warning("AOSS index %s failed: %s", index, exc)
             return None
 
-    def _run_text_match_queries(  # pylint: disable=too-many-locals
+    def _run_text_match_queries(  # pylint: disable=too-many-locals,too-many-statements
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
         """Execute the three OpenSearch queries and merge what came back.
 
@@ -741,7 +755,16 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 extracted_counts.get(did, 0)
             )
 
-        return [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
+        succeeded = sum(r is not None for r in (doc_resp, comment_resp, extracted_resp))
+        if succeeded == 3:
+            status = "ok"
+        elif succeeded == 0:
+            status = "unavailable"
+        else:
+            status = "partial"
+
+        hits = [{"docket_id": did, **counts} for did, counts in docket_counts.items()]
+        return TextMatchResult(hits, status)
 
     @staticmethod
     def _extract_cardinality_counts(resp: Dict, agg_name: str) -> Dict[str, int]:

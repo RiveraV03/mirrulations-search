@@ -89,7 +89,7 @@ def _get_pagination_params():
     return page, page_size
 
 
-def _build_paginated_response(results, pagination):
+def _build_paginated_response(results, pagination, aoss_status=None):
     """Build a JSON response with pagination metadata in HTTP headers."""
     response = jsonify(results)
     response.headers['X-Page'] = str(pagination['page'])
@@ -98,6 +98,8 @@ def _build_paginated_response(results, pagination):
     response.headers['X-Total-Pages'] = str(pagination['total_pages'])
     response.headers['X-Has-Next'] = str(pagination['has_next']).lower()
     response.headers['X-Has-Prev'] = str(pagination['has_prev']).lower()
+    if aoss_status:
+        response.headers['X-AOSS-Status'] = aoss_status
     return response
 
 
@@ -466,7 +468,10 @@ def create_app(dist_dir=None, db_layer=None, oauth_handler=None):  # pylint: dis
         except Exception as exc:  # pylint: disable=broad-exception-caught
             return _db_error_response(str(exc))
 
-        return _build_paginated_response(result['results'], result['pagination'])
+        return _build_paginated_response(
+            result['results'], result['pagination'],
+            aoss_status=result.get('aoss_status'),
+        )
 
     @flask_app.route("/agencies")
     def agencies():
