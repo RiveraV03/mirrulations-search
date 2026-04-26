@@ -95,7 +95,7 @@ def _parse_positive_int_env(var_name: str, default: int) -> int:
 
 def _opensearch_match_docket_bucket_size() -> int:
     """How many docket buckets to request for corpus-wide match aggregations."""
-    return _parse_positive_int_env("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", 50000)
+    return _parse_positive_int_env("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", 1000)
 
 
 

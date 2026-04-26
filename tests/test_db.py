@@ -231,11 +231,11 @@ def test_get_opensearch_connection_blank_port_no_crash(monkeypatch):
 
 def test_opensearch_bucket_size_blank_env_defaults(monkeypatch):
     monkeypatch.setenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "")
-    assert db_module._opensearch_match_docket_bucket_size() == 50000
+    assert db_module._opensearch_match_docket_bucket_size() == 1000
 
 def test_opensearch_bucket_size_invalid_env_defaults(monkeypatch):
     monkeypatch.setenv("OPENSEARCH_MATCH_DOCKET_BUCKET_SIZE", "not-a-number")
-    assert db_module._opensearch_match_docket_bucket_size() == 50000
+    assert db_module._opensearch_match_docket_bucket_size() == 1000
 
 
 def test_opensearch_comment_id_terms_size_does_not_exist():
