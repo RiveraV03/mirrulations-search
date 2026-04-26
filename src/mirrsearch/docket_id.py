@@ -35,7 +35,7 @@ _SPLIT_RE = re.compile(r"[-_\s]+")
 def _split_segments(query):
     """Uppercase, split on separators, return segments or None if malformed."""
     segments = [s for s in _SPLIT_RE.split(query.strip().upper()) if s]
-    if not (2 <= len(segments) <= 6):
+    if len(segments) < 2 or len(segments) > 6:
         return None
     if not all(_SEGMENT_RE.match(s) for s in segments):
         return None
