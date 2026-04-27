@@ -489,9 +489,7 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 params[f"etitle_{i}"] = title
                 params[f"epart_{i}"] = part
 
-        # Match LIMIT semantics of _search_dockets_postgres so a broad filtered
-        # query (e.g. medicare + agency=CMS) can't pull thousands of rows.
-        sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart LIMIT 50"
+        sql += " ORDER BY d.modify_date DESC, d.docket_id, cp.title, cp.cfrPart"
 
         rows = self._run(sql, params)
         dockets = {}

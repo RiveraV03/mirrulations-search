@@ -401,6 +401,15 @@ def test_get_dockets_by_ids_uses_any_and_reuses_row_shape():
     assert results[0]["docket_title"] == "Other"
 
 
+def test_get_dockets_by_ids_filtered_does_not_cap_unique_dockets():
+    db = DBLayer(engine=_FakeConn([]))
+    db.get_dockets_by_ids_filtered(
+        ["DOC-001", "DOC-002"], docket_type_param="Rulemaking",
+    )
+    sql, _params = (db.engine._executed[0][0], db.engine._executed[0][1])
+    assert "LIMIT 50" not in sql
+
+
 # --- Factory function tests ---
 
 def test_get_engine_uses_env_and_dotenv(monkeypatch):
