@@ -232,6 +232,9 @@ export default function App() {
                       runSearch(1);
                     }}
                   />
+                  <p className="search-disclaimer">
+                    Results may occasionally be limited during peak load. Refresh in a moment if you don't see expected dockets.
+                  </p>
                   <div className="search-sort-row">
                     <label htmlFor="search-sort-by" className="search-sort-label">
                       Sort by
