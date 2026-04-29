@@ -13,8 +13,7 @@ from mirrsearch.db import get_db
 logger = logging.getLogger(__name__)
 
 BETA_MESSAGE = (
-    "We're sorry, something went wrong. This app is currently in beta — "
-    "please try again later."
+    "Search is temporarily unavailable. Please try again in a moment."
 )
 
 
