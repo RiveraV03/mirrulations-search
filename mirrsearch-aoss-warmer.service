@@ -1,0 +1,13 @@
+[Unit]
+Description=AOSS warmer
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/home/ec2-user/mirrulations-search
+EnvironmentFile=-/home/ec2-user/mirrulations-search/.env
+Environment="PATH=/home/ec2-user/mirrulations-search/.venv/bin"
+Environment="PYTHONPATH=/home/ec2-user/mirrulations-search/src"
+Environment="USE_AWS_SECRETS=true"
+ExecStart=/home/ec2-user/mirrulations-search/.venv/bin/python /home/ec2-user/mirrulations-search/scripts/warm_aoss.py

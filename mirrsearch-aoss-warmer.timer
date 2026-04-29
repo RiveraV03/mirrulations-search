@@ -1,0 +1,12 @@
+[Unit]
+Description=AOSS warmer timer (business hours only)
+
+# Server runs in UTC. 8 AM–6 PM EDT = 12:00–21:59 UTC.
+# Adjust to 13..22 if/when EDT shifts to EST (winter, UTC-5).
+[Timer]
+OnCalendar=*-*-* 12..21:*:00
+Persistent=false
+Unit=mirrsearch-aoss-warmer.service
+
+[Install]
+WantedBy=timers.target
