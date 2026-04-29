@@ -1505,14 +1505,14 @@ def _assert_beta_503(response): # pylint: disable=redefined-outer-name
     assert data.get("error") == BETA_MESSAGE
 
 
-def test_beta_message_mentions_beta(): # pylint: disable=redefined-outer-name
-    """BETA_MESSAGE explicitly mentions beta so users understand the app state."""
-    assert "beta" in BETA_MESSAGE.lower()
-
-
-def test_beta_message_suggests_retry(): # pylint: disable=redefined-outer-name
-    """BETA_MESSAGE tells the user to try again later."""
+def test_service_error_message_suggests_retry(): # pylint: disable=redefined-outer-name
+    """The service-error message tells the user to try again."""
     assert "try again" in BETA_MESSAGE.lower()
+
+
+def test_service_error_message_does_not_mention_beta(): # pylint: disable=redefined-outer-name
+    """The service-error message no longer uses 'beta' framing."""
+    assert "beta" not in BETA_MESSAGE.lower()
 
 
 def test_search_db_error_returns_503_with_beta_message(tmp_path): # pylint: disable=redefined-outer-name
