@@ -3,6 +3,7 @@ import json
 import logging
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import List, Dict, Any, Set, Optional
@@ -672,12 +673,11 @@ class DBLayer:  # pylint: disable=too-many-public-methods
 
     def _run_text_match_queries(  # pylint: disable=too-many-locals
             self, opensearch_client, terms: List[str]) -> List[Dict[str, Any]]:
-        """Execute the three OpenSearch queries and merge what came back.
+        """Run the three OpenSearch queries in parallel and merge what came back.
 
-        Per-index isolation: a failure on one index logs and drops that
-        index's contribution rather than 503-ing the whole search. The
-        cache key is the query terms, so a partial result is stable across
-        pagination clicks for the duration of the cache window.
+        Each index call goes through ``_aoss_search`` so a 429 retry, the
+        circuit breaker, and per-index isolation all still apply. Wall-clock
+        time is roughly the slowest single query instead of the sum.
         """
         docket_counts: Dict = {}
 
@@ -694,11 +694,31 @@ class DBLayer:  # pylint: disable=too-many-public-methods
         comment_match_clauses = [{"match": {"commentText": t}} for t in terms]
         extracted_match_clauses = [{"match": {"extractedText": t}} for t in terms]
 
-        doc_resp = self._aoss_search(
-            opensearch_client,
-            "documents_text",
-            self._build_docket_agg_query("matching_docs", doc_match_clauses),
-        )
+        queries = [
+            ("documents_text",
+             self._build_docket_agg_query("matching_docs", doc_match_clauses)),
+            ("comments",
+             self._build_docket_agg_query_unique_comments(
+                 "matching_comments", comment_match_clauses)),
+            ("comments_extracted_text",
+             self._build_docket_agg_query_unique_comments(
+                 "matching_extracted", extracted_match_clauses)),
+        ]
+
+        responses: Dict[str, Optional[Dict]] = {}
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {
+                pool.submit(self._aoss_search, opensearch_client, index_name, body): index_name
+                for index_name, body in queries
+            }
+            for future in futures:
+                index_name = futures[future]
+                responses[index_name] = future.result()
+
+        doc_resp = responses["documents_text"]
+        comment_resp = responses["comments"]
+        extracted_resp = responses["comments_extracted_text"]
+
         if doc_resp is not None:
             self._accumulate_counts(
                 docket_counts,
@@ -706,21 +726,6 @@ class DBLayer:  # pylint: disable=too-many-public-methods
                 "matching_docs",
                 "document_match_count"
             )
-
-        comment_resp = self._aoss_search(
-            opensearch_client,
-            "comments",
-            self._build_docket_agg_query_unique_comments(
-                "matching_comments", comment_match_clauses
-            ),
-        )
-        extracted_resp = self._aoss_search(
-            opensearch_client,
-            "comments_extracted_text",
-            self._build_docket_agg_query_unique_comments(
-                "matching_extracted", extracted_match_clauses
-            ),
-        )
 
         comment_counts = (
             self._extract_cardinality_counts(comment_resp, "matching_comments")
