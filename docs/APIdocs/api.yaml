@@ -7,7 +7,15 @@ info:
 paths:
   /login:
     get:
-      summary: Redirect to Google OAuth login
+      summary: Serve the login page
+      description: Serves the frontend login page (index.html).
+      responses:
+        "200":
+          description: Login page HTML
+
+  /auth/login:
+    get:
+      summary: Initiate Google OAuth login
       description: Redirects the user to Google's OAuth authorization page to begin the login flow.
       responses:
         "302":
@@ -45,6 +53,276 @@ paths:
                     example: "jane@example.com"
                     description: Only present when logged_in is true
 
+  /admin/login:
+    get:
+      summary: Initiate Google OAuth login for admin
+      description: Sets a login_intent cookie to "admin" and redirects to Google OAuth. On callback, only users in the admins table are granted access.
+      responses:
+        "302":
+          description: Redirect to Google OAuth authorization URL with admin intent cookie set
+
+  /admin/status:
+    get:
+      summary: Check admin authentication status
+      description: Returns whether the current user is logged in and has admin privileges.
+      responses:
+        "200":
+          description: Admin status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_admin:
+                    type: boolean
+                    example: true
+                  name:
+                    type: string
+                    example: "Jane Doe"
+                    description: Only present when is_admin is true
+                  email:
+                    type: string
+                    example: "jane@example.com"
+                    description: Only present when is_admin is true
+        "503":
+          description: Service unavailable - database error
+
+  /admin/users:
+    get:
+      summary: Get all authorized users with last login (admin only)
+      description: Returns all authorized users including their last_login timestamps. Requires admin privileges.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: List of authorized users with last login info
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    email:
+                      type: string
+                      example: "jane@example.com"
+                    name:
+                      type: string
+                      example: "Jane Doe"
+                    authorized_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                      example: "2025-01-15T10:30:00"
+                    last_login:
+                      type: string
+                      format: date-time
+                      nullable: true
+                      example: "2025-04-20T14:22:00"
+        "403":
+          description: Forbidden - user is not an admin
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Forbidden"
+        "503":
+          description: Service unavailable - database error
+
+  /api/authorized:
+    get:
+      summary: Get all authorized users (admin only)
+      description: Returns a list of all authorized users. Requires admin privileges.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: List of authorized users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    email:
+                      type: string
+                      example: "jane@example.com"
+                    name:
+                      type: string
+                      example: "Jane Doe"
+        "403":
+          description: Forbidden - user is not an admin
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Forbidden"
+        "503":
+          description: Service unavailable - database error
+
+    post:
+      summary: Add an authorized user (admin only)
+      description: Adds a new authorized user by email and name. Requires admin privileges.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - name
+              properties:
+                email:
+                  type: string
+                  example: "newuser@example.com"
+                name:
+                  type: string
+                  example: "New User"
+      responses:
+        "201":
+          description: User successfully added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                    example: "newuser@example.com"
+                  name:
+                    type: string
+                    example: "New User"
+        "400":
+          description: Bad request - email and name are required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "email and name are required"
+        "403":
+          description: Forbidden - user is not an admin
+        "503":
+          description: Service unavailable - database error
+
+  /api/authorized/{email}:
+    delete:
+      summary: Remove an authorized user (admin only)
+      description: Removes an authorized user by email. Requires admin privileges.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "user@example.com"
+      responses:
+        "204":
+          description: User successfully removed
+        "403":
+          description: Forbidden - user is not an admin
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "User not found"
+        "503":
+          description: Service unavailable - database error
+
+  /api/authorized/{email}/update-name:
+    post:
+      summary: Update an authorized user's display name (admin only)
+      description: Updates the display name of an authorized user by email. Requires admin privileges.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "user@example.com"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: "Updated Name"
+      responses:
+        "200":
+          description: Name successfully updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                    example: "user@example.com"
+                  name:
+                    type: string
+                    example: "Updated Name"
+        "400":
+          description: Bad request - name is required
+        "403":
+          description: Forbidden - user is not an admin
+        "404":
+          description: User not found
+        "503":
+          description: Service unavailable - database error
+
+  /api/user/last-login:
+    get:
+      summary: Get current user's last login timestamp
+      description: Returns the last login timestamp for the currently authenticated user.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Last login info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                    example: "jane@example.com"
+                  last_login:
+                    type: string
+                    format: date-time
+                    nullable: true
+                    example: "2025-04-20T14:22:00"
+        "401":
+          description: Unauthorized - user is not logged in
+        "503":
+          description: Service unavailable - database error
+
   /agencies:
     get:
       summary: Get list of all agencies
@@ -59,6 +337,69 @@ paths:
                 items:
                   type: string
                 example: ["CMS", "EPA", "FDA"]
+        "503":
+          description: Service unavailable - database error
+
+  /dockets:
+    get:
+      summary: Get dockets by IDs
+      description: Returns docket metadata for a list of docket IDs. Requires authentication.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: docket_id
+          in: query
+          description: Docket ID to look up. Can be specified multiple times.
+          required: false
+          schema:
+            type: string
+          example: "CMS-2025-0052"
+      responses:
+        "200":
+          description: List of matching dockets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    docket_id:
+                      type: string
+                      example: "CMS-2025-0052"
+                    docket_title:
+                      type: string
+                      example: "Medicaid Program; Preserving Medicaid Funding..."
+                    agency_id:
+                      type: string
+                      example: "CMS"
+                    docket_type:
+                      type: string
+                      example: "Rulemaking"
+                    modify_date:
+                      type: string
+                      format: date
+                      example: "2025-03-15"
+                    cfrPart:
+                      type: array
+                      nullable: true
+                      items:
+                        type: object
+                        properties:
+                          title:
+                            type: string
+                            example: "42 CFR Parts 413 and 512"
+                          part:
+                            type: string
+                            example: "413"
+                          link:
+                            type: string
+                            nullable: true
+                            example: "https://example.com/cfr"
+        "401":
+          description: Unauthorized - user is not logged in
+        "503":
+          description: Service unavailable - database error
 
   /search/:
     get:
@@ -116,6 +457,13 @@ paths:
             type: string
             format: date
           example: "2024-12-31"
+        - name: sort_by
+          in: query
+          description: Sort results by a given field. Optional.
+          required: false
+          schema:
+            type: string
+          example: "modify_date"
         - name: page
           in: query
           description: Page number (1-indexed). Defaults to 1.
@@ -243,6 +591,548 @@ paths:
                   error:
                     type: string
                     example: "Unauthorized"
+        "503":
+          description: Service unavailable - database error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Search is temporarily unavailable. Please try again in a moment."
+
+  /api/collections:
+    get:
+      summary: Get current user's collections
+      description: Returns all collections belonging to the authenticated user.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: List of collections
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    collection_id:
+                      type: integer
+                      example: 1
+                    name:
+                      type: string
+                      example: "My Medicare Dockets"
+        "401":
+          description: Unauthorized - user is not logged in
+        "503":
+          description: Service unavailable - database error
+
+    post:
+      summary: Create a new collection
+      description: Creates a new named collection for the authenticated user.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: "My Medicare Dockets"
+      responses:
+        "201":
+          description: Collection successfully created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collection_id:
+                    type: integer
+                    example: 1
+        "400":
+          description: Bad request - name is required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "name is required"
+        "401":
+          description: Unauthorized - user is not logged in
+        "503":
+          description: Service unavailable - database error
+
+  /api/collections/{collection_id}:
+    delete:
+      summary: Delete a collection
+      description: Deletes a collection by ID. Only the owner can delete their collection.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: collection_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+      responses:
+        "204":
+          description: Collection successfully deleted
+        "401":
+          description: Unauthorized - user is not logged in
+        "404":
+          description: Collection not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Collection not found"
+        "503":
+          description: Service unavailable - database error
+
+  /api/collections/{collection_id}/dockets:
+    get:
+      summary: Get dockets in a collection
+      description: Returns a paginated list of dockets in the specified collection. Requires authentication and ownership.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: collection_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          example: 10
+      responses:
+        "200":
+          description: Paginated list of dockets in the collection
+          headers:
+            X-Page:
+              schema:
+                type: integer
+            X-Page-Size:
+              schema:
+                type: integer
+            X-Total-Results:
+              schema:
+                type: integer
+            X-Total-Pages:
+              schema:
+                type: integer
+            X-Has-Next:
+              schema:
+                type: string
+            X-Has-Prev:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    docket_id:
+                      type: string
+                      example: "CMS-2025-0052"
+                    docket_title:
+                      type: string
+                      example: "Medicaid Program; Preserving Medicaid Funding..."
+        "401":
+          description: Unauthorized - user is not logged in
+        "404":
+          description: Collection not found
+        "503":
+          description: Service unavailable - database error
+
+    post:
+      summary: Add a docket to a collection
+      description: Adds a docket to the specified collection. Requires authentication and ownership.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: collection_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - docket_id
+              properties:
+                docket_id:
+                  type: string
+                  example: "CMS-2025-0052"
+      responses:
+        "204":
+          description: Docket successfully added to collection
+        "400":
+          description: Bad request - docket_id is required
+        "401":
+          description: Unauthorized - user is not logged in
+        "404":
+          description: Collection not found
+        "503":
+          description: Service unavailable - database error
+
+  /api/collections/{collection_id}/dockets/{docket_id}:
+    delete:
+      summary: Remove a docket from a collection
+      description: Removes a specific docket from the specified collection. Requires authentication and ownership.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: collection_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+        - name: docket_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "CMS-2025-0052"
+      responses:
+        "204":
+          description: Docket successfully removed from collection
+        "401":
+          description: Unauthorized - user is not logged in
+        "404":
+          description: Collection not found
+        "503":
+          description: Service unavailable - database error
+
+  /download/request:
+    post:
+      summary: Request a bulk download of multiple dockets
+      description: >
+        Initiates an async download job for up to 10 dockets. Creates a job record,
+        pushes it to the Redis queue if the worker is alive, or falls back to demo mode.
+        Requires authentication.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - docket_ids
+                - format
+              properties:
+                docket_ids:
+                  type: array
+                  maxItems: 10
+                  items:
+                    type: string
+                  example: ["CMS-2025-0052", "EPA-2024-0001"]
+                format:
+                  type: string
+                  enum: ["raw", "csv"]
+                  example: "raw"
+                include_binaries:
+                  type: boolean
+                  default: false
+                  example: false
+      responses:
+        "202":
+          description: Download job accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  status:
+                    type: string
+                    enum: ["started", "demo"]
+                    example: "started"
+        "400":
+          description: Bad request - validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Maximum of 10 dockets per download"
+        "401":
+          description: Unauthorized - user is not logged in
+        "503":
+          description: Service unavailable - database or queue error
+
+  /download/request/{docket_id}:
+    post:
+      summary: Request a download for a single docket
+      description: >
+        Initiates an async download job for a single docket specified in the URL path.
+        Behaves identically to the bulk endpoint but accepts a single docket ID via path parameter.
+        Requires authentication.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: docket_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "CMS-2025-0052"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - format
+              properties:
+                format:
+                  type: string
+                  enum: ["raw", "csv"]
+                  example: "raw"
+                include_binaries:
+                  type: boolean
+                  default: false
+                  example: false
+      responses:
+        "202":
+          description: Download job accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  status:
+                    type: string
+                    enum: ["started", "demo"]
+                    example: "started"
+        "400":
+          description: Bad request - format must be raw or csv
+        "401":
+          description: Unauthorized - user is not logged in
+        "503":
+          description: Service unavailable - database or queue error
+
+  /download/status/{job_id}:
+    get:
+      summary: Poll the status of a download job
+      description: >
+        Returns the current status and metadata of a download job.
+        If the job is in demo mode, waits 5 seconds, marks it ready, and returns a demo note.
+        Requires authentication.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  status:
+                    type: string
+                    enum: ["started", "processing", "ready", "failed", "demo"]
+                    example: "ready"
+                  format:
+                    type: string
+                    example: "raw"
+                  docket_ids:
+                    type: array
+                    items:
+                      type: string
+                    example: ["CMS-2025-0052"]
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2025-04-30T10:00:00"
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                    example: "2025-04-30T10:01:30"
+                  up_to_date:
+                    type: boolean
+                    example: true
+                  demo_note:
+                    type: string
+                    nullable: true
+                    example: "This is a temporary demo file. The real download worker is currently unavailable."
+        "401":
+          description: Unauthorized - user is not logged in
+        "404":
+          description: Job not found
+        "503":
+          description: Service unavailable - database error
+
+  /download/{job_id}:
+    get:
+      summary: Retrieve a completed download file
+      description: >
+        Returns the download file for a completed job. Redirects to a presigned S3 URL
+        if available, or serves a local demo ZIP if the worker was unavailable.
+        Requires authentication and job status to be "ready".
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      responses:
+        "200":
+          description: ZIP file download (served directly when S3 URL is a local path)
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "202":
+          description: Download not ready yet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Download not ready yet"
+        "302":
+          description: Redirect to presigned S3 URL for download
+        "401":
+          description: Unauthorized - user is not logged in
+        "404":
+          description: Job not found or download file not found
+        "503":
+          description: Service unavailable - database error
+
+  /download/jobs:
+    get:
+      summary: List all download jobs for the current user
+      description: Returns all download jobs associated with the authenticated user.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: List of download jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    job_id:
+                      type: string
+                      example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                    status:
+                      type: string
+                      enum: ["started", "processing", "ready", "failed", "demo"]
+                      example: "ready"
+                    format:
+                      type: string
+                      example: "raw"
+                    docket_ids:
+                      type: array
+                      items:
+                        type: string
+                      example: ["CMS-2025-0052"]
+                    created_at:
+                      type: string
+                      format: date-time
+                      example: "2025-04-30T10:00:00"
+        "401":
+          description: Unauthorized - user is not logged in
+        "503":
+          description: Service unavailable - database error
+
+  /download/jobs/{job_id}:
+    delete:
+      summary: Delete a download job
+      description: Deletes a specific download job belonging to the authenticated user.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      responses:
+        "204":
+          description: Job successfully deleted
+        "401":
+          description: Unauthorized - user is not logged in
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Job not found"
+        "503":
+          description: Service unavailable - database error
 
 components:
   securitySchemes:
